@@ -69,7 +69,7 @@ log "Starting LiteLLM and Open WebUI"
 docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" up -d
 
 log "Running health checks"
-"$ROOT/scripts/doctor.sh"
+bash "$ROOT/scripts/doctor.sh"
 
 cat <<EOF
 
