@@ -1,0 +1,33 @@
+model_list:
+  - model_name: zeaz-fast
+    litellm_params:
+      model: ollama/qwen2.5-coder:3b
+      api_base: http://ollama:11434
+
+  - model_name: zeaz-coder
+    litellm_params:
+      model: ollama/qwen2.5-coder:7b
+      api_base: http://ollama:11434
+
+  - model_name: zeaz-reasoning
+    litellm_params:
+      model: ollama/qwen3:8b
+      api_base: http://ollama:11434
+
+  - model_name: zeaz-free
+    litellm_params:
+      model: openai/openrouter/free
+      api_base: https://openrouter.ai/api/v1
+      api_key: os.environ/OPENROUTER_API_KEY
+
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  timeout: 120
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
