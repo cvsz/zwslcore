@@ -25,6 +25,17 @@ jobs:
       - name: Exercise startup bootstrap tests
         run: python3 -m unittest discover -s tests -v
 
+      - name: Validate zwslcore stack scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/install.sh
+          bash -n scripts/doctor.sh
+          python3 -m py_compile scripts/sync-free-models.py
+          cp .env.example .env
+          docker compose --env-file .env config --quiet
+          rm -f .env
+
       - name: Check for common secret file names
         shell: bash
         run: |
