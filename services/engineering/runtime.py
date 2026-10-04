@@ -107,7 +107,14 @@ class EngineeringRuntime:
             task.status = TaskStatus.PLANNING
             self.store.save_task(task)
             self.progress(f"[engineering] {task.id} PLANNING model={self.provider.model}")
-            snapshot = RepositorySnapshotter(worktree).snapshot()
+            snapshot = RepositorySnapshotter(
+                worktree,
+                include_paths=allowed_paths,
+            ).snapshot()
+            self.progress(
+                f"[engineering] snapshot_bytes={len(snapshot.encode('utf-8'))} "
+                f"scope={','.join(sorted(allowed_paths)) if allowed_paths else 'repository'}"
+            )
             plan = self.provider.chat(
                 self._plan_prompt(task, snapshot),
                 "You are a careful senior software engineer. Plan a minimal, testable change. "
