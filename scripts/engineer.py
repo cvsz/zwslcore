@@ -98,6 +98,7 @@ def parser() -> argparse.ArgumentParser:
     r.add_argument("--validate", action="append", default=[])
     r.add_argument("--allow-path", action="append", default=[])
     r.add_argument("--commit", action="store_true")
+    r.add_argument("--validation-mode", choices=["strict", "delta"], default="strict")
 
     resume = sub.add_parser("resume")
     resume.add_argument("task_id")
@@ -106,6 +107,7 @@ def parser() -> argparse.ArgumentParser:
     commit_group = resume.add_mutually_exclusive_group()
     commit_group.add_argument("--commit", action="store_true")
     commit_group.add_argument("--no-commit", action="store_true")
+    resume.add_argument("--validation-mode", choices=["strict", "delta"], default=None)
 
     wa = sub.add_parser("work-add")
     wa.add_argument("title")
@@ -118,6 +120,7 @@ def parser() -> argparse.ArgumentParser:
     wa.add_argument("--validate", action="append", default=[])
     wa.add_argument("--allow-path", action="append", default=[])
     wa.add_argument("--commit", action="store_true")
+    wa.add_argument("--validation-mode", choices=["strict", "delta"], default="strict")
 
     sub.add_parser("work-list")
 
@@ -224,6 +227,7 @@ def main() -> int:
                 validators=args.validate or ["git diff --check"],
                 allowed_paths=set(args.allow_path) if args.allow_path else None,
                 commit=args.commit,
+                validation_mode=args.validation_mode,
             )
         except Exception as exc:
             print(f"engineering run failed: {exc}", file=sys.stderr)
@@ -249,6 +253,7 @@ def main() -> int:
             commit = False
         else:
             commit = bool(config.get("commit", False))
+        validation_mode = args.validation_mode or str(config.get("validation_mode", "strict"))
 
         history = list(task.metadata.get("resume_history") or [])
         history.append({
@@ -271,6 +276,7 @@ def main() -> int:
                 allowed_paths=set(allowed) if allowed else None,
                 commit=commit,
                 resume=True,
+                validation_mode=validation_mode,
             )
         except Exception as exc:
             print(f"engineering resume failed: {exc}", file=sys.stderr)
@@ -291,6 +297,7 @@ def main() -> int:
                 "validators": args.validate or ["git diff --check"],
                 "allowed_paths": args.allow_path,
                 "commit": args.commit,
+                "validation_mode": args.validation_mode,
             },
             priority=args.priority,
             max_attempts=max(1, args.max_attempts),

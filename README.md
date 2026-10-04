@@ -115,7 +115,8 @@ Capabilities:
 - hardware profiling with deterministic local-model recommendations;
 - durable continuous-work ledger with restart-safe attempt budgets;
 - secret-minimized evidence bundles with SHA-256 integrity verification;
-- conservative task resume with HEAD-bound plan reuse and persisted phase cursors.
+- conservative task resume with HEAD-bound plan reuse and persisted phase cursors;
+- strict-by-default validation with optional baseline-vs-delta regression gating.
 
 Example:
 
@@ -199,6 +200,14 @@ Every completed or failed engineering task writes an evidence bundle under `~/.z
 ```
 
 Evidence includes task state, checkpoint chronology, validation commands/return codes, review findings, Git HEAD/branch/changed paths, and hashes of diff/checkpoint payloads. Raw diff and validator stdout/stderr are not persisted by default.
+
+Validation remains strict by default. For repositories with known pre-existing failures, opt in to baseline-vs-delta mode:
+
+```powershell
+.\scripts\engineer-wsl.ps1 work-add "Repair provider" --kind REPAIR --validation-mode delta --allow-path services --validate "python3 -m unittest discover -s tests -v"
+```
+
+Delta mode runs the validators on the clean worktree before editing and blocks only validators that regress from pass to fail. Existing failures are recorded as residual failures; improvements are recorded separately. Security/path/review gates are unchanged.
 
 Blocked/exhausted work does not silently reset its attempt budget across process restarts. To explicitly retry blocked work:
 
