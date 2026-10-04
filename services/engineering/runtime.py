@@ -5,6 +5,7 @@ import shlex
 import subprocess
 import urllib.request
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from .models import Checkpoint, EngineeringTask, TaskStatus
@@ -72,12 +73,14 @@ class EngineeringRuntime:
         provider: ProviderClient,
         *,
         worktrees: WorktreeManager | None = None,
+        progress: Callable[[str], None] | None = None,
     ) -> None:
         self.store = store
         self.provider = provider
         self.worktrees = worktrees or WorktreeManager()
         self.reviewer = StaticReviewer()
         self.gate = SecurityGate()
+        self.progress = progress or (lambda message: None)
 
     def run(
         self,
@@ -93,14 +96,17 @@ class EngineeringRuntime:
         try:
             task.status = TaskStatus.BASELINING
             self.store.save_task(task)
+            self.progress(f"[engineering] {task.id} BASELINING")
             worktree, branch = self.worktrees.create(task.repository, task.id, task.title)
             task.worktree_path = str(worktree)
             task.branch_name = branch
             task.attempts += 1
+            self.progress(f"[engineering] worktree={worktree} branch={branch} attempt={task.attempts}/{task.max_attempts}")
             self._checkpoint(task, "BASELINE", {"worktree": str(worktree), "branch": branch})
 
             task.status = TaskStatus.PLANNING
             self.store.save_task(task)
+            self.progress(f"[engineering] {task.id} PLANNING model={self.provider.model}")
             snapshot = RepositorySnapshotter(worktree).snapshot()
             plan = self.provider.chat(
                 self._plan_prompt(task, snapshot),
@@ -111,6 +117,7 @@ class EngineeringRuntime:
 
             task.status = TaskStatus.EDITING
             self.store.save_task(task)
+            self.progress(f"[engineering] {task.id} EDITING")
             response = self.provider.chat(
                 self._edit_prompt(task, snapshot, plan),
                 "Return ONLY valid JSON with schema "
@@ -119,17 +126,22 @@ class EngineeringRuntime:
                 "generated/vendor files, or files outside the repository.",
             )
             changes = self._parse_changes(response)
+            self.progress(f"[engineering] proposed_files={len(changes)}")
             self._apply_changes(worktree, changes, allowed_paths=allowed_paths)
 
             task.status = TaskStatus.VALIDATING
             self.store.save_task(task)
+            self.progress(f"[engineering] {task.id} VALIDATING validators={len(validators)}")
             validation = self._run_validators(worktree, validators)
             self._checkpoint(task, "VALIDATION", validation)
             if not validation["passed"]:
+                self.progress(f"[engineering] validation_failed={validation['failures']}")
                 raise RuntimeError("validation failed: " + "; ".join(validation["failures"]))
+            self.progress(f"[engineering] {task.id} VALIDATION_PASS")
 
             task.status = TaskStatus.REVIEWING
             self.store.save_task(task)
+            self.progress(f"[engineering] {task.id} REVIEWING")
             # Intent-to-add makes new files visible to the deterministic diff reviewer
             # without staging their content for commit.
             self._git(worktree, ["add", "-N", "--", "."])
@@ -142,25 +154,31 @@ class EngineeringRuntime:
                 {"findings": [finding.__dict__ for finding in findings]},
             )
             if not passed:
+                self.progress(f"[engineering] security_gate_blocked={len(blocking)}")
                 raise RuntimeError(
                     "security gate blocked change: "
                     + "; ".join(f"{f.category}:{f.path}" for f in blocking)
                 )
 
+            self.progress(f"[engineering] {task.id} SECURITY_GATE_PASS findings={len(findings)}")
+
             if commit:
                 self._git(worktree, ["add", "-A"])
                 self._git(worktree, ["commit", "-m", f"engineering: {task.title[:72]}"])
                 self._checkpoint(task, "COMMIT", {"branch": task.branch_name})
+                self.progress(f"[engineering] {task.id} COMMITTED branch={task.branch_name}")
             else:
                 # Clear intent-to-add entries while preserving working-tree edits.
                 self._git(worktree, ["reset"])
 
             task.status = TaskStatus.SUCCEEDED
             task.last_error = ""
+            self.progress(f"[engineering] {task.id} SUCCEEDED")
             self.store.save_task(task)
             return task
         except Exception as exc:
             task.status = TaskStatus.BLOCKED if task.attempts < task.max_attempts else TaskStatus.FAILED
+            self.progress(f"[engineering] {task.id} {task.status.value} error={str(exc)[:500]}")
             task.last_error = str(exc)[:2000]
             self.store.save_task(task)
             self._checkpoint(task, "FAILED", {"error": task.last_error})
