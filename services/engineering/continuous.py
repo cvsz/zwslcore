@@ -46,6 +46,7 @@ class ContinuousEngineeringRunner:
         retry_blocked: bool = False,
     ) -> LoopResult:
         seed = self.ledger.pending(retry_blocked=retry_blocked)
+        reset_once: set[str] = set()
         self.progress(f"[continuous] pending={len(seed)} max_iterations={max_iterations} retry_blocked={retry_blocked}")
 
         def implement(item: WorkItem) -> ExecutionResult:
@@ -59,7 +60,7 @@ class ContinuousEngineeringRunner:
             task = self.store.get_task(task_id)
             payload = item.payload
 
-            if retry_blocked and task is not None and (
+            if retry_blocked and item.fingerprint not in reset_once and task is not None and (
                 task.status in {TaskStatus.BLOCKED, TaskStatus.FAILED}
                 or task.attempts >= task.max_attempts
             ):
@@ -70,6 +71,7 @@ class ContinuousEngineeringRunner:
                 task.status = TaskStatus.CREATED
                 task.last_error = ""
                 self.store.save_task(task)
+                reset_once.add(item.fingerprint)
                 self.progress(
                     f"[continuous] RESET task={task.id} attempts=0/{task.max_attempts} "
                     f"worktree={'reset' if task.worktree_path else 'none'}"

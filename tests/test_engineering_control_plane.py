@@ -255,9 +255,15 @@ class ContinuousRetryResetTests(unittest.TestCase):
             def preflight(self):
                 return None
 
+            def __init__(self):
+                self.edit_calls = 0
+
             def chat(self, prompt, system, **kwargs):
                 if "Produce a concise implementation plan" in prompt:
                     return "plan"
+                self.edit_calls += 1
+                if self.edit_calls == 1:
+                    return '{"changes":[]}'
                 return '{"changes":[{"path":"services/example.py","content":"x = 1"}]}'
 
         with tempfile.TemporaryDirectory() as td:
@@ -308,12 +314,12 @@ class ContinuousRetryResetTests(unittest.TestCase):
 
             runtime = EngineeringRuntime(store, NoopProvider(), worktrees=manager)
             runner = ContinuousEngineeringRunner(store, ledger, runtime)
-            result = runner.run(max_iterations=1, retry_blocked=True)
+            result = runner.run(max_iterations=2, retry_blocked=True)
 
             loaded = store.get_task(task_id)
-            self.assertEqual(result.blocked, ())
+            self.assertEqual(result.completed, (item.fingerprint,))
             self.assertEqual(loaded.status, TaskStatus.SUCCEEDED, loaded.last_error)
-            self.assertEqual(loaded.attempts, 1)
+            self.assertEqual(loaded.attempts, 2)
             self.assertEqual(loaded.max_attempts, 2)
             self.assertEqual(loaded.last_error, "")
 
