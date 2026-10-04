@@ -36,7 +36,7 @@ function ConvertFrom-WslDistroOutput([object[]]$Lines) {
   foreach ($rawLine in $Lines) {
     if ($null -eq $rawLine) { continue }
 
-    $line = ([string]$rawLine).Replace([char]0, "").Trim()
+    $line = ([string]$rawLine).Replace([string][char]0, "").Trim()
     if (-not $line) { continue }
 
     $line = $line.TrimStart("*").Trim()
