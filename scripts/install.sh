@@ -69,8 +69,23 @@ done
 log "Starting LiteLLM, zwslcore Provider, and Open WebUI"
 docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" up -d
 
+log "Waiting for the full AI stack to become healthy"
+deadline=$((SECONDS + 300))
+while (( SECONDS < deadline )); do
+  if bash "$ROOT/scripts/doctor.sh" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 5
+done
+
 log "Running health checks"
-bash "$ROOT/scripts/doctor.sh"
+if ! bash "$ROOT/scripts/doctor.sh"; then
+  printf '\n[zwslcore] Stack health check failed. Current container state:\n' >&2
+  docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" ps >&2 || true
+  printf '\n[zwslcore] Recent service logs:\n' >&2
+  docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" logs --tail=120 >&2 || true
+  die "AI stack did not become healthy within 300 seconds."
+fi
 
 cat <<EOF
 
