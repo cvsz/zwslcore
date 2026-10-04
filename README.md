@@ -109,7 +109,9 @@ Capabilities:
 - operator-supplied validation commands;
 - deterministic static review and fail-closed security gate;
 - local commits only when explicitly requested;
-- bounded UPGRADE / UPDATE / IMPLEMENT_FEATURE / REPAIR orchestration.
+- bounded UPGRADE / UPDATE / IMPLEMENT_FEATURE / REPAIR orchestration;
+- hardware profiling with deterministic local-model recommendations;
+- durable continuous-work ledger with restart-safe attempt budgets.
 
 Example:
 
@@ -139,6 +141,37 @@ From Windows PowerShell, use the WSL wrapper instead of calling Windows Python:
 PowerShell does not use Bash's trailing `\` for line continuation. Keep each wrapper command on one line, or use PowerShell's backtick when splitting a command.
 
 See [Engineering Control Plane](docs/ENGINEERING-CONTROL-PLANE.md).
+
+### Continuous engineering
+
+Queue one bounded work item from PowerShell:
+
+```powershell
+.\scripts\engineer-wsl.ps1 work-add "Improve provider diagnostics" --kind REPAIR --description "Improve failure diagnostics without weakening tests" --repository . --risk medium --priority 80 --allow-path services --validate "python3 -m unittest discover -s tests -v"
+```
+
+Run queued work:
+
+```powershell
+.\scripts\engineer-wsl.ps1 continuous --max-iterations 4
+```
+
+Blocked/exhausted work does not silently reset its attempt budget across process restarts. To explicitly retry blocked work:
+
+```powershell
+.\scripts\engineer-wsl.ps1 continuous --max-iterations 4 --retry-blocked
+```
+
+### Cost policy
+
+The Provider enforces `ZEAZ_COST_POLICY` at routing time:
+
+- `ZERO_COST_ONLY` (default): permits only `FREE_LOCAL` and `FREE_REMOTE`.
+- `PREFER_ZERO_COST`: ranks free routes before customer-key/paid routes.
+- `PERMIT_PAID`: permits every configured cost class.
+
+Cloud providers remain disabled unless `FREE_CLOUD_FALLBACK_ENABLED=true`, so the default installation remains local-only.
+
 
 ## Free model discovery
 
@@ -198,6 +231,9 @@ services/
     review.py
     loop.py
     runtime.py
+    hardware.py
+    ledger.py
+    continuous.py
 config/
   litellm.yaml
 scripts/
