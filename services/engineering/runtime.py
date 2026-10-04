@@ -196,7 +196,43 @@ class EngineeringRuntime:
                 "generated/vendor files, or files outside the repository.",
                 max_tokens=4096,
             )
-            changes = self._parse_changes(response)
+            try:
+                changes = self._parse_changes(response)
+            except (json.JSONDecodeError, ValueError) as exc:
+                self.progress(
+                    f"[engineering] edit_response_invalid error={str(exc)[:300]} "
+                    f"raw={self._safe_snippet(response)}"
+                )
+                self._checkpoint(
+                    task,
+                    "EDIT_RESPONSE_INVALID",
+                    {
+                        "error": str(exc)[:1000],
+                        "raw_snippet": self._safe_snippet(response, 2000),
+                    },
+                )
+                repaired = self.provider.chat(
+                    self._repair_prompt(response),
+                    "Convert the supplied model output into ONLY valid JSON with schema "
+                    '{"changes":[{"path":"relative/path","content":"complete UTF-8 file content"}]}. '
+                    "Do not add commentary, Markdown fences, explanations, or new changes.",
+                    max_tokens=4096,
+                )
+                try:
+                    changes = self._parse_changes(repaired)
+                except (json.JSONDecodeError, ValueError) as repair_exc:
+                    raise ValueError(
+                        "model edit response was not valid structured JSON after one repair: "
+                        f"initial={str(exc)[:300]}; repair={str(repair_exc)[:300]}; "
+                        f"initial_raw={self._safe_snippet(response)}; "
+                        f"repair_raw={self._safe_snippet(repaired)}"
+                    ) from repair_exc
+                self.progress("[engineering] EDIT_RESPONSE_REPAIRED")
+                self._checkpoint(
+                    task,
+                    "EDIT_RESPONSE_REPAIRED",
+                    {"raw_snippet": self._safe_snippet(repaired, 2000)},
+                )
             self.progress(f"[engineering] proposed_files={len(changes)}")
             self._apply_changes(worktree, changes, allowed_paths=allowed_paths)
 
@@ -271,13 +307,49 @@ class EngineeringRuntime:
         )
 
     @staticmethod
+    def _repair_prompt(raw: str) -> str:
+        return (
+            "The following edit response did not satisfy the required JSON schema. "
+            "Preserve only its intended file changes and convert it to valid JSON.\n\n"
+            f"RAW RESPONSE:\n{raw[:12000]}"
+        )
+
+    @staticmethod
+    def _safe_snippet(raw: str, limit: int = 500) -> str:
+        return " ".join(raw.strip().split())[:limit]
+
+    @staticmethod
     def _parse_changes(raw: str) -> list[dict[str, str]]:
         text = raw.strip()
+        if not text:
+            raise ValueError("model returned an empty edit response")
+
         fence = chr(96) * 3
         if text.startswith(fence):
             lines = text.splitlines()
-            text = "\n".join(lines[1:-1] if lines[-1].strip() == fence else lines[1:])
-        value = json.loads(text)
+            text = "\n".join(lines[1:-1] if lines[-1].strip() == fence else lines[1:]).strip()
+
+        value: Any
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError as initial_error:
+            decoder = json.JSONDecoder()
+            value = None
+            for index, character in enumerate(text):
+                if character != "{":
+                    continue
+                try:
+                    candidate, _ = decoder.raw_decode(text[index:])
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(candidate, dict) and "changes" in candidate:
+                    value = candidate
+                    break
+            if value is None:
+                raise initial_error
+
+        if not isinstance(value, dict):
+            raise ValueError("model response must be a JSON object")
         changes = value.get("changes")
         if not isinstance(changes, list):
             raise ValueError("model response must contain changes[]")
