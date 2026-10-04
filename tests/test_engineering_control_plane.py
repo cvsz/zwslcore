@@ -310,7 +310,7 @@ class ContinuousRetryResetTests(unittest.TestCase):
 
             loaded = store.get_task(task_id)
             self.assertEqual(result.blocked, ())
-            self.assertEqual(loaded.status, TaskStatus.SUCCEEDED)
+            self.assertEqual(loaded.status, TaskStatus.SUCCEEDED, loaded.last_error)
             self.assertEqual(loaded.attempts, 1)
             self.assertEqual(loaded.max_attempts, 2)
             self.assertEqual(loaded.last_error, "")
