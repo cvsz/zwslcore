@@ -14,6 +14,10 @@ function Invoke-Wsl([string]$Command) {
   }
 }
 
+if ($RepoPath -notmatch '^~?/[A-Za-z0-9._/-]+$') {
+  throw "RepoPath contains unsupported characters."
+}
+
 $installed = & wsl.exe --list --quiet 2>$null
 if ($LASTEXITCODE -ne 0) {
   throw "Unable to query WSL distributions."
