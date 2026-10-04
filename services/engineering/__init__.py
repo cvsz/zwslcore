@@ -10,6 +10,7 @@ from .review import SecurityGate, StaticReviewer
 from .runtime import EngineeringRuntime, ProviderClient
 from .snapshot import RepositorySnapshotter
 from .store import SQLiteEngineeringStore
+from .validation import evaluate_validation, validate_mode
 from .worktree import WorktreeManager
 
 __all__ = [
@@ -34,4 +35,6 @@ __all__ = [
     "WorkKind",
     "WorktreeManager",
     "detect_hardware",
+    "evaluate_validation",
+    "validate_mode",
 ]
