@@ -50,7 +50,7 @@ Managed worktrees:
 
 ## Model
 
-By default the control plane uses the CPU-friendly local provider alias zeaz-fast. Override by setting ZEAZ_ENGINEERING_MODEL in .env. The larger zeaz-coder and zeaz-local aliases remain available when quality is preferred over latency.
+By default `ZEAZ_ENGINEERING_MODEL=auto`. Before constructing the Provider client, the control plane ranks the configured local aliases by hardware fit, zero-cost class, context capacity and structured-output support. On CPU-constrained hosts this normally selects `zeaz-fast`; higher-memory/GPU hosts may prefer a larger local alias. Set `ZEAZ_ENGINEERING_MODEL` to an explicit Provider alias to override automatic selection.
 
 
 ## Hardware profile
