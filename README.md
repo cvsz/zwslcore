@@ -179,6 +179,25 @@ Useful variants:
 
 The TUI uses only the Python standard library and ANSI terminal control. It shows hardware profile, automatic model selection, queue state, attempt budgets, phase cursors, recent tasks, evidence availability and runtime policy. It is intentionally read-only; task mutation remains explicit through `run`, `resume`, `work-add` and `continuous`.
 
+### Agent profiles and tool permissions
+
+zwslcore now includes an OpenCode-inspired, independently implemented agent policy layer. Built-in profiles are `build`, `plan`, `review`, `explore`, and `general`.
+
+```powershell
+.\scripts\engineer-wsl.ps1 agents
+.\scripts\engineer-wsl.ps1 tools
+.\scripts\engineer-wsl.ps1 policy-check plan edit services/provider/main.py
+```
+
+Select a profile explicitly:
+
+```powershell
+.\scripts\engineer-wsl.ps1 run TASK_ID --agent build
+.\scripts\engineer-wsl.ps1 run TASK_ID --agent plan
+```
+
+`plan`, `review`, and `explore` are read-only. `general` may edit and validate but cannot create a commit. Permission enforcement happens inside `EngineeringRuntime`; it is not only prompt text. See [OpenCode-inspired engineering patterns](docs/OPENCODE-PATTERNS.md).
+
 ### Continuous engineering
 
 Queue one bounded work item from PowerShell:
