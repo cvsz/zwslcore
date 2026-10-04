@@ -34,6 +34,8 @@ jobs:
           bash -n scripts/smoke.sh
           bash -n scripts/wait-runtime.sh
           bash -n scripts/bootstrap-wsl.sh
+          bash -n scripts/lib/env.sh
+          bash tests/test_env_loader.sh
           python3 -m py_compile scripts/sync-free-models.py scripts/engineer.py services/model_catalog/catalog.py
           python3 -m compileall -q services/provider/zeaz_provider services/engineering
           python3 -m unittest tests.test_model_catalog tests.test_engineering_control_plane -v
