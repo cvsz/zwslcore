@@ -26,8 +26,8 @@ class WorktreeManager:
         target = (self.base_dir / re.sub(r"[^A-Za-z0-9._-]+", "-", task_id)).resolve()
         target.relative_to(self.base_dir)
 
+        marker = self._marker(target)
         if target.exists():
-            marker = target / ".zwslcore-managed"
             if not marker.exists():
                 raise RuntimeError(f"refusing unmanaged existing path: {target}")
             return target, branch
@@ -38,14 +38,14 @@ class WorktreeManager:
             capture_output=True,
             text=True,
         )
-        (target / ".zwslcore-managed").write_text(task_id + "\n", encoding="utf-8")
+        marker.write_text(task_id + "\n", encoding="utf-8")
         return target, branch
 
     def remove(self, repository: str | Path, target: str | Path) -> None:
         repo = Path(repository).resolve()
         target_path = Path(target).resolve()
         target_path.relative_to(self.base_dir)
-        marker = target_path / ".zwslcore-managed"
+        marker = self._marker(target_path)
         if not marker.exists():
             raise RuntimeError(f"refusing to remove unmanaged worktree: {target_path}")
         subprocess.run(
@@ -54,6 +54,10 @@ class WorktreeManager:
             capture_output=True,
             text=True,
         )
+        marker.unlink(missing_ok=True)
+
+    def _marker(self, target: Path) -> Path:
+        return self.base_dir / f".{target.name}.managed"
 
     @staticmethod
     def _assert_git_repo(repo: Path) -> None:
