@@ -222,3 +222,81 @@ def models_dev_candidates(
                 )
             )
     return result
+
+
+def local_alias_candidates(
+    env: dict[str, str],
+    *,
+    hardware_profile: str,
+    ram_available_gb: float,
+) -> list[ModelCandidate]:
+    context = int(env.get("ZEAZ_OLLAMA_CONTEXT_LENGTH", "4096") or 4096)
+    fast_model = env.get("ZEAZ_FAST_MODEL", "qwen2.5-coder:3b")
+    coder_model = env.get("ZEAZ_CODER_MODEL", "qwen2.5-coder:7b")
+    reasoning_model = env.get("ZEAZ_REASONING_MODEL", "qwen3:8b")
+    local_model = env.get("ZEAZ_LOCAL_MODEL", reasoning_model)
+
+    def fit(alias: str) -> int:
+        if alias == "zeaz-fast":
+            return 320 if hardware_profile.startswith("CPU_") else 220
+        if alias == "zeaz-coder":
+            return 260 if ram_available_gb >= 10 else -250
+        if alias in {"zeaz-reasoning", "zeaz-local"}:
+            if hardware_profile == "GPU_READY":
+                return 280
+            return 220 if ram_available_gb >= 14 else -300
+        return 0
+
+    values = (
+        ("zeaz-fast", fast_model, False),
+        ("zeaz-coder", coder_model, False),
+        ("zeaz-reasoning", reasoning_model, True),
+        ("zeaz-local", local_model, "qwen3" in local_model.lower()),
+    )
+    return [
+        ModelCandidate(
+            id=model,
+            provider="ollama",
+            alias=alias,
+            local=True,
+            enabled=True,
+            cost_class="FREE_LOCAL",
+            input_cost=0.0,
+            output_cost=0.0,
+            context=context,
+            structured_output=True,
+            tool_call=False,
+            reasoning=reasoning,
+            hardware_fit=fit(alias),
+            source="local-route",
+        )
+        for alias, model, reasoning in values
+    ]
+
+
+def select_engineering_alias(
+    env: dict[str, str],
+    *,
+    hardware_profile: str,
+    ram_available_gb: float,
+) -> RankedModel:
+    requirements = ModelRequirements(
+        structured_output=True,
+        min_context=min(
+            4096,
+            int(env.get("ZEAZ_OLLAMA_CONTEXT_LENGTH", "4096") or 4096),
+        ),
+        prefer_local=True,
+        zero_cost_only=True,
+    )
+    selected = select_best(
+        local_alias_candidates(
+            env,
+            hardware_profile=hardware_profile,
+            ram_available_gb=ram_available_gb,
+        ),
+        requirements,
+    )
+    if selected is None:
+        raise RuntimeError("no eligible local engineering model alias")
+    return selected
