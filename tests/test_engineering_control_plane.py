@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from services.engineering.continuous import ContinuousEngineeringRunner
 from services.engineering.hardware import HardwareProfile
 from services.engineering.ledger import JsonContinuousLedger
 from services.engineering.loop import ContinuousEngineeringLoop, LoopPolicy, WorkItem, WorkKind
@@ -209,10 +210,6 @@ class SnapshotScopeTests(unittest.TestCase):
             self.assertLessEqual(len(text.encode("utf-8")), 96 * 1024)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ProviderPreflightTests(unittest.TestCase):
     def test_preflight_failure_does_not_consume_attempt_or_create_worktree(self):
         class FailingProvider:
@@ -247,3 +244,78 @@ class ProviderPreflightTests(unittest.TestCase):
             self.assertEqual(loaded.attempts, 0)
             self.assertEqual(loaded.worktree_path, "")
             self.assertEqual(list(manager.base_dir.glob("*")), [])
+
+
+class ContinuousRetryResetTests(unittest.TestCase):
+    def test_retry_blocked_resets_task_attempt_budget_and_state(self):
+        class NoopProvider:
+            model = "zeaz-local"
+
+            def preflight(self):
+                return None
+
+            def chat(self, prompt, system):
+                if "Produce a concise implementation plan" in prompt:
+                    return "plan"
+                return '{"changes":[{"path":"services/example.py","content":"x = 1"}]}'
+
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            (repo / "services").mkdir(parents=True)
+            (repo / "services" / "__init__.py").write_text("", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.com"], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test"], check=True)
+            (repo / "README.md").write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(repo), "commit", "-m", "base"], check=True, capture_output=True)
+
+            store = SQLiteEngineeringStore(Path(td) / "state.db")
+            ledger = JsonContinuousLedger(Path(td) / "continuous.json")
+            manager = WorktreeManager(Path(td) / "worktrees")
+            item = WorkItem(
+                "retry",
+                WorkKind.REPAIR,
+                payload={
+                    "repository": str(repo),
+                    "risk": "medium",
+                    "validators": ["git diff --check"],
+                    "allowed_paths": ["services"],
+                    "commit": False,
+                },
+                max_attempts=2,
+            )
+            record = ledger.register(item)
+            task_id = f"work_{item.fingerprint[:20]}"
+            task = EngineeringTask(
+                id=task_id,
+                title=item.title,
+                repository=str(repo),
+                status=TaskStatus.FAILED,
+                attempts=2,
+                max_attempts=2,
+                last_error="old failure",
+            )
+            store.save_task(task)
+            ledger.update(
+                item.fingerprint,
+                state="BLOCKED",
+                attempts=2,
+                task_id=task_id,
+                last_error="old failure",
+            )
+
+            runtime = EngineeringRuntime(store, NoopProvider(), worktrees=manager)
+            runner = ContinuousEngineeringRunner(store, ledger, runtime)
+            result = runner.run(max_iterations=1, retry_blocked=True)
+
+            loaded = store.get_task(task_id)
+            self.assertEqual(result.blocked, ())
+            self.assertEqual(loaded.status, TaskStatus.SUCCEEDED, loaded.last_error)
+            self.assertEqual(loaded.attempts, 1)
+            self.assertEqual(loaded.max_attempts, 2)
+            self.assertEqual(loaded.last_error, "")
+
+
+if __name__ == "__main__":
+    unittest.main()

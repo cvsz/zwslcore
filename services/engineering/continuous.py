@@ -58,6 +58,23 @@ class ContinuousEngineeringRunner:
             task_id = record.get("task_id") or f"work_{item.fingerprint[:20]}"
             task = self.store.get_task(task_id)
             payload = item.payload
+
+            if retry_blocked and task is not None and (
+                task.status in {TaskStatus.BLOCKED, TaskStatus.FAILED}
+                or task.attempts >= task.max_attempts
+            ):
+                if task.worktree_path:
+                    self.runtime.worktrees.reset(task.worktree_path)
+                task.attempts = 0
+                task.max_attempts = max(1, int(record.get("max_attempts", item.max_attempts)))
+                task.status = TaskStatus.CREATED
+                task.last_error = ""
+                self.store.save_task(task)
+                self.progress(
+                    f"[continuous] RESET task={task.id} attempts=0/{task.max_attempts} "
+                    f"worktree={'reset' if task.worktree_path else 'none'}"
+                )
+
             if task is None:
                 task = EngineeringTask(
                     id=task_id,
