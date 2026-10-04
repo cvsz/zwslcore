@@ -241,6 +241,30 @@ The combined `catalog.json?type=all` endpoint is cached atomically under `~/.zws
 
 This catalog is advisory metadata. Local Ollama availability and zwslcore Provider routing remain authoritative for what this machine can actually execute.
 
+### Automatic model ranking
+
+Rank models against the current hardware and capability requirements:
+
+```bash
+python3 scripts/models-dev.py rank --role engineering --structured-output --tool-call --min-context 4096
+```
+
+Select the highest-ranked eligible candidate:
+
+```bash
+python3 scripts/models-dev.py select --role engineering --structured-output --tool-call --min-context 4096
+```
+
+Ranking is explainable and fail-closed. Capability and cost requirements are applied before scoring. Local Ollama candidates receive local-first priority, and the model recommended for the requested hardware role receives an additional preference. Under `ZERO_COST_ONLY`, remote offerings must have explicit zero pricing; unknown/paid remote models are rejected.
+
+Engineering uses `ZEAZ_ENGINEERING_MODEL=auto` by default. Auto mode ranks configured **local aliases only** for execution and maps the selected raw model back to `zeaz-fast`, `zeaz-coder`, `zeaz-reasoning`, or `zeaz-local`. It never enables a cloud route automatically.
+
+Inspect the exact engineering decision:
+
+```powershell
+.\scripts\engineer-wsl.ps1 model-select
+```
+
 ## Free model discovery
 
 Local Ollama models are the default and require no provider API key.
