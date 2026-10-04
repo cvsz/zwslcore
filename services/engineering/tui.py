@@ -3,7 +3,6 @@ from __future__ import annotations
 import shutil
 import sys
 import time
-from dataclasses import asdict
 from typing import Any
 
 from .hardware import detect_hardware
