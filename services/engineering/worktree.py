@@ -59,6 +59,24 @@ class WorktreeManager:
     def _marker(self, target: Path) -> Path:
         return self.base_dir / f".{target.name}.managed"
 
+    def reset(self, target: str | Path) -> None:
+        target_path = Path(target).resolve()
+        target_path.relative_to(self.base_dir)
+        if not self._marker(target_path).exists():
+            raise RuntimeError(f"refusing to reset unmanaged worktree: {target_path}")
+        subprocess.run(
+            ["git", "-C", str(target_path), "reset", "--hard", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(target_path), "clean", "-fd"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
     @staticmethod
     def _assert_git_repo(repo: Path) -> None:
         result = subprocess.run(
