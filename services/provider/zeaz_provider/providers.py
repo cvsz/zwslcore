@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import math
-import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -11,6 +10,12 @@ import httpx
 from .config import ProviderConfig
 from .errors import ErrorKind, ProviderError, classify_http_error
 from .resilience import ResilienceExecutor, ResiliencePolicy
+from .structured import (
+    StructuredOutputError,
+    ollama_chat_to_openai,
+    ollama_structured_payload,
+    structured_schema,
+)
 
 
 class ProviderClient:
@@ -53,14 +58,14 @@ class ProviderClient:
         return url
 
     async def chat(self, payload: dict[str, Any]) -> dict[str, Any]:
-        schema = _structured_schema(payload) if self.config.native_structured_outputs else None
+        schema = structured_schema(payload) if self.config.native_structured_outputs else None
         if schema is not None:
             base = self.config.base_url.rstrip("/")
             if base.endswith("/v1"):
                 base = base[:-3]
-            native = _ollama_structured_payload(payload, schema)
+            native = ollama_structured_payload(payload, schema)
             result = await self._json("POST", f"{base}/api/chat", native)
-            return _ollama_chat_to_openai(result, str(payload.get("model", "")))
+            return ollama_chat_to_openai(result, str(payload.get("model", "")))
 
         url = self.url("chat/completions")
         return await self._json("POST", url, payload)
@@ -222,98 +227,6 @@ class ProviderClient:
             return value
 
         return await self.resilience.call(request)
-
-
-def _structured_schema(payload: dict[str, Any]) -> dict[str, Any] | None:
-    response_format = payload.get("response_format")
-    if not isinstance(response_format, dict) or response_format.get("type") != "json_schema":
-        return None
-    json_schema = response_format.get("json_schema")
-    if not isinstance(json_schema, dict):
-        return None
-    schema = json_schema.get("schema")
-    return schema if isinstance(schema, dict) else None
-
-
-def _ollama_structured_payload(
-    payload: dict[str, Any],
-    schema: dict[str, Any],
-) -> dict[str, Any]:
-    messages = payload.get("messages")
-    if not isinstance(messages, list):
-        raise ProviderError(
-            "Structured Ollama request requires messages[]",
-            400,
-            kind=ErrorKind.BAD_REQUEST,
-            fallback_allowed=False,
-            circuit_failure=False,
-        )
-    result: dict[str, Any] = {
-        "model": payload.get("model"),
-        "messages": messages,
-        "stream": False,
-        "format": schema,
-    }
-    options: dict[str, Any] = {}
-    for source, target in (
-        ("temperature", "temperature"),
-        ("top_p", "top_p"),
-        ("max_tokens", "num_predict"),
-    ):
-        if source in payload:
-            options[target] = payload[source]
-    stop = payload.get("stop")
-    if stop is not None:
-        options["stop"] = stop
-    if options:
-        result["options"] = options
-    return result
-
-
-def _ollama_chat_to_openai(
-    payload: dict[str, Any],
-    requested_model: str,
-) -> dict[str, Any]:
-    message = payload.get("message")
-    if not isinstance(message, dict):
-        raise ProviderError(
-            "Ollama returned an invalid structured response",
-            kind=ErrorKind.PROTOCOL,
-            fallback_allowed=True,
-            circuit_failure=True,
-        )
-    content = message.get("content")
-    if not isinstance(content, str) or not content.strip():
-        raise ProviderError(
-            "Ollama returned empty structured content",
-            kind=ErrorKind.PROTOCOL,
-            fallback_allowed=True,
-            circuit_failure=True,
-        )
-    prompt_tokens = payload.get("prompt_eval_count", 0)
-    completion_tokens = payload.get("eval_count", 0)
-    if type(prompt_tokens) is not int or prompt_tokens < 0:
-        prompt_tokens = 0
-    if type(completion_tokens) is not int or completion_tokens < 0:
-        completion_tokens = 0
-    done_reason = payload.get("done_reason")
-    finish_reason = "length" if done_reason == "length" else "stop"
-    return {
-        "id": "chatcmpl_ollama_native",
-        "object": "chat.completion",
-        "created": int(time.time()),
-        "model": requested_model,
-        "choices": [{
-            "index": 0,
-            "message": {"role": "assistant", "content": content},
-            "finish_reason": finish_reason,
-        }],
-        "usage": {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": prompt_tokens + completion_tokens,
-        },
-    }
 
 
 def _retry_after(response: httpx.Response) -> float | None:
