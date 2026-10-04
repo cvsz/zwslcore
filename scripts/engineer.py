@@ -21,6 +21,7 @@ from services.engineering.models import EngineeringTask, TaskRisk, TaskStatus
 from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
 from services.engineering.store import SQLiteEngineeringStore
+from services.engineering.tui import run_tui
 from services.model_catalog.selector import select_engineering_alias
 
 
@@ -109,6 +110,12 @@ def parser() -> argparse.ArgumentParser:
     snap.add_argument("--repository", default=".")
 
     sub.add_parser("profile")
+
+    tui = sub.add_parser("tui")
+    tui.add_argument("--interval", type=float, default=2.0)
+    tui.add_argument("--once", action="store_true")
+    tui.add_argument("--no-color", action="store_true")
+    tui.add_argument("--limit", type=int, default=12)
 
     r = sub.add_parser("run")
     r.add_argument("task_id")
@@ -302,6 +309,18 @@ def main() -> int:
         return 0
 
     ledger = JsonContinuousLedger(args.ledger)
+
+    if args.command == "tui":
+        env = load_env(ROOT / ".env")
+        return run_tui(
+            store,
+            ledger,
+            env=env,
+            interval=max(0.25, args.interval),
+            once=args.once,
+            color=False if args.no_color else None,
+            limit=max(1, args.limit),
+        )
 
     if args.command == "work-add":
         item = WorkItem(
