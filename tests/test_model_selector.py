@@ -5,11 +5,13 @@ import unittest
 from services.model_catalog.selector import (
     ModelCandidate,
     ModelRequirements,
+    engineering_model_ladder,
     local_alias_candidates,
     models_dev_candidates,
     rank_models,
     select_best,
     select_engineering_alias,
+    snapshot_budget_for_context,
 )
 
 
@@ -127,6 +129,33 @@ class ModelSelectorTests(unittest.TestCase):
         )
         self.assertIsNotNone(selected)
         self.assertEqual(selected.candidate.id, "free-model")
+
+    def test_cpu_medium_recovery_ladder_escalates_to_coder(self):
+        ladder = engineering_model_ladder(
+            {
+                "ZEAZ_FAST_MODEL": "qwen2.5-coder:3b",
+                "ZEAZ_CODER_MODEL": "qwen2.5-coder:7b",
+                "ZEAZ_REASONING_MODEL": "qwen3:8b",
+                "ZEAZ_LOCAL_MODEL": "qwen2.5-coder:7b",
+                "ZEAZ_OLLAMA_CONTEXT_LENGTH": "4096",
+            },
+            hardware_profile="CPU_MEDIUM",
+            ram_available_gb=12.8,
+        )
+        self.assertEqual(ladder[:2], ("zeaz-fast", "zeaz-coder"))
+
+    def test_cpu_small_recovery_ladder_does_not_force_7b(self):
+        ladder = engineering_model_ladder(
+            {"ZEAZ_OLLAMA_CONTEXT_LENGTH": "4096"},
+            hardware_profile="CPU_SMALL",
+            ram_available_gb=7.0,
+        )
+        self.assertEqual(ladder, ("zeaz-fast",))
+
+    def test_snapshot_budget_scales_with_context(self):
+        self.assertEqual(snapshot_budget_for_context(4096), 8 * 1024)
+        self.assertEqual(snapshot_budget_for_context(8192), 16 * 1024)
+        self.assertEqual(snapshot_budget_for_context(16384), 32 * 1024)
 
     def test_local_candidates_are_zero_cost_and_structured(self):
         candidates = local_alias_candidates(
