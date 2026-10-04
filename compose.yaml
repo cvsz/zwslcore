@@ -1,0 +1,109 @@
+name: zwslcore
+
+services:
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
+    container_name: zwslcore-ollama
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks: [ai]
+
+  litellm:
+    image: ${LITELLM_IMAGE:-docker.litellm.ai/berriai/litellm:latest}
+    container_name: zwslcore-litellm
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
+    env_file:
+      - .env
+    volumes:
+      - ./config/litellm.yaml:/app/config.yaml:ro
+    ports:
+      - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks: [ai]
+
+
+  provider:
+    build:
+      context: ./services/provider
+    container_name: zwslcore-provider
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      ZEAZ_CONFIG: /app/config/providers.yaml
+      ZEAZ_CLIENT_KEYS: ${PROVIDER_CLIENT_KEY}
+      ZEAZ_ALLOW_UNAUTHENTICATED: "false"
+      OLLAMA_BASE_URL: http://ollama:11434/v1
+      LITELLM_BASE_URL: http://litellm:4000/v1
+      LITELLM_API_KEY: ${LITELLM_MASTER_KEY}
+    ports:
+      - "127.0.0.1:${PROVIDER_PORT:-8080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks: [ai]
+
+  open-webui:
+    image: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:main}
+    container_name: zwslcore-open-webui
+    restart: unless-stopped
+    depends_on:
+      provider:
+        condition: service_healthy
+    environment:
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
+      ENABLE_SIGNUP: ${OPENWEBUI_ENABLE_SIGNUP:-false}
+      OPENAI_API_BASE_URL: http://provider:8080/v1
+      OPENAI_API_KEY: ${PROVIDER_CLIENT_KEY}
+      ENABLE_OLLAMA_API: "false"
+    volumes:
+      - open-webui-data:/app/backend/data
+    ports:
+      - "127.0.0.1:${OPENWEBUI_PORT:-3000}:8080"
+    networks: [ai]
+
+networks:
+  ai:
+    name: zwslcore-ai
+    driver: bridge
+
+volumes:
+  ollama-data:
+  open-webui-data:

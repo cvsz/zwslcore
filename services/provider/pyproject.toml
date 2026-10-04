@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=75,<76"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zwslcore-provider"
+version = "0.1.0"
+description = "Self-contained multi-provider AI gateway for zwslcore"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.142.2,<0.143",
+  "httpx>=0.28,<1",
+  "pydantic>=2.11,<3",
+  "prometheus-client>=0.22,<1",
+  "PyYAML>=6.0,<7",
+  "redis>=6.4,<7",
+  "uvicorn[standard]>=0.35,<1",
+  "opentelemetry-api>=1.36,<2",
+  "opentelemetry-sdk>=1.36,<2",
+  "opentelemetry-exporter-otlp-proto-http>=1.36,<2",
+]
+
+[project.scripts]
+zwslcore-provider = "zeaz_provider.main:run"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["zeaz_provider*"]
