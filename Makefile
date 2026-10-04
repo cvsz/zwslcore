@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs models free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-test config provider-build ci
+.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs models free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config provider-build ci
 
 help:
 	@printf '%s\n' \
@@ -78,6 +78,9 @@ engineer-profile:
 engineer-work:
 	python3 scripts/engineer.py work-list
 
+engineer-tui:
+	python3 scripts/engineer.py tui
+
 engineer-test:
 	python3 -m unittest tests.test_engineering_control_plane -v
 
@@ -87,6 +90,6 @@ provider-build:
 ci: validate-template
 	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
 	python3 -m compileall -q services/provider/zeaz_provider services/engineering scripts/engineer.py
-	python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selector tests.test_engineering_control_plane -v
+	python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selector tests.test_engineering_tui tests.test_engineering_control_plane -v
 	bash -n scripts/install.sh
 	bash -n scripts/doctor.sh
