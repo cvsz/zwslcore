@@ -1,12 +1,13 @@
 SHELL := /bin/bash
 
-.PHONY: help validate-template install up down restart doctor logs models free-models config provider-build ci
+.PHONY: help validate-template install up down restart doctor smoke logs models free-models config provider-build ci
 
 help:
 	@printf '%s\n' \
 	  'install       bootstrap local AI stack' \
 	  'up/down       start or stop stack' \
 	  'doctor        verify runtime health' \
+	  'smoke         verify authenticated model inference' \
 	  'models        list local Ollama models' \
 	  'free-models   discover current OpenRouter zero-price text models' \
 	  'config        validate Compose configuration' \
@@ -35,6 +36,9 @@ restart:
 
 doctor:
 	bash scripts/doctor.sh
+
+smoke:
+	bash scripts/smoke.sh
 
 logs:
 	docker compose --env-file .env logs -f --tail=200
