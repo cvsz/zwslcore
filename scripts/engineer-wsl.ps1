@@ -27,18 +27,13 @@ if ($normalized -notcontains $Distro) {
   throw "WSL distribution '$Distro' is not installed."
 }
 
-function Quote-Bash([string]$Value) {
-  return "'" + $Value.Replace("'", "'"'"'") + "'"
+$resolvedPath = (& wsl.exe -d $Distro -- bash -lc "cd $RepoPath && pwd" | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $resolvedPath) {
+  throw "Unable to resolve WSL repository path '$RepoPath'."
 }
 
-$quotedArgs = @($EngineerArgs | ForEach-Object { Quote-Bash $_ })
-$command = "cd $RepoPath && python3 scripts/engineer.py"
-if ($quotedArgs.Count -gt 0) {
-  $command += " " + ($quotedArgs -join " ")
-}
-
-Write-Host "[zwslcore-wsl] Running engineering CLI inside $Distro using $RepoPath"
-& wsl.exe -d $Distro -- bash -lc $command
+Write-Host "[zwslcore-wsl] Running engineering CLI inside $Distro using $resolvedPath"
+& wsl.exe -d $Distro --cd $resolvedPath -- python3 scripts/engineer.py @EngineerArgs
 if ($LASTEXITCODE -ne 0) {
   throw "Engineering CLI failed with exit code $LASTEXITCODE"
 }
