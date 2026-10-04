@@ -177,6 +177,11 @@ class EngineeringRuntime:
                 f"[engineering] snapshot_bytes={len(snapshot.encode('utf-8'))} "
                 f"scope={','.join(sorted(allowed_paths)) if allowed_paths else 'repository'}"
             )
+            candidates = self._snapshot_candidate_paths(snapshot)
+            self.progress(
+                f"[engineering] candidate_files={len(candidates)} "
+                f"sample={','.join(candidates[:6]) if candidates else 'none'}"
+            )
             plan = self.provider.chat(
                 self._plan_prompt(task, snapshot),
                 "You are a careful senior software engineer. Plan a minimal, testable change. "
@@ -189,7 +194,7 @@ class EngineeringRuntime:
             self.store.save_task(task)
             self.progress(f"[engineering] {task.id} EDITING")
             response = self.provider.chat(
-                self._edit_prompt(task, snapshot, plan, allowed_paths),
+                self._edit_prompt(task, snapshot, plan, allowed_paths, candidates),
                 "Return ONLY valid JSON with schema "
                 '{"changes":[{"path":"relative/path","content":"complete UTF-8 file content"}]}. '
                 "Use the smallest safe diff. Never include secrets, .env files, private keys, "
@@ -212,7 +217,7 @@ class EngineeringRuntime:
                     },
                 )
                 repaired = self.provider.chat(
-                    self._repair_prompt(response, allowed_paths),
+                    self._repair_prompt(response, allowed_paths, candidates),
                     "Convert the supplied model output into ONLY valid JSON with schema "
                     '{"changes":[{"path":"relative/path","content":"complete UTF-8 file content"}]}. '
                     "Do not add commentary, Markdown fences, explanations, or new changes.",
@@ -233,6 +238,37 @@ class EngineeringRuntime:
                     "EDIT_RESPONSE_REPAIRED",
                     {"raw_snippet": self._safe_snippet(repaired, 2000)},
                 )
+            if not changes or not self._changes_within_scope(changes, allowed_paths):
+                reason = "no file changes" if not changes else "out-of-scope paths"
+                self.progress(f"[engineering] edit_regenerate reason={reason}")
+                regenerated = self.provider.chat(
+                    self._regenerate_prompt(
+                        task,
+                        snapshot,
+                        plan,
+                        allowed_paths,
+                        candidates,
+                        reason,
+                    ),
+                    "Return ONLY valid JSON with schema "
+                    '{"changes":[{"path":"relative/path","content":"complete UTF-8 file content"}]}. '
+                    "You MUST produce at least one concrete file change inside the allowed scope. "
+                    "Do not include commentary or Markdown fences.",
+                    max_tokens=4096,
+                )
+                changes = self._parse_changes(regenerated)
+                self._checkpoint(
+                    task,
+                    "EDIT_RESPONSE_REGENERATED",
+                    {
+                        "reason": reason,
+                        "raw_snippet": self._safe_snippet(regenerated, 2000),
+                    },
+                )
+                self.progress(
+                    f"[engineering] EDIT_RESPONSE_REGENERATED proposed_files={len(changes)}"
+                )
+
             self.progress(f"[engineering] proposed_files={len(changes)}")
             self._apply_changes(worktree, changes, allowed_paths=allowed_paths)
 
@@ -312,6 +348,12 @@ class EngineeringRuntime:
             "Do not propose README.md, docs, or any other path outside that scope."
         )
 
+    @staticmethod
+    def _candidate_instruction(candidates: list[str]) -> str:
+        if not candidates:
+            return "Candidate files: none discovered from the scoped snapshot."
+        return "Candidate files from the scoped snapshot: " + ", ".join(candidates[:24])
+
     @classmethod
     def _edit_prompt(
         cls,
@@ -319,24 +361,82 @@ class EngineeringRuntime:
         snapshot: str,
         plan: str,
         allowed_paths: set[str] | None,
+        candidates: list[str],
     ) -> str:
         return (
             f"Task: {task.title}\nDescription: {task.description}\n"
             f"Scope rule: {cls._scope_instruction(allowed_paths)}\n"
-            "Use only file paths that are present in the repository snapshot unless a new file "
-            "inside the allowed scope is essential.\n"
+            f"{cls._candidate_instruction(candidates)}\n"
+            "Prefer modifying one of the candidate files. Use a new file only when required. "
+            "You MUST return at least one concrete change when the task requires implementation.\n"
             f"Plan:\n{plan}\n\nRepository snapshot:\n{snapshot}"
         )
 
     @classmethod
-    def _repair_prompt(cls, raw: str, allowed_paths: set[str] | None) -> str:
+    def _repair_prompt(
+        cls,
+        raw: str,
+        allowed_paths: set[str] | None,
+        candidates: list[str],
+    ) -> str:
         return (
             "The following edit response did not satisfy the required JSON schema and/or path policy. "
             "Preserve only intended file changes that comply with the scope rule. "
             f"Scope rule: {cls._scope_instruction(allowed_paths)}\n"
-            "Return only schema-valid JSON and drop any proposed change outside the allowed scope.\n\n"
+            f"{cls._candidate_instruction(candidates)}\n"
+            "Return only schema-valid JSON. Drop changes outside scope, but do not return an empty "
+            "changes list when a valid scoped candidate can satisfy the task.\n\n"
             f"RAW RESPONSE:\n{raw[:12000]}"
         )
+
+    @classmethod
+    def _regenerate_prompt(
+        cls,
+        task: EngineeringTask,
+        snapshot: str,
+        plan: str,
+        allowed_paths: set[str] | None,
+        candidates: list[str],
+        reason: str,
+    ) -> str:
+        return (
+            f"Task: {task.title}\nDescription: {task.description}\n"
+            f"Previous structured edit was unusable because: {reason}.\n"
+            f"Scope rule: {cls._scope_instruction(allowed_paths)}\n"
+            f"{cls._candidate_instruction(candidates)}\n"
+            "Generate a fresh minimal implementation now. Prefer an existing candidate file and "
+            "return at least one change.\n"
+            f"Plan:\n{plan}\n\nRepository snapshot:\n{snapshot}"
+        )
+
+    @staticmethod
+    def _snapshot_candidate_paths(snapshot: str) -> list[str]:
+        prefix = "--- FILE: "
+        candidates: list[str] = []
+        for line in snapshot.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith(prefix) or not stripped.endswith(" ---"):
+                continue
+            path = stripped[len(prefix):-4].strip()
+            if path and path not in candidates:
+                candidates.append(path)
+        return candidates
+
+    @staticmethod
+    def _changes_within_scope(
+        changes: list[dict[str, str]],
+        allowed_paths: set[str] | None,
+    ) -> bool:
+        if not allowed_paths:
+            return True
+        for change in changes:
+            path = change.get("path", "")
+            if not any(
+                path == allowed or path.startswith(allowed.rstrip("/") + "/")
+                for allowed in allowed_paths
+            ):
+                return False
+        return True
 
     @staticmethod
     def _safe_snippet(raw: str, limit: int = 500) -> str:
