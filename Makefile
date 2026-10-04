@@ -91,7 +91,7 @@ engineer-tui:
 	python3 scripts/engineer.py tui
 
 engineer-test:
-	python3 -m unittest tests.test_model_selector tests.test_engineering_agents tests.test_engineering_tui tests.test_engineering_control_plane -v
+	python3 -m unittest tests.test_model_selector tests.test_engineering_agents tests.test_engineering_delegation tests.test_engineering_tui tests.test_engineering_control_plane -v
 
 provider-build:
 	docker compose --env-file .env build provider
@@ -99,6 +99,6 @@ provider-build:
 ci: validate-template
 	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
 	python3 -m compileall -q services/provider/zeaz_provider services/engineering scripts/engineer.py
-	python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selector tests.test_engineering_agents tests.test_engineering_tui tests.test_engineering_reconcile tests.test_engineering_control_plane -v
+	python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selector tests.test_engineering_agents tests.test_engineering_delegation tests.test_engineering_tui tests.test_engineering_reconcile tests.test_engineering_control_plane -v
 	bash -n scripts/install.sh
 	bash -n scripts/doctor.sh

@@ -2,6 +2,14 @@
 
 from .agents import AgentProfile, get_agent, list_agents
 from .continuous import ContinuousEngineeringRunner
+from .delegation import (
+    Lineage,
+    MAX_DELEGATION_DEPTH,
+    children_of,
+    descendants_of,
+    make_child_task,
+    task_lineage,
+)
 from .evidence import EvidenceExporter
 from .hardware import HardwareProfile, detect_hardware
 from .ledger import JsonContinuousLedger
@@ -22,6 +30,8 @@ __all__ = [
     "Checkpoint",
     "ContinuousEngineeringRunner",
     "ContinuousEngineeringLoop",
+    "Lineage",
+    "MAX_DELEGATION_DEPTH",
     "EngineeringRuntime",
     "EvidenceExporter",
     "HardwareProfile",
@@ -45,13 +55,17 @@ __all__ = [
     "WorkKind",
     "ToolCapability",
     "WorktreeManager",
+    "children_of",
+    "descendants_of",
     "detect_hardware",
     "evaluate_permission",
     "get_agent",
     "get_tool",
     "list_agents",
     "list_tools",
+    "make_child_task",
     "require_allowed",
+    "task_lineage",
     "evaluate_validation",
     "validate_mode",
 ]
