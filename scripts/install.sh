@@ -74,6 +74,8 @@ for line in lines:
 for key, (target, _) in managed_defaults.items():
     if key not in seen:
         out.append(f"{key}={target}")
+if "OPENWEBUI_CORS_ALLOW_ORIGIN" not in seen:
+    out.append("OPENWEBUI_CORS_ALLOW_ORIGIN=http://localhost:3000;http://127.0.0.1:3000")
 
 path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
 PY
