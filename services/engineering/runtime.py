@@ -334,7 +334,7 @@ class EngineeringRuntime:
             )
 
             baseline_validation = None
-            if validation_mode == "delta":
+            if validation_mode == "delta" and agent.decide("validate", "*") == "allow":
                 self.progress(
                     f"[engineering] {task.id} BASELINE_VALIDATING validators={len(validators)}"
                 )
@@ -368,6 +368,7 @@ class EngineeringRuntime:
                 f"[engineering] candidate_files={len(candidates)} "
                 f"sample={','.join(candidates[:6]) if candidates else 'none'}"
             )
+            self._require_agent(agent, "plan")
             plan_checkpoint = self.store.latest_checkpoint(task.id, "PLAN") if resume else None
             reusable_plan = ""
             if plan_checkpoint is not None:
@@ -386,7 +387,6 @@ class EngineeringRuntime:
                     f"[engineering] RESUME_PLAN checkpoint={plan_checkpoint.id} head={baseline_head[:12]}"
                 )
             else:
-                self._require_agent(agent, "plan")
                 plan = self.provider.chat(
                     self._plan_prompt(task, snapshot),
                     "You are a careful senior software engineer. Plan a minimal, testable change. "
