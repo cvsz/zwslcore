@@ -77,6 +77,7 @@ cat <<EOF
 zwslcore AI stack is running.
 
 Open WebUI : http://localhost:${OPENWEBUI_PORT:-3000}
+Provider   : http://localhost:${PROVIDER_PORT:-8080}
 LiteLLM    : http://localhost:${LITELLM_PORT:-4000}
 Ollama     : http://localhost:${OLLAMA_PORT:-11434}
 
