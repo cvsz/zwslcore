@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
     await client.aclose()
 
 
-app = FastAPI(title="ZeaZ Provider", version=__version__, lifespan=lifespan)
+app = FastAPI(title="zwslcore Provider", version=__version__, lifespan=lifespan)
 
 
 def rate_limiter(config: Settings) -> RateLimitBackend:
@@ -656,8 +656,8 @@ def _safe_count(value: Any) -> int:
 
 def run() -> None:
     parser = argparse.ArgumentParser(
-        prog="zeaz-provider",
-        description="Anthropic- and OpenAI-compatible multi-provider AI gateway.",
+        prog="zwslcore-provider",
+        description="zwslcore OpenAI/Anthropic-compatible multi-provider AI gateway.",
     )
     parser.add_argument(
         "--version",
