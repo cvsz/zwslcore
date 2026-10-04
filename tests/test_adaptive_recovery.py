@@ -27,6 +27,45 @@ class AdaptiveRecoveryTests(unittest.TestCase):
             self.assertEqual(provider.model, "zeaz-coder")
             self.assertIsNone(runtime.promote_model("model proposed no file changes"))
 
+    def test_persisted_escalation_restores_model_after_restart(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = SQLiteEngineeringStore(Path(td) / "state.db")
+            task = EngineeringTask(title="blocked")
+            task.metadata["model_escalated_to"] = "zeaz-coder"
+            store.save_task(task)
+
+            runtime = EngineeringRuntime(
+                store,
+                ProviderClient(model="zeaz-fast"),
+                model_ladder=("zeaz-fast", "zeaz-coder"),
+            )
+            selected = runtime.select_model_for_task(task)
+
+            self.assertEqual(selected, "zeaz-coder")
+            self.assertEqual(runtime.provider.model, "zeaz-coder")
+            self.assertEqual(
+                task.metadata["model_selection_source"],
+                "persisted-task-cursor",
+            )
+
+    def test_new_task_does_not_inherit_previous_task_model(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = SQLiteEngineeringStore(Path(td) / "state.db")
+            runtime = EngineeringRuntime(
+                store,
+                ProviderClient(model="zeaz-fast"),
+                model_ladder=("zeaz-fast", "zeaz-coder"),
+            )
+            recovered = EngineeringTask(title="recovered")
+            recovered.metadata["model_escalated_to"] = "zeaz-coder"
+            fresh = EngineeringTask(title="fresh")
+
+            self.assertEqual(runtime.select_model_for_task(recovered), "zeaz-coder")
+            self.assertEqual(runtime.provider.model, "zeaz-coder")
+            self.assertEqual(runtime.select_model_for_task(fresh), "zeaz-fast")
+            self.assertEqual(runtime.provider.model, "zeaz-fast")
+            self.assertEqual(fresh.metadata["model_selection_source"], "default-selector")
+
     def test_validation_failure_does_not_promote_model(self):
         with tempfile.TemporaryDirectory() as td:
             store = SQLiteEngineeringStore(Path(td) / "state.db")
