@@ -40,6 +40,27 @@ class ContinuousEngineeringRunner:
     def add(self, item: WorkItem) -> dict[str, Any]:
         return self.ledger.register(item)
 
+    def _record_parent_state(self, task: EngineeringTask) -> None:
+        parent_id = str(task.metadata.get("parent_task_id") or "").strip()
+        if not parent_id:
+            return
+        parent = self.store.get_task(parent_id)
+        if parent is None:
+            return
+        children = dict(parent.metadata.get("subagent_children") or {})
+        children[task.id] = {
+            "status": task.status.value,
+            "agent": str(task.metadata.get("agent") or task.metadata.get("delegated_agent") or ""),
+            "attempts": task.attempts,
+            "last_error": task.last_error[:500],
+            "evidence_path": str(task.metadata.get("evidence_path") or ""),
+        }
+        if len(children) > 64:
+            keep = sorted(children)[-64:]
+            children = {key: children[key] for key in keep}
+        parent.metadata["subagent_children"] = children
+        self.store.save_task(parent)
+
     def run(
         self,
         *,
@@ -110,6 +131,7 @@ class ContinuousEngineeringRunner:
                         item.fingerprint,
                         attempts=int(record.get("attempts", 0)) + 1,
                     )
+                self._record_parent_state(completed)
                 self.progress(f"[continuous] task={completed.id} status={completed.status.value}")
                 return ExecutionResult(
                     passed=completed.status == TaskStatus.SUCCEEDED,
@@ -127,6 +149,7 @@ class ContinuousEngineeringRunner:
                     state="PENDING",
                     last_error=str(exc)[:2000],
                 )
+                self._record_parent_state(latest)
                 return ExecutionResult(
                     False,
                     latest,
@@ -166,6 +189,7 @@ class ContinuousEngineeringRunner:
                         }
                 self.progress(f"[continuous] task={task.id} error={str(exc)[:500]}")
                 self.ledger.update(item.fingerprint, **updates)
+                self._record_parent_state(latest)
                 return ExecutionResult(False, latest, str(exc), consume_attempt=consumed)
 
         def validate(item: WorkItem, result: ExecutionResult) -> tuple[bool, tuple[str, ...]]:
