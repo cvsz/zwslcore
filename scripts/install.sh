@@ -108,6 +108,32 @@ AVAILABLE_KB=$(awk '/MemAvailable:/ {print $2}' /proc/meminfo)
 AVAILABLE_GB=$((AVAILABLE_KB / 1024 / 1024))
 log "Available RAM: ${AVAILABLE_GB} GiB"
 
+ACCELERATOR_MODE="cpu"
+QUANTIZATION_PROFILE="Q4_K_M"
+OLLAMA_CONTEXT_LENGTH="4096"
+OLLAMA_FLASH_ATTENTION="false"
+VLLM_CANDIDATE="false"
+
+if command -v nvidia-smi >/dev/null 2>&1; then
+  NVIDIA_MEM_MIB="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -n1 | tr -d ' ' || true)"
+  if [[ "$NVIDIA_MEM_MIB" =~ ^[0-9]+$ ]]; then
+    ACCELERATOR_MODE="nvidia"
+    OLLAMA_FLASH_ATTENTION="true"
+    if (( NVIDIA_MEM_MIB >= 16384 )); then
+      OLLAMA_CONTEXT_LENGTH="16384"
+      VLLM_CANDIDATE="true"
+    elif (( NVIDIA_MEM_MIB >= 8192 )); then
+      OLLAMA_CONTEXT_LENGTH="8192"
+      VLLM_CANDIDATE="true"
+    fi
+  fi
+elif command -v rocminfo >/dev/null 2>&1 && rocminfo >/dev/null 2>&1; then
+  ACCELERATOR_MODE="rocm"
+  OLLAMA_FLASH_ATTENTION="true"
+fi
+
+log "Accelerator profile: mode=$ACCELERATOR_MODE quantization=$QUANTIZATION_PROFILE context=$OLLAMA_CONTEXT_LENGTH flash_attention=$OLLAMA_FLASH_ATTENTION vllm_candidate=$VLLM_CANDIDATE"
+
 FAST_MODEL="qwen2.5-coder:3b"
 CODER_MODEL="$FAST_MODEL"
 REASONING_MODEL="$FAST_MODEL"
@@ -125,12 +151,13 @@ fi
 
 log "Runtime model selection: fast=$FAST_MODEL coder=$CODER_MODEL reasoning=$REASONING_MODEL default=$LOCAL_MODEL"
 
-python3 - "$ENV_FILE" "$FAST_MODEL" "$CODER_MODEL" "$REASONING_MODEL" "$LOCAL_MODEL" <<'PY'
+python3 - "$ENV_FILE" "$FAST_MODEL" "$CODER_MODEL" "$REASONING_MODEL" "$LOCAL_MODEL" "$ACCELERATOR_MODE" "$QUANTIZATION_PROFILE" "$OLLAMA_CONTEXT_LENGTH" "$OLLAMA_FLASH_ATTENTION" <<'PY'
 from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
 fast, coder, reasoning, local = sys.argv[2:6]
+accelerator, quantization, context_length, flash_attention = sys.argv[6:10]
 engineering = "zeaz-fast"
 updates = {
     "ZEAZ_FAST_MODEL": fast,
@@ -140,6 +167,10 @@ updates = {
     "ZEAZ_LITELLM_FAST_MODEL": f"ollama/{fast}",
     "ZEAZ_LITELLM_CODER_MODEL": f"ollama/{coder}",
     "ZEAZ_LITELLM_REASONING_MODEL": f"ollama/{reasoning}",
+    "ZEAZ_ACCELERATOR_MODE": accelerator,
+    "ZEAZ_QUANTIZATION_PROFILE": quantization,
+    "ZEAZ_OLLAMA_CONTEXT_LENGTH": context_length,
+    "ZEAZ_OLLAMA_FLASH_ATTENTION": flash_attention,
 }
 
 lines = path.read_text(encoding="utf-8").splitlines()
