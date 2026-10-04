@@ -105,3 +105,10 @@ OpenCode's MCP subsystem informed the separation between server configuration, c
 - minimal environment inheritance.
 
 Remote OAuth/HTTP transports and autonomous model invocation are intentionally deferred. See [MCP integration](MCP.md).
+
+
+## Snapshot-based undo and redo
+
+OpenCode's snapshot/revert architecture informed zwslcore's reversible engineering changes. zwslcore uses its own patch-based implementation bound to managed worktrees, with HEAD/diff drift checks and SHA-256 verification.
+
+See [Engineering undo and redo](UNDO-REDO.md).
