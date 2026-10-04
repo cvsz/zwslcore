@@ -20,30 +20,41 @@ class RepositorySnapshotter:
         self,
         root: str | Path,
         *,
-        max_files: int = 400,
-        max_file_bytes: int = 256 * 1024,
-        max_total_bytes: int = 4 * 1024 * 1024,
+        max_files: int = 120,
+        max_file_bytes: int = 64 * 1024,
+        max_total_bytes: int = 96 * 1024,
+        include_paths: set[str] | None = None,
     ) -> None:
         self.root = Path(root).resolve()
         self.max_files = max_files
         self.max_file_bytes = max_file_bytes
         self.max_total_bytes = max_total_bytes
+        self.include_paths = set(include_paths or ())
 
     def snapshot(self) -> str:
         chunks: list[str] = []
         total = 0
         count = 0
 
-        for current, dirs, files in os.walk(self.root, followlinks=False):
-            current_path = Path(current)
-            dirs[:] = sorted(
-                d for d in dirs
-                if d not in self.EXCLUDED_DIRS and not (current_path / d).is_symlink()
-            )
-            for name in sorted(files):
+        for start in self._roots():
+            if count >= self.max_files or total >= self.max_total_bytes:
+                break
+
+            if start.is_file():
+                candidates = [start]
+            else:
+                candidates = []
+                for current, dirs, files in os.walk(start, followlinks=False):
+                    current_path = Path(current)
+                    dirs[:] = sorted(
+                        d for d in dirs
+                        if d not in self.EXCLUDED_DIRS and not (current_path / d).is_symlink()
+                    )
+                    candidates.extend(current_path / name for name in sorted(files))
+
+            for path in candidates:
                 if count >= self.max_files or total >= self.max_total_bytes:
                     return "".join(chunks)
-                path = current_path / name
                 if self._excluded(path):
                     continue
                 try:
@@ -73,6 +84,23 @@ class RepositorySnapshotter:
                 total += block_bytes
                 count += 1
         return "".join(chunks)
+
+    def _roots(self) -> list[Path]:
+        if not self.include_paths:
+            return [self.root]
+
+        roots: list[Path] = []
+        for raw in sorted(self.include_paths):
+            rel = Path(raw)
+            if rel.is_absolute() or ".." in rel.parts:
+                raise ValueError(f"unsafe snapshot include path: {raw}")
+            target = (self.root / rel).resolve()
+            target.relative_to(self.root)
+            if target.exists():
+                roots.append(target)
+        if not roots:
+            raise ValueError("none of the declared snapshot include paths exist")
+        return roots
 
     def _excluded(self, path: Path) -> bool:
         name = path.name.lower()
