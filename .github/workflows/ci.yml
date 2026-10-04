@@ -38,7 +38,7 @@ jobs:
           bash tests/test_env_loader.sh
           python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py scripts/engineer.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
           python3 -m compileall -q services/provider/zeaz_provider services/engineering
-          python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selector tests.test_engineering_control_plane -v
+          python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selector tests.test_engineering_tui tests.test_engineering_control_plane -v
           cp .env.example .env
           docker compose --env-file .env config --quiet
           if grep -Eq '(^|:)(latest|main)$' .env.example; then
