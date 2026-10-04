@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help validate-template install up down restart doctor logs models free-models config ci
+.PHONY: help validate-template install up down restart doctor logs models free-models config provider-build ci
 
 help:
 	@printf '%s\n' \
@@ -10,6 +10,7 @@ help:
 	  'models        list local Ollama models' \
 	  'free-models   discover current OpenRouter zero-price text models' \
 	  'config        validate Compose configuration' \
+	  'provider-build build the in-repo provider gateway' \
 	  'ci            repository + stack static validation'
 
 validate-template:
@@ -44,7 +45,12 @@ models:
 free-models:
 	python3 scripts/sync-free-models.py
 
+provider-build:
+	docker compose --env-file .env build provider
+
 ci: validate-template
-	python3 -m py_compile scripts/sync-free-models.py
+	python3 -m py_compile scripts/sync-free-models.py services/model_catalog/catalog.py
+	python3 -m compileall -q services/provider/zeaz_provider
+	python3 -m unittest tests.test_model_catalog -v
 	bash -n scripts/install.sh
 	bash -n scripts/doctor.sh
