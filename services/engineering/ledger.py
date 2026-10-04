@@ -80,22 +80,41 @@ class JsonContinuousLedger:
 
     def pending(self, *, retry_blocked: bool = False) -> list[WorkItem]:
         data = self._read()
+        changed = False
         items: list[WorkItem] = []
         for record in data["records"].values():
             state = record.get("state")
             if state == "SUCCEEDED":
                 continue
+            max_attempts = int(record.get("max_attempts", 2))
+            attempts = int(record.get("attempts", 0))
+            exhausted = attempts >= max_attempts
+
+            if retry_blocked and (state == "BLOCKED" or exhausted):
+                record["state"] = "PENDING"
+                record["attempts"] = 0
+                record["last_error"] = ""
+                record["updated_at"] = time.time()
+                attempts = 0
+                exhausted = False
+                changed = True
+
             if state == "BLOCKED" and not retry_blocked:
                 continue
+            if exhausted:
+                continue
+
             items.append(
                 WorkItem(
                     title=record["title"],
                     kind=WorkKind(record["kind"]),
                     payload=dict(record.get("payload", {})),
                     priority=int(record.get("priority", 50)),
-                    max_attempts=int(record.get("max_attempts", 2)),
+                    max_attempts=max(1, max_attempts - attempts),
                 )
             )
+        if changed:
+            self._write(data)
         return items
 
     def records(self) -> list[dict[str, Any]]:
