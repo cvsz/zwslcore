@@ -210,6 +210,18 @@ Subagent profiles can be queued as child tasks with their own attempt budget, ev
 
 Delegation is bounded to depth 4. Only profiles marked `subagent` can be delegated. Child tasks never inherit remote-push capability, and their selected agent policy is enforced by `EngineeringRuntime`. Parent task metadata records each child's latest status, attempt count, error summary and evidence path.
 
+### Local MCP registry
+
+zwslcore now includes an operator-controlled local stdio MCP client. Configure servers in `~/.zwslcore/mcp/servers.json` and inspect/invoke them explicitly:
+
+```powershell
+.\scripts\engineer-wsl.ps1 mcp-status
+.\scripts\engineer-wsl.ps1 mcp-tools
+.\scripts\engineer-wsl.ps1 mcp-call local-tools.echo --json '{"value":"hello"}'
+```
+
+MCP processes start with `shell=False`, bounded request/message limits, and an environment allowlist. Autonomous agents do **not** receive MCP tool execution in this slice; remote HTTP/SSE/OAuth transports are also intentionally deferred. See [MCP integration](docs/MCP.md).
+
 ### Continuous engineering
 
 Queue one bounded work item from PowerShell:

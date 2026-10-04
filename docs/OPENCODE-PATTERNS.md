@@ -91,3 +91,17 @@ Commands:
     python3 scripts/engineer.py lineage CHILD_TASK_ID
 
 Delegation depth is capped at 4. Only profiles with `mode=subagent` are accepted. Queue execution stays explicit through `continuous`/`recover`; the command does not start hidden processes or bypass the existing work ledger.
+
+
+## MCP registry and namespaced tools
+
+OpenCode's MCP subsystem informed the separation between server configuration, connection state and tool definitions. zwslcore currently implements only the safest local subset:
+
+- local stdio transport;
+- JSON-RPC initialize and tool discovery/calls;
+- namespaced `server.tool` identifiers;
+- explicit operator execution;
+- bounded timeout/message sizes;
+- minimal environment inheritance.
+
+Remote OAuth/HTTP transports and autonomous model invocation are intentionally deferred. See [MCP integration](MCP.md).

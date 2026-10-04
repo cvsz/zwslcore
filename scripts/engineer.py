@@ -23,6 +23,14 @@ from services.engineering.delegation import (
 from services.engineering.evidence import EvidenceExporter
 from services.engineering.hardware import detect_hardware
 from services.engineering.ledger import JsonContinuousLedger
+from services.engineering.mcp import (
+    DEFAULT_CONFIG as DEFAULT_MCP_CONFIG,
+    MCPError,
+    call_server_tool,
+    list_server_tools,
+    load_config as load_mcp_config,
+    split_qualified_tool,
+)
 from services.engineering.loop import WorkItem, WorkKind
 from services.engineering.models import Checkpoint, EngineeringTask, TaskRisk, TaskStatus
 from services.engineering.reconcile import QueueReconciler
@@ -153,6 +161,18 @@ def parser() -> argparse.ArgumentParser:
     policy.add_argument("agent")
     policy.add_argument("permission")
     policy.add_argument("pattern", nargs="?", default="*")
+
+    mcp_status = sub.add_parser("mcp-status")
+    mcp_status.add_argument("--config", default=str(DEFAULT_MCP_CONFIG))
+
+    mcp_tools = sub.add_parser("mcp-tools")
+    mcp_tools.add_argument("server", nargs="?")
+    mcp_tools.add_argument("--config", default=str(DEFAULT_MCP_CONFIG))
+
+    mcp_call = sub.add_parser("mcp-call")
+    mcp_call.add_argument("tool")
+    mcp_call.add_argument("--json", default="{}")
+    mcp_call.add_argument("--config", default=str(DEFAULT_MCP_CONFIG))
 
     delegate = sub.add_parser("delegate")
     delegate.add_argument("parent_task_id")
@@ -436,6 +456,90 @@ def main() -> int:
             "action": decision,
         }, indent=2))
         return 0 if decision == "allow" else 1
+
+    if args.command == "mcp-status":
+        try:
+            servers = load_mcp_config(args.config)
+        except MCPError as exc:
+            print(f"mcp: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps([
+            {
+                "name": item.name,
+                "enabled": item.enabled,
+                "command": list(item.command),
+                "cwd": item.cwd,
+                "inherit_env": list(item.inherit_env),
+                "timeout_seconds": item.timeout_seconds,
+                "protocol_version": item.protocol_version,
+            }
+            for item in sorted(servers.values(), key=lambda item: item.name)
+        ], indent=2))
+        return 0
+
+    if args.command == "mcp-tools":
+        try:
+            servers = load_mcp_config(args.config)
+            selected = (
+                {args.server: servers[args.server]}
+                if args.server
+                else servers
+            )
+        except KeyError:
+            print(f"mcp server not found: {args.server}", file=sys.stderr)
+            return 2
+        except MCPError as exc:
+            print(f"mcp: {exc}", file=sys.stderr)
+            return 1
+
+        output = []
+        failures = []
+        for name, server in sorted(selected.items()):
+            if not server.enabled:
+                output.append({"server": name, "status": "disabled", "tools": []})
+                continue
+            try:
+                defs = list_server_tools(server)
+            except MCPError as exc:
+                failures.append(name)
+                output.append({"server": name, "status": "failed", "error": str(exc), "tools": []})
+                continue
+            output.append({
+                "server": name,
+                "status": "connected",
+                "tools": [
+                    {
+                        "name": tool.name,
+                        "qualified_name": tool.qualified_name,
+                        "description": tool.description,
+                        "input_schema": tool.input_schema,
+                    }
+                    for tool in defs
+                ],
+            })
+        print(json.dumps(output, indent=2))
+        return 1 if failures else 0
+
+    if args.command == "mcp-call":
+        try:
+            server_name, tool_name = split_qualified_tool(args.tool)
+            servers = load_mcp_config(args.config)
+            server = servers.get(server_name)
+            if server is None:
+                print(f"mcp server not found: {server_name}", file=sys.stderr)
+                return 2
+            if not server.enabled:
+                print(f"mcp server is disabled: {server_name}", file=sys.stderr)
+                return 2
+            arguments = json.loads(args.json)
+            if not isinstance(arguments, dict):
+                raise MCPError("--json must decode to an object")
+            result = call_server_tool(server, tool_name, arguments)
+        except (MCPError, json.JSONDecodeError) as exc:
+            print(f"mcp call failed: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(result, indent=2, default=str))
+        return 0
 
     if args.command == "delegate":
         parent = store.get_task(args.parent_task_id)
