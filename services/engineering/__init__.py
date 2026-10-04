@@ -1,6 +1,7 @@
 """Self-contained zwslcore engineering control plane."""
 
 from .continuous import ContinuousEngineeringRunner
+from .evidence import EvidenceExporter
 from .hardware import HardwareProfile, detect_hardware
 from .ledger import JsonContinuousLedger
 from .loop import ContinuousEngineeringLoop, LoopPolicy, WorkKind, WorkItem
@@ -16,6 +17,7 @@ __all__ = [
     "ContinuousEngineeringRunner",
     "ContinuousEngineeringLoop",
     "EngineeringRuntime",
+    "EvidenceExporter",
     "HardwareProfile",
     "JsonContinuousLedger",
     "EngineeringTask",
