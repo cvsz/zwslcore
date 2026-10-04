@@ -32,15 +32,15 @@ providers:
 models:
   zeaz-fast:
     provider: ollama
-    model: qwen2.5-coder:3b
+    model: ${ZEAZ_FAST_MODEL:-qwen2.5-coder:3b}
 
   zeaz-coder:
     provider: ollama
-    model: qwen2.5-coder:7b
+    model: ${ZEAZ_CODER_MODEL:-qwen2.5-coder:7b}
 
   zeaz-reasoning:
     provider: ollama
-    model: qwen3:8b
+    model: ${ZEAZ_REASONING_MODEL:-qwen3:8b}
 
   zeaz-local:
     provider: ollama
