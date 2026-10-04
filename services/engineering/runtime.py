@@ -14,6 +14,7 @@ from .models import Checkpoint, EngineeringTask, TaskStatus
 from .review import SecurityGate, StaticReviewer
 from .snapshot import RepositorySnapshotter
 from .store import SQLiteEngineeringStore
+from .validation import evaluate_validation, validate_mode
 from .worktree import WorktreeManager
 
 
@@ -149,12 +150,15 @@ class EngineeringRuntime:
         allowed_paths: set[str] | None = None,
         commit: bool = False,
         resume: bool = False,
+        validation_mode: str = "strict",
     ) -> EngineeringTask:
         validators = validators or ["git diff --check"]
+        validation_mode = validate_mode(validation_mode)
         task.metadata["run_config"] = {
             "validators": list(validators),
             "allowed_paths": sorted(allowed_paths or ()),
             "commit": bool(commit),
+            "validation_mode": validation_mode,
         }
         self.store.save_task(task)
 
@@ -187,6 +191,19 @@ class EngineeringRuntime:
                 "BASELINE",
                 {"worktree": str(worktree), "branch": branch, "head": baseline_head},
             )
+
+            baseline_validation = None
+            if validation_mode == "delta":
+                self.progress(
+                    f"[engineering] {task.id} BASELINE_VALIDATING validators={len(validators)}"
+                )
+                baseline_validation = self._run_validators(worktree, validators)
+                baseline_validation["mode"] = "baseline"
+                self._checkpoint(task, "BASELINE_VALIDATION", baseline_validation)
+                self.progress(
+                    f"[engineering] {task.id} BASELINE_VALIDATION_COMPLETE "
+                    f"failures={len(baseline_validation.get('failures') or [])}"
+                )
 
             task.status = TaskStatus.PLANNING
             self.store.save_task(task)
@@ -319,12 +336,26 @@ class EngineeringRuntime:
             task.status = TaskStatus.VALIDATING
             self.store.save_task(task)
             self.progress(f"[engineering] {task.id} VALIDATING validators={len(validators)}")
-            validation = self._run_validators(worktree, validators)
+            final_validation = self._run_validators(worktree, validators)
+            validation = evaluate_validation(
+                baseline_validation,
+                final_validation,
+                mode=validation_mode,
+            )
             self._checkpoint(task, "VALIDATION", validation)
             if not validation["passed"]:
-                self.progress(f"[engineering] validation_failed={validation['failures']}")
-                raise RuntimeError("validation failed: " + "; ".join(validation["failures"]))
-            self.progress(f"[engineering] {task.id} VALIDATION_PASS")
+                blocking = validation["regressions"] if validation_mode == "delta" else validation["failures"]
+                self.progress(
+                    f"[engineering] validation_failed mode={validation_mode} blocking={blocking}"
+                )
+                raise RuntimeError(
+                    f"validation {validation_mode} failed: " + "; ".join(blocking)
+                )
+            self.progress(
+                f"[engineering] {task.id} VALIDATION_PASS mode={validation_mode} "
+                f"residual={len(validation.get('residual_failures') or [])} "
+                f"improvements={len(validation.get('improvements') or [])}"
+            )
 
             task.status = TaskStatus.REVIEWING
             self.store.save_task(task)
