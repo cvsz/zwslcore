@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from services.engineering.continuous import ContinuousEngineeringRunner
 from services.engineering.hardware import HardwareProfile
 from services.engineering.ledger import JsonContinuousLedger
 from services.engineering.loop import ContinuousEngineeringLoop, LoopPolicy, WorkItem, WorkKind
