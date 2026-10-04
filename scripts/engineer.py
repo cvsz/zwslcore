@@ -18,6 +18,7 @@ from services.engineering.hardware import detect_hardware
 from services.engineering.ledger import JsonContinuousLedger
 from services.engineering.loop import WorkItem, WorkKind
 from services.engineering.models import EngineeringTask, TaskRisk, TaskStatus
+from services.engineering.reconcile import QueueReconciler
 from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
 from services.engineering.store import SQLiteEngineeringStore
@@ -170,6 +171,19 @@ def parser() -> argparse.ArgumentParser:
     wa.add_argument("--validation-mode", choices=["strict", "delta"], default="strict")
 
     sub.add_parser("work-list")
+
+    reconcile = sub.add_parser("reconcile")
+    reconcile.add_argument("--apply", action="store_true")
+
+    enqueue = sub.add_parser("enqueue-task")
+    enqueue.add_argument("task_id")
+    enqueue.add_argument("--kind", choices=[kind.value for kind in WorkKind], default="REPAIR")
+    enqueue.add_argument("--priority", type=int, default=50)
+    enqueue.add_argument("--max-attempts", type=int, default=None)
+    enqueue.add_argument("--validate", action="append", default=[])
+    enqueue.add_argument("--allow-path", action="append", default=[])
+    enqueue.add_argument("--commit", action="store_true")
+    enqueue.add_argument("--validation-mode", choices=["strict", "delta"], default=None)
 
     ws = sub.add_parser("work-status")
     ws.add_argument("fingerprint", nargs="?")
@@ -376,6 +390,57 @@ def main() -> int:
             )
         return 0
 
+    if args.command == "reconcile":
+        reconciler = QueueReconciler(store, ledger)
+        report = reconciler.apply_safe() if args.apply else reconciler.inspect()
+        print(json.dumps({
+            "applied": [dataclasses.asdict(item) for item in report.applied],
+            "findings": [dataclasses.asdict(item) for item in report.findings],
+            "orphan_tasks": list(report.orphan_tasks),
+        }, indent=2))
+        return 0 if not any(item.safe_fix for item in report.findings) else 1
+
+    if args.command == "enqueue-task":
+        task = store.get_task(args.task_id)
+        if not task:
+            print("task not found", file=sys.stderr)
+            return 2
+        if task.status in {TaskStatus.SUCCEEDED, TaskStatus.CANCELLED}:
+            print(f"refusing to enqueue terminal task: {task.status.value}", file=sys.stderr)
+            return 2
+
+        config = dict(task.metadata.get("run_config") or {})
+        validators = args.validate or list(config.get("validators") or ["git diff --check"])
+        allowed_paths = args.allow_path or list(config.get("allowed_paths") or [])
+        commit = args.commit or bool(config.get("commit", False))
+        validation_mode = args.validation_mode or str(config.get("validation_mode", "strict"))
+        max_attempts = args.max_attempts or task.max_attempts or 2
+        item = WorkItem(
+            title=task.title,
+            kind=WorkKind(args.kind),
+            payload={
+                "description": task.description,
+                "repository": str(Path(task.repository).resolve()),
+                "risk": task.risk.value,
+                "validators": validators,
+                "allowed_paths": allowed_paths,
+                "commit": commit,
+                "validation_mode": validation_mode,
+            },
+            priority=args.priority,
+            max_attempts=max(1, int(max_attempts)),
+        )
+        record = ledger.register(item)
+        record = ledger.update(
+            item.fingerprint,
+            task_id=task.id,
+            state="PENDING",
+            attempts=task.attempts if task.status in {TaskStatus.BLOCKED, TaskStatus.FAILED} else 0,
+            last_error=task.last_error,
+        )
+        print(json.dumps(record, indent=2))
+        return 0
+
     if args.command == "work-status":
         records = ledger.records()
         if args.fingerprint:
@@ -414,6 +479,18 @@ def main() -> int:
 
     if args.command in {"continuous", "recover"}:
         try:
+            if args.command == "recover":
+                report = QueueReconciler(store, ledger).apply_safe()
+                if report.applied:
+                    emit_progress(
+                        f"[continuous] RECONCILE applied={len(report.applied)} "
+                        f"orphans={len(report.orphan_tasks)}"
+                    )
+                elif report.orphan_tasks:
+                    emit_progress(
+                        f"[continuous] RECONCILE applied=0 "
+                        f"orphans={len(report.orphan_tasks)}"
+                    )
             runner = ContinuousEngineeringRunner(
                 store,
                 ledger,
