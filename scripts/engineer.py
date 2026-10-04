@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from services.engineering.continuous import ContinuousEngineeringRunner
+from services.engineering.evidence import EvidenceExporter
 from services.engineering.hardware import detect_hardware
 from services.engineering.ledger import JsonContinuousLedger
 from services.engineering.loop import WorkItem, WorkKind
@@ -76,6 +77,15 @@ def parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("show")
     s.add_argument("task_id")
+
+    ev = sub.add_parser("evidence")
+    ev.add_argument("task_id")
+
+    evs = sub.add_parser("evidence-show")
+    evs.add_argument("task_id")
+
+    evv = sub.add_parser("evidence-verify")
+    evv.add_argument("task_id")
 
     snap = sub.add_parser("snapshot")
     snap.add_argument("--repository", default=".")
@@ -148,6 +158,36 @@ def main() -> int:
             "latest_checkpoint": checkpoint.__dict__ if checkpoint else None,
         }, indent=2, default=str))
         return 0
+
+    if args.command == "evidence":
+        task = store.get_task(args.task_id)
+        if not task:
+            print("task not found", file=sys.stderr)
+            return 2
+        exporter = EvidenceExporter(store)
+        path, digest = exporter.export(task)
+        print(json.dumps({
+            "task_id": task.id,
+            "path": str(path),
+            "sha256": digest,
+            "verified": exporter.verify(task.id),
+        }, indent=2))
+        return 0
+
+    if args.command == "evidence-show":
+        exporter = EvidenceExporter(store)
+        bundle = exporter.read(args.task_id)
+        if bundle is None:
+            print("evidence not found", file=sys.stderr)
+            return 2
+        print(json.dumps(bundle, indent=2, default=str))
+        return 0
+
+    if args.command == "evidence-verify":
+        exporter = EvidenceExporter(store)
+        ok = exporter.verify(args.task_id)
+        print("PASS" if ok else "FAIL")
+        return 0 if ok else 1
 
     if args.command == "snapshot":
         print(RepositorySnapshotter(args.repository).snapshot())
