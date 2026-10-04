@@ -152,13 +152,14 @@ class EngineeringRuntime:
             task.status = TaskStatus.BASELINING
             self.store.save_task(task)
             self.progress(f"[engineering] {task.id} BASELINING")
+            self.progress(f"[engineering] {task.id} PROVIDER_PREFLIGHT model={self.provider.model}")
+            self.provider.preflight()
+            self.progress(f"[engineering] {task.id} PROVIDER_PREFLIGHT_PASS")
+
             worktree, branch = self.worktrees.create(task.repository, task.id, task.title)
             task.worktree_path = str(worktree)
             task.branch_name = branch
             self.progress(f"[engineering] worktree={worktree} branch={branch}")
-            self.progress(f"[engineering] {task.id} PROVIDER_PREFLIGHT model={self.provider.model}")
-            self.provider.preflight()
-            self.progress(f"[engineering] {task.id} PROVIDER_PREFLIGHT_PASS")
 
             task.attempts += 1
             self.progress(f"[engineering] attempt={task.attempts}/{task.max_attempts}")
