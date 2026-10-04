@@ -269,6 +269,44 @@ def local_alias_candidates(
     ]
 
 
+def engineering_model_ladder(
+    env: dict[str, str],
+    *,
+    hardware_profile: str,
+    ram_available_gb: float,
+) -> tuple[str, ...]:
+    requirements = ModelRequirements(
+        structured_output=True,
+        min_context=min(
+            4096,
+            int(env.get("ZEAZ_OLLAMA_CONTEXT_LENGTH", "4096") or 4096),
+        ),
+        prefer_local=True,
+        zero_cost_only=True,
+    )
+    ranked = rank_models(
+        local_alias_candidates(
+            env,
+            hardware_profile=hardware_profile,
+            ram_available_gb=ram_available_gb,
+        ),
+        requirements,
+    )
+    aliases = [
+        item.candidate.alias
+        for item in ranked
+        if item.eligible
+        and item.candidate.alias
+        and item.candidate.hardware_fit >= 0
+    ]
+    return tuple(dict.fromkeys(aliases))
+
+
+def snapshot_budget_for_context(context_length: int) -> int:
+    context = max(2048, int(context_length))
+    return min(32 * 1024, max(8 * 1024, context * 2))
+
+
 def select_engineering_alias(
     env: dict[str, str],
     *,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import socket
 import subprocess
@@ -214,6 +215,8 @@ class EngineeringRuntime:
         worktrees: WorktreeManager | None = None,
         progress: Callable[[str], None] | None = None,
         evidence: EvidenceExporter | None = None,
+        snapshot_max_bytes: int = 32 * 1024,
+        model_ladder: tuple[str, ...] | None = None,
     ) -> None:
         self.store = store
         self.provider = provider
@@ -222,6 +225,11 @@ class EngineeringRuntime:
         self.gate = SecurityGate()
         self.progress = progress or (lambda message: None)
         self.evidence = evidence or EvidenceExporter(store)
+        self.snapshot_max_bytes = max(4 * 1024, int(snapshot_max_bytes))
+        ladder = tuple(alias for alias in (model_ladder or ()) if alias)
+        if provider.model not in ladder:
+            ladder = (provider.model, *ladder)
+        self.model_ladder = tuple(dict.fromkeys(ladder))
 
     def run(
         self,
@@ -241,6 +249,9 @@ class EngineeringRuntime:
             "commit": bool(commit),
             "validation_mode": validation_mode,
         }
+        task.metadata["model_current"] = self.provider.model
+        task.metadata["model_ladder"] = list(self.model_ladder)
+        task.metadata["snapshot_max_bytes"] = self.snapshot_max_bytes
         self.store.save_task(task)
 
         try:
@@ -302,13 +313,18 @@ class EngineeringRuntime:
             task.status = TaskStatus.PLANNING
             self.store.save_task(task)
             self.progress(f"[engineering] {task.id} PLANNING model={self.provider.model}")
+            priority_terms = self._task_priority_terms(task)
             snapshot = RepositorySnapshotter(
                 worktree,
                 include_paths=allowed_paths,
+                max_total_bytes=self.snapshot_max_bytes,
+                priority_terms=priority_terms,
             ).snapshot()
             self.progress(
                 f"[engineering] snapshot_bytes={len(snapshot.encode('utf-8'))} "
-                f"scope={','.join(sorted(allowed_paths)) if allowed_paths else 'repository'}"
+                f"budget={self.snapshot_max_bytes} "
+                f"scope={','.join(sorted(allowed_paths)) if allowed_paths else 'repository'} "
+                f"priority={','.join(sorted(priority_terms)[:6]) if priority_terms else 'none'}"
             )
             candidates = self._snapshot_candidate_paths(snapshot)
             self.progress(
@@ -508,6 +524,43 @@ class EngineeringRuntime:
             "Produce a concise implementation plan with validation steps.\n\n"
             f"Repository snapshot:\n{snapshot}"
         )
+
+    @staticmethod
+    def _task_priority_terms(task: EngineeringTask) -> set[str]:
+        stop = {
+            "add", "and", "all", "the", "for", "fix", "improve", "repair",
+            "update", "with", "without", "from", "into", "this", "that",
+        }
+        tokens = re.findall(r"[a-z0-9_]{3,}", f"{task.title} {task.description}".lower())
+        return {token for token in tokens if token not in stop}
+
+    def promote_model(self, error: str) -> str | None:
+        lowered = error.lower()
+        quality_markers = (
+            "expecting value",
+            "model proposed no file changes",
+            "out-of-scope",
+            "outside allowed scope",
+            "structured json",
+            "empty edit response",
+            "after one repair",
+        )
+        if not any(marker in lowered for marker in quality_markers):
+            return None
+        try:
+            current = self.model_ladder.index(self.provider.model)
+        except ValueError:
+            current = -1
+        for alias in self.model_ladder[current + 1:]:
+            if alias != self.provider.model:
+                previous = self.provider.model
+                self.provider.model = alias
+                self.progress(
+                    f"[engineering] MODEL_ESCALATE old={previous} new={alias} "
+                    f"reason=model-quality"
+                )
+                return alias
+        return None
 
     @staticmethod
     def _scope_instruction(allowed_paths: set[str] | None) -> str:

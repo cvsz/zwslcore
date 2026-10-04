@@ -17,6 +17,7 @@ help:
 	  'engineer-tasks list durable engineering tasks' \
 	  'engineer-profile show detected hardware/model profile' \
 	  'engineer-work  list durable continuous work items' \
+	  'engineer-recover recover blocked work with adaptive model fallback' \
 	  'engineer-tui   open read-only engineering terminal dashboard' \
 	  'engineer-test  run engineering selector/TUI/control-plane tests' \
 	  'config        validate Compose configuration' \
@@ -78,6 +79,9 @@ engineer-profile:
 
 engineer-work:
 	python3 scripts/engineer.py work-list
+
+engineer-recover:
+	python3 scripts/engineer.py recover --max-iterations 4
 
 engineer-tui:
 	python3 scripts/engineer.py tui

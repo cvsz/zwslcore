@@ -227,6 +227,25 @@ Validation remains strict by default. For repositories with known pre-existing f
 
 Delta mode runs the validators on the clean worktree before editing and blocks only validators that regress from pass to fail. Existing failures are recorded as residual failures; improvements are recorded separately. Security/path/review gates are unchanged.
 
+### Adaptive blocked-work recovery
+
+For blocked autonomous work, use the bounded recovery command:
+
+```powershell
+.\scripts\engineer-wsl.ps1 recover --max-iterations 4
+```
+
+Recovery keeps the existing safety gates but adapts inference to the local machine:
+
+- snapshot budget is derived from `ZEAZ_OLLAMA_CONTEXT_LENGTH` (4096 context -> 8192-byte repository snapshot);
+- task/title terms prioritize relevant paths before the snapshot byte budget is exhausted;
+- CPU_MEDIUM uses a quality ladder beginning with `zeaz-fast` and falling back to `zeaz-coder` when a real model-quality failure occurs;
+- CPU_SMALL does not force a 7B fallback;
+- transport, validator and security-gate failures do not trigger model escalation;
+- selected model, fallback ladder and snapshot budget are written to task metadata/evidence.
+
+The TUI shows the active ladder and the recovery command whenever blocked queue items exist.
+
 Blocked/exhausted work does not silently reset its attempt budget across process restarts. To explicitly retry blocked work:
 
 ```powershell
