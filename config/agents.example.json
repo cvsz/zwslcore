@@ -1,0 +1,27 @@
+{
+  "agents": {
+    "architect": {
+      "extends": "plan",
+      "description": "Read-only architecture planner.",
+      "prompt": "Focus on interfaces, dependency boundaries, rollback and validation.",
+      "permissions": []
+    },
+    "safe-implementer": {
+      "extends": "general",
+      "mode": "subagent",
+      "description": "Implementation agent limited to one safe subtree.",
+      "permissions": [
+        {
+          "permission": "edit",
+          "pattern": "*",
+          "action": "deny"
+        },
+        {
+          "permission": "edit",
+          "pattern": "services/safe/*",
+          "action": "allow"
+        }
+      ]
+    }
+  }
+}
