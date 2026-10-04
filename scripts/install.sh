@@ -212,10 +212,13 @@ if ! bash "$ROOT/scripts/smoke.sh"; then
   die "AI stack is healthy but inference validation failed."
 fi
 
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+# shellcheck source=scripts/lib/env.sh
+source "$ROOT/scripts/lib/env.sh"
+OPENWEBUI_PORT="$(dotenv_get "$ENV_FILE" OPENWEBUI_PORT 3000)"
+PROVIDER_PORT="$(dotenv_get "$ENV_FILE" PROVIDER_PORT 8080)"
+LITELLM_PORT="$(dotenv_get "$ENV_FILE" LITELLM_PORT 4000)"
+OLLAMA_PORT="$(dotenv_get "$ENV_FILE" OLLAMA_PORT 11434)"
+ZEAZ_LOCAL_MODEL="$(dotenv_get "$ENV_FILE" ZEAZ_LOCAL_MODEL unknown)"
 
 cat <<EOF
 
