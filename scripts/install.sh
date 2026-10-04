@@ -29,6 +29,7 @@ text = path.read_text()
 replacements = {
     "REPLACE_ME_WEBUI_SECRET": secrets.token_hex(32),
     "REPLACE_ME_LITELLM_MASTER_KEY": "sk-" + secrets.token_hex(32),
+    "REPLACE_ME_PROVIDER_CLIENT_KEY": "zw-" + secrets.token_hex(32),
 }
 for old, new in replacements.items():
     text = text.replace(old, new)
@@ -65,7 +66,7 @@ for model in "${SELECTED[@]}"; do
   fi
 done
 
-log "Starting LiteLLM and Open WebUI"
+log "Starting LiteLLM, zwslcore Provider, and Open WebUI"
 docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" up -d
 
 log "Running health checks"
