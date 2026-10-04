@@ -188,6 +188,32 @@ def get_catalog(
         raise
 
 
+def provider_env_registry(catalog: dict[str, Any]) -> list[dict[str, Any]]:
+    providers = catalog.get("providers")
+    if not isinstance(providers, dict):
+        return []
+    output: list[dict[str, Any]] = []
+    for provider_id, provider in sorted(providers.items()):
+        if not isinstance(provider, dict):
+            continue
+        env = provider.get("env")
+        if not isinstance(env, list):
+            env = []
+        keys = sorted({
+            str(value).strip()
+            for value in env
+            if isinstance(value, str) and str(value).strip()
+        })
+        output.append({
+            "id": str(provider_id),
+            "name": str(provider.get("name") or provider_id),
+            "api": provider.get("api"),
+            "doc": provider.get("doc"),
+            "env": keys,
+        })
+    return output
+
+
 def lookup_model(catalog: dict[str, Any], model_id: str) -> dict[str, Any] | None:
     models = catalog.get("models")
     if isinstance(models, dict) and isinstance(models.get(model_id), dict):
