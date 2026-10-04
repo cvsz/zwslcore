@@ -226,6 +226,21 @@ The Provider enforces `ZEAZ_COST_POLICY` at routing time:
 Cloud providers remain disabled unless `FREE_CLOUD_FALLBACK_ENABLED=true`, so the default installation remains local-only.
 
 
+## Models.dev catalog
+
+zwslcore can optionally sync provider-agnostic model metadata and provider-specific offerings from [Models.dev](https://models.dev/) without making runtime startup depend on the public service.
+
+```bash
+make models-dev-sync
+make models-dev-stats
+python3 scripts/models-dev.py providers
+python3 scripts/models-dev.py lookup openai/gpt-5.4
+```
+
+The combined `catalog.json?type=all` endpoint is cached atomically under `~/.zwslcore/cache/models.dev.catalog.json`. Fresh cache is preferred; network refresh falls back to a stale cache when the service is unavailable. The cache retains canonical model metadata separately from provider offerings, including published capabilities, token limits and provider pricing. No provider API keys are sent to Models.dev.
+
+This catalog is advisory metadata. Local Ollama availability and zwslcore Provider routing remain authoritative for what this machine can actually execute.
+
 ## Free model discovery
 
 Local Ollama models are the default and require no provider API key.
