@@ -128,6 +128,16 @@ python3 scripts/engineer.py show "$TASK_ID"
 
 Add `--commit` only when you want a local commit in the isolated worktree. The engineering runtime never performs a remote push.
 
+From Windows PowerShell, use the WSL wrapper instead of calling Windows Python:
+
+```powershell
+.\scripts\engineer-wsl.ps1 list
+.\scripts\engineer-wsl.ps1 create "Fix provider health" --description "Repair health handling" --repository . --risk medium
+.\scripts\engineer-wsl.ps1 run TASK_ID --allow-path services --validate "python3 -m unittest discover -s tests -v"
+```
+
+PowerShell does not use Bash's trailing `\` for line continuation. Keep each wrapper command on one line, or use PowerShell's backtick when splitting a command.
+
 See [Engineering Control Plane](docs/ENGINEERING-CONTROL-PLANE.md).
 
 ## Free model discovery
