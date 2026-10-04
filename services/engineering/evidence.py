@@ -178,7 +178,11 @@ class EvidenceExporter:
         names = sorted(
             {
                 line.strip()
-                for line in run(["diff", "--name-only"]).splitlines()
+                for output in (
+                    run(["diff", "--name-only"]),
+                    run(["ls-files", "--others", "--exclude-standard"]),
+                )
+                for line in output.splitlines()
                 if line.strip()
             }
         )
