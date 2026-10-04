@@ -191,3 +191,19 @@ Delta mode:
 6. records pre-existing failures that become green as improvements.
 
 Delta mode never changes path validation, static review, secret checks or the security gate. Resume and continuous-work records persist the selected validation mode in run_config.
+
+
+## Stale worktree reconciliation
+
+A resumed/continuous task never assumes that its managed worktree still matches the current source checkout.
+
+Before resume, the runtime:
+
+1. verifies the managed-worktree ownership marker;
+2. records the previous task worktree HEAD;
+3. reads the current source repository HEAD;
+4. hard-resets and cleans the managed worktree to that source HEAD;
+5. records both revisions in task metadata;
+6. reuses a PLAN checkpoint only when its baseline HEAD matches the reconciled HEAD.
+
+This prevents long-lived blocked tasks from repeatedly planning against obsolete repository snapshots after main has advanced.

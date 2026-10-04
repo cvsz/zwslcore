@@ -77,6 +77,45 @@ class WorktreeManager:
             text=True,
         )
 
+    def sync_to_source(
+        self,
+        repository: str | Path,
+        target: str | Path,
+    ) -> tuple[str, str]:
+        repo = Path(repository).resolve()
+        target_path = Path(target).resolve()
+        self._assert_git_repo(repo)
+        target_path.relative_to(self.base_dir)
+        if not self._marker(target_path).exists():
+            raise RuntimeError(f"refusing to sync unmanaged worktree: {target_path}")
+
+        source_head = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        previous_head = subprocess.run(
+            ["git", "-C", str(target_path), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+        subprocess.run(
+            ["git", "-C", str(target_path), "reset", "--hard", source_head],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(target_path), "clean", "-fd"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return previous_head, source_head
+
     @staticmethod
     def _assert_git_repo(repo: Path) -> None:
         result = subprocess.run(

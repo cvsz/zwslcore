@@ -223,10 +223,23 @@ class EngineeringRuntime:
             self.progress(f"[engineering] {task.id} PROVIDER_PREFLIGHT_PASS")
 
             if resume and task.worktree_path and Path(task.worktree_path).exists():
-                self.worktrees.reset(task.worktree_path)
+                previous_head, source_head = self.worktrees.sync_to_source(
+                    task.repository,
+                    task.worktree_path,
+                )
                 worktree = Path(task.worktree_path).resolve()
                 branch = task.branch_name or self.worktrees.safe_branch_name(task.id, task.title)
-                self.progress(f"[engineering] RESUME_WORKTREE worktree={worktree} branch={branch}")
+                task.metadata["resume_previous_head"] = previous_head
+                task.metadata["resume_source_head"] = source_head
+                self.store.save_task(task)
+                self.progress(
+                    f"[engineering] RESUME_WORKTREE worktree={worktree} branch={branch} "
+                    f"previous_head={previous_head[:12]} source_head={source_head[:12]}"
+                )
+                if previous_head != source_head:
+                    self.progress(
+                        f"[engineering] WORKTREE_SYNC old={previous_head[:12]} new={source_head[:12]}"
+                    )
             else:
                 worktree, branch = self.worktrees.create(task.repository, task.id, task.title)
                 task.worktree_path = str(worktree)
