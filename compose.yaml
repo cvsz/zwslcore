@@ -51,7 +51,7 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
-      provider:
+      litellm:
         condition: service_healthy
     env_file:
       - .env
@@ -85,15 +85,14 @@ services:
     container_name: zwslcore-open-webui
     restart: unless-stopped
     depends_on:
-      litellm:
+      provider:
         condition: service_healthy
     environment:
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
       ENABLE_SIGNUP: ${OPENWEBUI_ENABLE_SIGNUP:-false}
       OPENAI_API_BASE_URL: http://provider:8080/v1
       OPENAI_API_KEY: ${PROVIDER_CLIENT_KEY}
-      ENABLE_OLLAMA_API: "true"
-      OLLAMA_BASE_URL: http://ollama:11434
+      ENABLE_OLLAMA_API: "false"
     volumes:
       - open-webui-data:/app/backend/data
     ports:
