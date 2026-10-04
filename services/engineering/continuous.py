@@ -9,7 +9,7 @@ from typing import Any
 from .ledger import JsonContinuousLedger
 from .loop import ContinuousEngineeringLoop, LoopPolicy, LoopResult, WorkItem
 from .models import EngineeringTask, TaskRisk, TaskStatus
-from .runtime import EngineeringRuntime
+from .runtime import EngineeringRuntime, ProviderTransportError
 from .store import SQLiteEngineeringStore
 
 
@@ -18,6 +18,7 @@ class ExecutionResult:
     passed: bool
     task: EngineeringTask
     error: str = ""
+    consume_attempt: bool = True
 
 
 class ContinuousEngineeringRunner:
@@ -90,9 +91,9 @@ class ContinuousEngineeringRunner:
             self.ledger.update(
                 item.fingerprint,
                 state="RUNNING",
-                attempts=int(record.get("attempts", 0)) + 1,
                 task_id=task.id,
             )
+            before_attempts = task.attempts
             try:
                 completed = self.runtime.run(
                     task,
@@ -102,17 +103,44 @@ class ContinuousEngineeringRunner:
                     resume=self.store.latest_checkpoint(task.id, "PLAN") is not None,
                     validation_mode=str(payload.get("validation_mode", "strict")),
                 )
+                consumed = completed.attempts > before_attempts
+                if consumed:
+                    self.ledger.update(
+                        item.fingerprint,
+                        attempts=int(record.get("attempts", 0)) + 1,
+                    )
                 self.progress(f"[continuous] task={completed.id} status={completed.status.value}")
                 return ExecutionResult(
                     passed=completed.status == TaskStatus.SUCCEEDED,
                     task=completed,
                     error=completed.last_error,
+                    consume_attempt=consumed,
+                )
+            except ProviderTransportError as exc:
+                latest = self.store.get_task(task.id) or task
+                self.progress(
+                    f"[continuous] INFRA_RETRY task={task.id} error={str(exc)[:500]}"
+                )
+                self.ledger.update(
+                    item.fingerprint,
+                    state="PENDING",
+                    last_error=str(exc)[:2000],
+                )
+                return ExecutionResult(
+                    False,
+                    latest,
+                    str(exc),
+                    consume_attempt=False,
                 )
             except Exception as exc:
                 latest = self.store.get_task(task.id) or task
+                consumed = latest.attempts > before_attempts
+                updates = {"last_error": str(exc)[:2000]}
+                if consumed:
+                    updates["attempts"] = int(record.get("attempts", 0)) + 1
                 self.progress(f"[continuous] task={task.id} error={str(exc)[:500]}")
-                self.ledger.update(item.fingerprint, last_error=str(exc)[:2000])
-                return ExecutionResult(False, latest, str(exc))
+                self.ledger.update(item.fingerprint, **updates)
+                return ExecutionResult(False, latest, str(exc), consume_attempt=consumed)
 
         def validate(item: WorkItem, result: ExecutionResult) -> tuple[bool, tuple[str, ...]]:
             return result.passed, ()
