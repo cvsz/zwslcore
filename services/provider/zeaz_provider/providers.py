@@ -63,9 +63,26 @@ class ProviderClient:
             base = self.config.base_url.rstrip("/")
             if base.endswith("/v1"):
                 base = base[:-3]
-            native = ollama_structured_payload(payload, schema)
+            try:
+                native = ollama_structured_payload(payload, schema)
+            except StructuredOutputError as exc:
+                raise ProviderError(
+                    str(exc),
+                    400,
+                    kind=ErrorKind.BAD_REQUEST,
+                    fallback_allowed=False,
+                    circuit_failure=False,
+                ) from exc
             result = await self._json("POST", f"{base}/api/chat", native)
-            return ollama_chat_to_openai(result, str(payload.get("model", "")))
+            try:
+                return ollama_chat_to_openai(result, str(payload.get("model", "")))
+            except StructuredOutputError as exc:
+                raise ProviderError(
+                    str(exc),
+                    kind=ErrorKind.PROTOCOL,
+                    fallback_allowed=True,
+                    circuit_failure=True,
+                ) from exc
 
         url = self.url("chat/completions")
         return await self._json("POST", url, payload)
