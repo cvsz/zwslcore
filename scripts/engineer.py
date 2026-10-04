@@ -17,7 +17,7 @@ from services.engineering.evidence import EvidenceExporter
 from services.engineering.hardware import detect_hardware
 from services.engineering.ledger import JsonContinuousLedger
 from services.engineering.loop import WorkItem, WorkKind
-from services.engineering.models import EngineeringTask, TaskRisk, TaskStatus
+from services.engineering.models import Checkpoint, EngineeringTask, TaskRisk, TaskStatus
 from services.engineering.reconcile import QueueReconciler
 from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
@@ -118,6 +118,10 @@ def parser() -> argparse.ArgumentParser:
 
     sub.add_parser("list")
 
+    cancel = sub.add_parser("cancel")
+    cancel.add_argument("task_id")
+    cancel.add_argument("--reason", required=True)
+
     s = sub.add_parser("show")
     s.add_argument("task_id")
 
@@ -217,6 +221,82 @@ def main() -> int:
     if args.command == "list":
         for task in store.list_tasks():
             print(f"{task.id}\t{task.status.value}\t{task.risk.value}\t{task.title}")
+        return 0
+
+    if args.command == "cancel":
+        task = store.get_task(args.task_id)
+        if not task:
+            print("task not found", file=sys.stderr)
+            return 2
+        if task.status == TaskStatus.SUCCEEDED:
+            print("refusing to cancel a succeeded task", file=sys.stderr)
+            return 2
+        if task.status == TaskStatus.CANCELLED:
+            print(json.dumps({
+                "task_id": task.id,
+                "status": task.status.value,
+                "idempotent": True,
+            }, indent=2))
+            return 0
+
+        previous_status = task.status.value
+        previous_attempts = task.attempts
+        reason = args.reason.strip()
+        if not reason:
+            print("cancellation reason must not be empty", file=sys.stderr)
+            return 2
+
+        task.status = TaskStatus.CANCELLED
+        task.last_error = f"cancelled: {reason}"[:2000]
+        history = list(task.metadata.get("cancellation_history") or [])
+        history.append({
+            "at": time.time(),
+            "reason": reason,
+            "previous_status": previous_status,
+            "previous_attempts": previous_attempts,
+        })
+        task.metadata["cancellation_history"] = history[-20:]
+        store.save_task(task)
+        store.save_checkpoint(
+            Checkpoint(
+                task_id=task.id,
+                phase="CANCELLED",
+                payload={
+                    "reason": reason,
+                    "previous_status": previous_status,
+                    "previous_attempts": previous_attempts,
+                },
+            )
+        )
+
+        ledger = JsonContinuousLedger(args.ledger)
+        linked = []
+        for record in ledger.records():
+            if record.get("task_id") != task.id:
+                continue
+            ledger.update(
+                record["fingerprint"],
+                state="CANCELLED",
+                attempts=task.attempts,
+                last_error=task.last_error,
+            )
+            linked.append(record["fingerprint"])
+
+        exporter = EvidenceExporter(store)
+        path, digest = exporter.export(task)
+        task.metadata["evidence_path"] = str(path)
+        task.metadata["evidence_sha256"] = digest
+        store.save_task(task)
+
+        print(json.dumps({
+            "task_id": task.id,
+            "status": task.status.value,
+            "previous_status": previous_status,
+            "reason": reason,
+            "linked_work_items": linked,
+            "evidence_path": str(path),
+            "evidence_sha256": digest,
+        }, indent=2))
         return 0
 
     if args.command == "show":
