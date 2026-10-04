@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+case "$(uname -s)" in
+  Linux*) ;;
+  *)
+    echo "doctor.sh must run inside Linux/WSL. On Windows use scripts/doctor-wsl.ps1." >&2
+    exit 2
+    ;;
+esac
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$ROOT/.env"
 
