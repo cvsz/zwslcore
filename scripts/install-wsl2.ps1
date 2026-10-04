@@ -2,7 +2,7 @@ param(
   [string]$Distro = "Ubuntu-26.04",
   [string]$LinuxUser = "cvsz",
   [string]$Repo = "https://github.com/cvsz/zwslcore.git",
-  [string]$Branch = "main",
+  [string]$Branch = "",
   [switch]$AllowFallback,
   [switch]$SkipStackInstall,
   [switch]$ValidateOnly
@@ -100,7 +100,21 @@ function Get-WslDistroVersion([string]$Name) {
 }
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$RepoRoot = Split-Path -Parent $ScriptRoot
 $BootstrapPath = Join-Path $ScriptRoot "bootstrap-wsl.sh"
+
+if (-not $Branch) {
+  try {
+    $detectedBranch = (& git -C $RepoRoot branch --show-current 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0 -and $detectedBranch) {
+      $Branch = $detectedBranch
+    } else {
+      $Branch = "main"
+    }
+  } catch {
+    $Branch = "main"
+  }
+}
 
 if ($ValidateOnly) {
   if (-not (Test-Path $BootstrapPath)) {
@@ -265,7 +279,9 @@ fi
 git -C zwslcore checkout '$Branch'
 git -C zwslcore pull --ff-only origin '$Branch'
 cd zwslcore
-make install
+echo "[zwslcore-wsl] Installing repo branch: $Branch"
+set -o pipefail
+make install 2>&1 | tee ~/zwslcore-install.log
 "@
   $encodedInstall = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($linuxInstall))
   Invoke-Native wsl.exe @(
@@ -278,6 +294,8 @@ make install
 Write-Step "Installation complete"
 Write-Host "Distro      : $Distro"
 Write-Host "Linux user  : $LinuxUser"
+Write-Host "Repo branch : $Branch"
+Write-Host "Install log : ~/zwslcore-install.log"
 Write-Host "Open WebUI  : http://localhost:3000"
 Write-Host "Provider    : http://localhost:8080"
 Write-Host "LiteLLM     : http://localhost:4000"
