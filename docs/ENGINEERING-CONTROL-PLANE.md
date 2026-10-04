@@ -142,3 +142,28 @@ The bundle contains:
 - a sidecar SHA-256 checksum for tamper detection
 
 Raw validator stdout/stderr and raw Git diff are intentionally excluded by default to reduce accidental secret retention. Common API-key/token patterns in final error summaries are redacted.
+
+
+## Resumable phase cursor
+
+Each checkpoint updates task metadata with:
+
+- phase_cursor
+- phase_checkpoint_id
+- baseline_head
+- run_config
+
+Resume a blocked or failed task:
+
+    python3 scripts/engineer.py resume TASK_ID
+
+The resume path is deliberately conservative:
+
+1. provider preflight still runs;
+2. the managed worktree is reset to clean HEAD;
+3. the current HEAD is compared with the HEAD stored in the PLAN checkpoint;
+4. the prior plan is reused only when those HEAD values match;
+5. EDITING, VALIDATING and REVIEWING always run again;
+6. if HEAD changed, the runtime performs a fresh planning call.
+
+Resume history is retained in task metadata before the attempt budget is reset. A succeeded task cannot be resumed through this command.
