@@ -43,7 +43,7 @@ apt-get install -y \
   procps \
   iproute2
 
-if ! command -v docker >/dev/null 2>&1; then
+if ! dpkg-query -W -f='${db:Status-Abbrev}' docker-ce 2>/dev/null | grep -q '^ii '; then
   log "Installing Docker Engine from Docker's official Ubuntu repository"
 
   for package in docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc; do

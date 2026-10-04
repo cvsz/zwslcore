@@ -103,3 +103,29 @@ Ollama      http://localhost:11434
 - Provider keys remain in the ignored local `.env`.
 - Cloud fallback remains disabled unless explicitly configured.
 - `wsl --unregister` is intentionally not part of automated recovery because it permanently deletes the selected distribution and its data.
+
+## Runtime verification from Windows
+
+Do not run Linux `make` commands directly in PowerShell unless GNU Make is separately installed on Windows. The supported Windows entrypoint is:
+
+```powershell
+.\scripts\doctor-wsl.ps1
+```
+
+For an authenticated model inference test as well:
+
+```powershell
+.\scripts\doctor-wsl.ps1 -Smoke
+```
+
+The wrapper executes the checks inside `Ubuntu-26.04` against `~/zwslcore`, so it uses the same `.env`, Docker daemon, volumes and secrets as the running stack.
+
+## Tested default runtime releases
+
+The repository pins default images to stable releases and allows deliberate overrides in `.env`:
+
+- Ollama: `0.35.1`
+- LiteLLM: `v1.104.0`
+- Open WebUI: `v0.11.4`
+
+The installer upgrades only known old mutable defaults such as `:latest` and `:main`; explicit custom image values are preserved.

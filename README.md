@@ -80,6 +80,7 @@ Ollama      http://localhost:11434
 
 ```bash
 make doctor
+make smoke
 make models
 make logs
 make restart
@@ -105,6 +106,21 @@ python3 scripts/sync-free-models.py
 ```
 
 Optionally export `OPENROUTER_API_KEY` before discovery or configure it only in the untracked `.env`. External free tiers and quotas can change and are not treated as permanently free.
+
+## Windows runtime verification
+
+The production runtime lives inside WSL. From PowerShell, use the wrapper instead of running Linux `make` targets from the Windows checkout:
+
+```powershell
+.\scripts\doctor-wsl.ps1
+.\scripts\doctor-wsl.ps1 -Smoke
+```
+
+`-Smoke` performs an authenticated end-to-end inference test after the health checks.
+
+## Runtime version policy
+
+Default service images are pinned to tested stable release tags instead of mutable `latest` or `main` tags. The installer migrates the old known mutable defaults while preserving explicit custom image overrides. Upgrade image versions deliberately through `.env` and rerun `make install`.
 
 ## Security defaults
 

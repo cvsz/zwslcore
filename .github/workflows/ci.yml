@@ -31,12 +31,18 @@ jobs:
           set -euo pipefail
           bash -n scripts/install.sh
           bash -n scripts/doctor.sh
+          bash -n scripts/smoke.sh
           bash -n scripts/bootstrap-wsl.sh
           python3 -m py_compile scripts/sync-free-models.py services/model_catalog/catalog.py
           python3 -m compileall -q services/provider/zeaz_provider
           python3 -m unittest tests.test_model_catalog -v
           cp .env.example .env
           docker compose --env-file .env config --quiet
+          if grep -Eq '(^|:)(latest|main)$' .env.example; then
+            echo 'Mutable runtime image tag found in .env.example'
+            exit 1
+          fi
+          docker compose --env-file .env build provider
           rm -f .env
 
       - name: Check for common secret file names
@@ -65,6 +71,20 @@ jobs:
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile(
             (Resolve-Path 'scripts/install-wsl2.ps1'),
+            [ref]$null,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
+      - name: Parse Windows doctor wrapper
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/doctor-wsl.ps1'),
             [ref]$null,
             [ref]$errors
           ) | Out-Null

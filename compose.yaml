@@ -2,7 +2,7 @@ name: zwslcore
 
 services:
   ollama:
-    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.35.1}
     container_name: zwslcore-ollama
     restart: unless-stopped
     ports:
@@ -18,7 +18,7 @@ services:
     networks: [ai]
 
   litellm:
-    image: ${LITELLM_IMAGE:-docker.litellm.ai/berriai/litellm:latest}
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.104.0}
     container_name: zwslcore-litellm
     restart: unless-stopped
     depends_on:
@@ -35,7 +35,7 @@ services:
       - "host.docker.internal:host-gateway"
     healthcheck:
       test:
-        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')"]
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -73,7 +73,7 @@ services:
       - ALL
     healthcheck:
       test:
-        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live', timeout=3)"]
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -81,7 +81,7 @@ services:
     networks: [ai]
 
   open-webui:
-    image: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:main}
+    image: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.11.4}
     container_name: zwslcore-open-webui
     restart: unless-stopped
     depends_on:
@@ -97,6 +97,13 @@ services:
       - open-webui-data:/app/backend/data
     ports:
       - "127.0.0.1:${OPENWEBUI_PORT:-3000}:8080"
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
     networks: [ai]
 
 networks:

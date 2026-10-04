@@ -35,7 +35,6 @@ function ConvertFrom-WslDistroOutput([object[]]$Lines) {
 
   foreach ($rawLine in $Lines) {
     if ($null -eq $rawLine) { continue }
-
     $line = ([string]$rawLine).Replace([string][char]0, "").Trim()
     if (-not $line) { continue }
 
@@ -71,7 +70,6 @@ function Get-OnlineDistros {
       $parsed = ConvertFrom-WslDistroOutput -Lines $fallback
     }
   }
-
   return @($parsed)
 }
 
@@ -91,11 +89,11 @@ function Get-WslDistroVersion([string]$Name) {
     if (-not $line) { continue }
 
     $line = $line.TrimStart("*").Trim()
-    if ($line -match "^$([regex]::Escape($Name))[ ]{2,}.*[ ]{2,}([12])$") {
+    $pattern = "^" + [regex]::Escape($Name) + "[ ]{2,}.*[ ]{2,}([12])$"
+    if ($line -match $pattern) {
       return [int]$Matches[1]
     }
   }
-
   return $null
 }
 
@@ -141,7 +139,15 @@ if ($ValidateOnly) {
 if (-not (Test-Administrator)) {
   throw "Run PowerShell as Administrator."
 }
-
+if ($LinuxUser -notmatch "^[a-z_][a-z0-9_-]{0,31}$") {
+  throw "LinuxUser must be a valid Linux account name."
+}
+if ($Branch -notmatch "^[A-Za-z0-9._/-]+$") {
+  throw "Branch contains unsupported characters."
+}
+if ($Repo -notmatch "^https://github[.]com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+[.]git$") {
+  throw "Repo must be an HTTPS github.com clone URL ending in .git."
+}
 if (-not (Test-Path $BootstrapPath)) {
   throw "Missing local bootstrap script: $BootstrapPath"
 }
@@ -161,7 +167,6 @@ foreach ($feature in @("Microsoft-Windows-Subsystem-Linux", "VirtualMachinePlatf
     $restartRequired = $true
   }
 }
-
 if ($restartRequired) {
   Write-Warning "Windows features were enabled. Restart Windows and run this same script again."
   exit 3010
@@ -179,7 +184,6 @@ if ($LASTEXITCODE -ne 0) {
     exit 3010
   }
 }
-
 Invoke-Native wsl.exe @("--update")
 Invoke-Native wsl.exe @("--set-default-version", "2")
 
@@ -190,7 +194,7 @@ if ($online -notcontains $Distro) {
     Write-Warning "$Distro is not currently listed by WSL; using Ubuntu-24.04 because -AllowFallback was supplied."
     $Distro = "Ubuntu-24.04"
   } else {
-    throw "$Distro is not available from 'wsl --list --online'. Parsed distros: $($online -join ', ')"
+    throw "$Distro is not available from the WSL catalog. Parsed distros: $($online -join ', ')"
   }
 }
 
@@ -227,6 +231,15 @@ Invoke-Native wsl.exe @(
   "echo '$encodedConf' | base64 -d > /etc/wsl.conf"
 )
 
+Write-Step "Restarting WSL to activate systemd"
+Invoke-Native wsl.exe @("--terminate", $Distro)
+Start-Sleep -Seconds 2
+Invoke-Native wsl.exe @(
+  "-d", $Distro, "-u", "root", "--",
+  "bash", "-lc",
+  'test "$(ps -p 1 -o comm=)" = systemd'
+)
+
 Write-Step "Installing Ubuntu software and Docker from local zwslcore bootstrap"
 $bootstrapText = Get-Content -Raw -LiteralPath $BootstrapPath
 $encodedBootstrap = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bootstrapText))
@@ -244,22 +257,15 @@ if (($newUserMarker | Out-String).Trim() -eq "yes") {
 }
 
 Write-Step "Setting the default Linux user"
-$userConf = @"
-if ! grep -q '^\[user\]' /etc/wsl.conf; then
-  printf '\n[user]\ndefault=$LinuxUser\n' >> /etc/wsl.conf
-else
-  sed -i '/^\[user\]/,/^\[/ { s/^default=.*/default=$LinuxUser/; }' /etc/wsl.conf
-fi
-"@
-$userEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($userConf))
-Invoke-Native wsl.exe @(
-  "-d", $Distro, "-u", "root", "--",
-  "bash", "-lc",
-  "echo '$userEncoded' | base64 -d | bash"
-)
+$userCommand = "if grep -q '^\[user\]' /etc/wsl.conf; then " +
+  "if sed -n '/^\[user\]/,/^\[/p' /etc/wsl.conf | grep -q '^default='; then " +
+  "sed -i '/^\[user\]/,/^\[/ s/^default=.*/default=$LinuxUser/' /etc/wsl.conf; " +
+  "else sed -i '/^\[user\]/a default=$LinuxUser' /etc/wsl.conf; fi; " +
+  "else printf '\n[user]\ndefault=$LinuxUser\n' >> /etc/wsl.conf; fi"
+Invoke-Native wsl.exe @("-d", $Distro, "-u", "root", "--", "bash", "-lc", $userCommand)
 
-Write-Step "Restarting WSL to apply systemd/default-user settings"
-Invoke-Native wsl.exe @("--shutdown")
+Write-Step "Restarting WSL to apply default-user settings"
+Invoke-Native wsl.exe @("--terminate", $Distro)
 Start-Sleep -Seconds 2
 
 Write-Step "Validating WSL, systemd, Docker and development tools"
@@ -302,4 +308,4 @@ Write-Host "LiteLLM     : http://localhost:4000"
 Write-Host "Ollama      : http://localhost:11434"
 Write-Host ""
 Write-Host "Verify:"
-Write-Host "  wsl -d $Distro -- bash -lc 'cd ~/zwslcore && make doctor'"
+Write-Host "  .\scripts\doctor-wsl.ps1 -Smoke"

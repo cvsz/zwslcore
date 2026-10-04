@@ -3,7 +3,6 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$ROOT/.env"
-MODELS=(qwen2.5-coder:3b qwen2.5-coder:7b qwen3:8b)
 
 log() { printf '\n[zwslcore] %s\n' "$*"; }
 die() { printf '[zwslcore] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -12,32 +11,82 @@ die() { printf '[zwslcore] ERROR: %s\n' "$*" >&2; exit 1; }
 grep -qi microsoft /proc/version || log "Warning: WSL2 was not detected; continuing on Linux."
 command -v docker >/dev/null 2>&1 || die "Docker Engine is required."
 docker compose version >/dev/null 2>&1 || die "Docker Compose plugin is required."
+command -v python3 >/dev/null 2>&1 || die "Python 3 is required."
+command -v curl >/dev/null 2>&1 || die "curl is required."
 
 if [[ ! -f "$ENV_FILE" ]]; then
   log "Creating .env from .env.example"
   cp "$ROOT/.env.example" "$ENV_FILE"
-  chmod 600 "$ENV_FILE"
 fi
+chmod 600 "$ENV_FILE"
 
+log "Migrating managed defaults and generating local secrets"
 python3 - "$ENV_FILE" <<'PY'
 from pathlib import Path
 import secrets
 import sys
 
 path = Path(sys.argv[1])
-text = path.read_text()
+lines = path.read_text(encoding="utf-8").splitlines()
+
+managed_defaults = {
+    "OLLAMA_IMAGE": ("ollama/ollama:0.35.1", {"", "ollama/ollama:latest"}),
+    "LITELLM_IMAGE": (
+        "ghcr.io/berriai/litellm:v1.104.0",
+        {"", "docker.litellm.ai/berriai/litellm:latest", "ghcr.io/berriai/litellm:latest"},
+    ),
+    "OPENWEBUI_IMAGE": (
+        "ghcr.io/open-webui/open-webui:v0.11.4",
+        {"", "ghcr.io/open-webui/open-webui:main", "ghcr.io/open-webui/open-webui:latest"},
+    ),
+}
+
+values = {}
+for line in lines:
+    if "=" in line and not line.lstrip().startswith("#"):
+        key, value = line.split("=", 1)
+        values[key] = value
+
 replacements = {
     "REPLACE_ME_WEBUI_SECRET": secrets.token_hex(32),
     "REPLACE_ME_LITELLM_MASTER_KEY": "sk-" + secrets.token_hex(32),
     "REPLACE_ME_PROVIDER_CLIENT_KEY": "zw-" + secrets.token_hex(32),
 }
+text = "\n".join(lines) + "\n"
 for old, new in replacements.items():
     text = text.replace(old, new)
-path.write_text(text)
+
+lines = text.splitlines()
+seen = set()
+out = []
+for line in lines:
+    if "=" not in line or line.lstrip().startswith("#"):
+        out.append(line)
+        continue
+    key, value = line.split("=", 1)
+    seen.add(key)
+    if key in managed_defaults:
+        target, old_values = managed_defaults[key]
+        if value in old_values:
+            value = target
+    out.append(f"{key}={value}")
+
+for key, (target, _) in managed_defaults.items():
+    if key not in seen:
+        out.append(f"{key}={target}")
+
+path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
 PY
+
+if grep -Eq 'REPLACE_ME_(WEBUI_SECRET|LITELLM_MASTER_KEY|PROVIDER_CLIENT_KEY)' "$ENV_FILE"; then
+  die "Secret placeholders remain in .env."
+fi
 
 log "Validating Compose configuration"
 docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" config --quiet
+
+log "Pulling pinned runtime images"
+docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" pull ollama litellm open-webui
 
 log "Starting Ollama"
 docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" up -d ollama
@@ -55,10 +104,58 @@ AVAILABLE_KB=$(awk '/MemAvailable:/ {print $2}' /proc/meminfo)
 AVAILABLE_GB=$((AVAILABLE_KB / 1024 / 1024))
 log "Available RAM: ${AVAILABLE_GB} GiB"
 
-SELECTED=("${MODELS[0]}")
-if (( AVAILABLE_GB >= 10 )); then SELECTED+=("${MODELS[1]}"); fi
-if (( AVAILABLE_GB >= 14 )); then SELECTED+=("${MODELS[2]}"); fi
+FAST_MODEL="qwen2.5-coder:3b"
+CODER_MODEL="$FAST_MODEL"
+REASONING_MODEL="$FAST_MODEL"
+LOCAL_MODEL="$FAST_MODEL"
 
+if (( AVAILABLE_GB >= 10 )); then
+  CODER_MODEL="qwen2.5-coder:7b"
+  REASONING_MODEL="$CODER_MODEL"
+  LOCAL_MODEL="$CODER_MODEL"
+fi
+if (( AVAILABLE_GB >= 14 )); then
+  REASONING_MODEL="qwen3:8b"
+  LOCAL_MODEL="$REASONING_MODEL"
+fi
+
+log "Runtime model selection: fast=$FAST_MODEL coder=$CODER_MODEL reasoning=$REASONING_MODEL default=$LOCAL_MODEL"
+
+python3 - "$ENV_FILE" "$FAST_MODEL" "$CODER_MODEL" "$REASONING_MODEL" "$LOCAL_MODEL" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+fast, coder, reasoning, local = sys.argv[2:6]
+updates = {
+    "ZEAZ_FAST_MODEL": fast,
+    "ZEAZ_CODER_MODEL": coder,
+    "ZEAZ_REASONING_MODEL": reasoning,
+    "ZEAZ_LOCAL_MODEL": local,
+    "ZEAZ_LITELLM_FAST_MODEL": f"ollama/{fast}",
+    "ZEAZ_LITELLM_CODER_MODEL": f"ollama/{coder}",
+    "ZEAZ_LITELLM_REASONING_MODEL": f"ollama/{reasoning}",
+}
+
+lines = path.read_text(encoding="utf-8").splitlines()
+seen = set()
+out = []
+for line in lines:
+    if "=" in line and not line.lstrip().startswith("#"):
+        key, _ = line.split("=", 1)
+        if key in updates:
+            out.append(f"{key}={updates[key]}")
+            seen.add(key)
+            continue
+    out.append(line)
+for key, value in updates.items():
+    if key not in seen:
+        out.append(f"{key}={value}")
+path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+PY
+chmod 600 "$ENV_FILE"
+
+mapfile -t SELECTED < <(printf '%s\n' "$FAST_MODEL" "$CODER_MODEL" "$REASONING_MODEL" | awk '!seen[$0]++')
 for model in "${SELECTED[@]}"; do
   if ! docker exec zwslcore-ollama ollama list | awk 'NR>1 {print $1}' | grep -qx "$model"; then
     log "Pulling $model"
@@ -66,8 +163,14 @@ for model in "${SELECTED[@]}"; do
   fi
 done
 
+log "Re-validating runtime configuration"
+docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" config --quiet
+
+log "Building the in-repo provider gateway"
+docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" build --pull provider
+
 log "Starting LiteLLM, zwslcore Provider, and Open WebUI"
-docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" up -d
+docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" up -d --remove-orphans
 
 log "Waiting for the full AI stack to become healthy"
 deadline=$((SECONDS + 300))
@@ -87,14 +190,29 @@ if ! bash "$ROOT/scripts/doctor.sh"; then
   die "AI stack did not become healthy within 300 seconds."
 fi
 
+log "Running end-to-end smoke test"
+if ! bash "$ROOT/scripts/smoke.sh"; then
+  printf '\n[zwslcore] End-to-end smoke test failed. Current container state:\n' >&2
+  docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" ps >&2 || true
+  printf '\n[zwslcore] Recent service logs:\n' >&2
+  docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" logs --tail=120 >&2 || true
+  die "AI stack is healthy but inference validation failed."
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+
 cat <<EOF
 
-zwslcore AI stack is running.
+zwslcore AI stack is running and inference-tested.
 
 Open WebUI : http://localhost:${OPENWEBUI_PORT:-3000}
 Provider   : http://localhost:${PROVIDER_PORT:-8080}
 LiteLLM    : http://localhost:${LITELLM_PORT:-4000}
 Ollama     : http://localhost:${OLLAMA_PORT:-11434}
+Default    : ${ZEAZ_LOCAL_MODEL}
 
-Cloud provider fallback remains disabled until you explicitly set provider keys.
+Cloud provider fallback remains disabled until you explicitly enable it and configure provider keys.
 EOF
