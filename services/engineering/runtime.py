@@ -13,6 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .agents import AgentProfile, get_agent
+from .change_snapshot import ChangeSnapshotStore, SnapshotError
 from .evidence import EvidenceExporter
 from .permissions import require_allowed
 from .models import Checkpoint, EngineeringTask, TaskStatus
@@ -228,6 +229,7 @@ class EngineeringRuntime:
         self.gate = SecurityGate()
         self.progress = progress or (lambda message: None)
         self.evidence = evidence or EvidenceExporter(store)
+        self.change_snapshots = ChangeSnapshotStore(worktrees=self.worktrees)
         self.snapshot_max_bytes = max(4 * 1024, int(snapshot_max_bytes))
         ladder = tuple(alias for alias in (model_ladder or ()) if alias)
         if provider.model not in ladder:
@@ -559,6 +561,25 @@ class EngineeringRuntime:
             else:
                 # Clear intent-to-add entries while preserving working-tree edits.
                 self._git(worktree, ["reset"])
+                try:
+                    snapshot_info = self.change_snapshots.capture(task.id, worktree)
+                    task.metadata["change_snapshot"] = {
+                        "head": snapshot_info["head"],
+                        "patch_sha256": snapshot_info["patch_sha256"],
+                        "patch_bytes": snapshot_info["patch_bytes"],
+                        "state": snapshot_info["state"],
+                    }
+                    task.metadata.pop("change_snapshot_error", None)
+                    self.progress(
+                        f"[engineering] {task.id} SNAPSHOT_WRITTEN "
+                        f"sha256={snapshot_info['patch_sha256'][:16]} "
+                        f"bytes={snapshot_info['patch_bytes']}"
+                    )
+                except SnapshotError as exc:
+                    task.metadata["change_snapshot_error"] = str(exc)[:500]
+                    self.progress(
+                        f"[engineering] {task.id} SNAPSHOT_SKIPPED error={str(exc)[:300]}"
+                    )
 
             task.status = TaskStatus.SUCCEEDED
             task.last_error = ""

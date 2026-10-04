@@ -1,6 +1,7 @@
 """Self-contained zwslcore engineering control plane."""
 
 from .agents import AgentProfile, get_agent, list_agents
+from .change_snapshot import ChangeSnapshotStore, SnapshotError
 from .continuous import ContinuousEngineeringRunner
 from .delegation import (
     Lineage,
@@ -37,6 +38,7 @@ from .worktree import WorktreeManager
 
 __all__ = [
     "AgentProfile",
+    "ChangeSnapshotStore",
     "Checkpoint",
     "ContinuousEngineeringRunner",
     "ContinuousEngineeringLoop",
@@ -61,6 +63,7 @@ __all__ = [
     "RepositorySnapshotter",
     "SQLiteEngineeringStore",
     "SecurityGate",
+    "SnapshotError",
     "StaticReviewer",
     "StdioMCPSession",
     "TaskRisk",

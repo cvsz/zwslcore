@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from services.engineering.agents import get_agent, list_agents
+from services.engineering.change_snapshot import ChangeSnapshotStore, SnapshotError
 from services.engineering.continuous import ContinuousEngineeringRunner
 from services.engineering.delegation import (
     children_of,
@@ -149,6 +150,15 @@ def parser() -> argparse.ArgumentParser:
 
     evv = sub.add_parser("evidence-verify")
     evv.add_argument("task_id")
+
+    snap_status = sub.add_parser("snapshot-status")
+    snap_status.add_argument("task_id")
+
+    undo = sub.add_parser("undo")
+    undo.add_argument("task_id")
+
+    redo = sub.add_parser("redo")
+    redo.add_argument("task_id")
 
     snap = sub.add_parser("snapshot")
     snap.add_argument("--repository", default=".")
@@ -406,6 +416,51 @@ def main() -> int:
         ok = exporter.verify(args.task_id)
         print("PASS" if ok else "FAIL")
         return 0 if ok else 1
+
+    if args.command in {"snapshot-status", "undo", "redo"}:
+        task = store.get_task(args.task_id)
+        if not task:
+            print("task not found", file=sys.stderr)
+            return 2
+        if not task.worktree_path:
+            print("task has no managed worktree", file=sys.stderr)
+            return 2
+
+        snapshots = ChangeSnapshotStore()
+        try:
+            if args.command == "snapshot-status":
+                value = snapshots.status(task.id)
+            elif args.command == "undo":
+                value = snapshots.undo(task.id, task.worktree_path)
+                task.metadata["change_snapshot"] = {
+                    "head": value["head"],
+                    "patch_sha256": value["patch_sha256"],
+                    "patch_bytes": value["patch_bytes"],
+                    "state": value["state"],
+                }
+                store.save_task(task)
+            else:
+                value = snapshots.redo(task.id, task.worktree_path)
+                task.metadata["change_snapshot"] = {
+                    "head": value["head"],
+                    "patch_sha256": value["patch_sha256"],
+                    "patch_bytes": value["patch_bytes"],
+                    "state": value["state"],
+                }
+                store.save_task(task)
+        except SnapshotError as exc:
+            print(f"snapshot: {exc}", file=sys.stderr)
+            return 1
+
+        print(json.dumps({
+            "task_id": task.id,
+            "state": value["state"],
+            "head": value["head"],
+            "patch_sha256": value["patch_sha256"],
+            "patch_bytes": value["patch_bytes"],
+            "patch_path": value["patch_path"],
+        }, indent=2))
+        return 0
 
     if args.command == "snapshot":
         print(RepositorySnapshotter(args.repository).snapshot())
