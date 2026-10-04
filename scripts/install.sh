@@ -180,7 +180,7 @@ for line in lines:
     if "=" in line and not line.lstrip().startswith("#"):
         key, value = line.split("=", 1)
         if key == "ZEAZ_ENGINEERING_MODEL":
-            if value in {"", "zeaz-local", "zeaz-fast"}:
+            if value in {"", "zeaz-local"}:
                 value = engineering
             out.append(f"{key}={value}")
             seen.add(key)
