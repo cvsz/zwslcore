@@ -1,3 +1,3 @@
-"""ZeaZ Provider."""
+"""zwslcore Provider Gateway."""
 
-__version__ = "0.4.0rc1"
+__version__ = "0.1.0"
