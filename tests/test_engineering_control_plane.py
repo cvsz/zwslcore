@@ -243,6 +243,7 @@ class ScopePromptTests(unittest.TestCase):
             "--- FILE: services/engineering/runtime.py ---\npass\n",
             "plan",
             {"services"},
+            ["services/engineering/runtime.py"],
         )
         self.assertIn("allowed path prefixes: services", prompt)
         self.assertIn("MUST NOT include the repository name", prompt)
@@ -252,9 +253,36 @@ class ScopePromptTests(unittest.TestCase):
         prompt = EngineeringRuntime._repair_prompt(
             '{"changes":[{"path":"README.md","content":"x"}]}',
             {"services"},
+            ["services/engineering/runtime.py"],
         )
-        self.assertIn("drop any proposed change outside the allowed scope", prompt)
+        self.assertIn("Drop changes outside scope", prompt)
         self.assertIn("allowed path prefixes: services", prompt)
+
+
+class CandidateFileTests(unittest.TestCase):
+    def test_snapshot_candidate_paths_are_repository_relative(self):
+        snapshot = (
+            "\n--- FILE: services/engineering/runtime.py ---\npass\n"
+            "\n--- FILE: services/provider/main.py ---\npass\n"
+        )
+        self.assertEqual(
+            EngineeringRuntime._snapshot_candidate_paths(snapshot),
+            ["services/engineering/runtime.py", "services/provider/main.py"],
+        )
+
+    def test_changes_within_scope_rejects_readme(self):
+        self.assertFalse(
+            EngineeringRuntime._changes_within_scope(
+                [{"path": "README.md", "content": "x"}],
+                {"services"},
+            )
+        )
+        self.assertTrue(
+            EngineeringRuntime._changes_within_scope(
+                [{"path": "services/engineering/runtime.py", "content": "x"}],
+                {"services"},
+            )
+        )
 
 
 class ProviderPreflightTests(unittest.TestCase):
@@ -308,7 +336,7 @@ class ContinuousRetryResetTests(unittest.TestCase):
                 if "Produce a concise implementation plan" in prompt:
                     return "plan"
                 self.edit_calls += 1
-                if self.edit_calls == 1:
+                if self.edit_calls <= 2:
                     return '{"changes":[]}'
                 return '{"changes":[{"path":"services/example.py","content":"x = 1"}]}'
 
