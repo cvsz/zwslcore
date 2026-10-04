@@ -85,6 +85,9 @@ class EngineeringTuiTests(unittest.TestCase):
             self.assertIn("Improve provider diagnostics", text)
             self.assertIn("EDITING", text)
             self.assertIn("evidence=yes", text)
+            self.assertIn("RECOVERY", text)
+            self.assertIn("recover --max-iterations 4", text)
+            self.assertIn("fallback=zeaz-coder", text)
             self.assertNotIn("\x1b[", text)
 
     def test_empty_dashboard_is_stable(self):
