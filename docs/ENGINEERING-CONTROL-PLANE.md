@@ -96,3 +96,24 @@ ZEAZ_COST_POLICY controls routing:
 - PERMIT_PAID permits configured routes regardless of class.
 
 A provider being configured is therefore not sufficient to make it eligible for routing; it must also satisfy the active cost policy.
+
+
+## Live progress and status
+
+Engineering runs emit progress immediately to the operator console, including task ID, worktree, attempt, planning model, snapshot byte size, validation, security gate and completion/failure state.
+
+Inspect a durable work item while another terminal is running it:
+
+    python3 scripts/engineer.py work-status FINGERPRINT_PREFIX
+
+The status output includes the continuous ledger record, linked EngineeringTask and latest task checkpoint.
+
+## Local model context budget
+
+The local engineering snapshot defaults to:
+
+- 120 files maximum
+- 64 KiB per file
+- 96 KiB total text context
+
+When --allow-path is supplied, the snapshot is restricted to those declared paths. This keeps local CPU inference bounded and prevents unrelated repository content from dominating the prompt.
