@@ -158,7 +158,7 @@ import sys
 path = Path(sys.argv[1])
 fast, coder, reasoning, local = sys.argv[2:6]
 accelerator, quantization, context_length, flash_attention = sys.argv[6:10]
-engineering = "zeaz-fast"
+engineering = "auto"
 updates = {
     "ZEAZ_FAST_MODEL": fast,
     "ZEAZ_CODER_MODEL": coder,
@@ -180,7 +180,7 @@ for line in lines:
     if "=" in line and not line.lstrip().startswith("#"):
         key, value = line.split("=", 1)
         if key == "ZEAZ_ENGINEERING_MODEL":
-            if value in {"", "zeaz-local"}:
+            if value in {"", "zeaz-local", "zeaz-fast"}:
                 value = engineering
             out.append(f"{key}={value}")
             seen.add(key)
