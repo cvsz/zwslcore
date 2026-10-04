@@ -34,7 +34,11 @@ restart:
 	docker compose --env-file .env restart
 
 doctor:
-	bash scripts/doctor.sh
+	@if [[ "$(uname -s)" == "Linux" ]]; then \
+	  bash scripts/doctor.sh; \
+	else \
+	  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/doctor-wsl.ps1; \
+	fi
 
 logs:
 	docker compose --env-file .env logs -f --tail=200
