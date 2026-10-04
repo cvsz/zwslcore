@@ -21,6 +21,12 @@ from services.engineering.models import EngineeringTask, TaskRisk, TaskStatus
 from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
 from services.engineering.store import SQLiteEngineeringStore
+from services.model_catalog.selection import (
+    SelectionRequirements,
+    configured_local_candidates,
+    rank_models,
+    select_model,
+)
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -40,6 +46,46 @@ def emit_progress(message: str) -> None:
     print(message, flush=True)
 
 
+def _engineering_alias(env: dict[str, str]) -> tuple[str, dict[str, object]]:
+    configured = env.get("ZEAZ_ENGINEERING_MODEL", "auto").strip() or "auto"
+    if configured != "auto":
+        return configured, {"mode": "explicit", "alias": configured}
+
+    profile = detect_hardware()
+    runtime = profile.recommended_runtime()
+    recommended = profile.recommended_models()
+    alias_models = {
+        "zeaz-fast": env.get("ZEAZ_FAST_MODEL", "qwen2.5-coder:3b"),
+        "zeaz-coder": env.get("ZEAZ_CODER_MODEL", "qwen2.5-coder:7b"),
+        "zeaz-reasoning": env.get("ZEAZ_REASONING_MODEL", "qwen3:8b"),
+        "zeaz-local": env.get("ZEAZ_LOCAL_MODEL", recommended["default"]),
+    }
+    candidates = configured_local_candidates(
+        alias_models,
+        context_length=int(runtime["context_length"]),
+    )
+    selected = select_model(
+        candidates,
+        SelectionRequirements(
+            structured_output=True,
+            tool_call=True,
+            min_context=min(4096, int(runtime["context_length"])),
+            cost_policy="ZERO_COST_ONLY",
+        ),
+        hardware_models=[recommended["engineering"]],
+    )
+    if selected is None or not selected.execution_alias:
+        raise RuntimeError("no eligible local engineering model alias found")
+    return selected.execution_alias, {
+        "mode": "auto",
+        "alias": selected.execution_alias,
+        "model": selected.id,
+        "score": selected.score,
+        "reasons": list(selected.reasons),
+        "hardware_profile": profile.profile,
+    }
+
+
 def build_runtime(
     store: SQLiteEngineeringStore,
     *,
@@ -50,12 +96,18 @@ def build_runtime(
     if not key:
         raise RuntimeError("PROVIDER_CLIENT_KEY is missing; run make install first")
     provider_port = env.get("PROVIDER_PORT", os.environ.get("PROVIDER_PORT", "8080"))
+    model_alias, selection = _engineering_alias(env)
+    if progress is not None:
+        progress(
+            "[engineering] MODEL_SELECT "
+            + json.dumps(selection, sort_keys=True, separators=(",", ":"))
+        )
     return EngineeringRuntime(
         store,
         ProviderClient(
             base_url=f"http://127.0.0.1:{provider_port}/v1",
             api_key=key,
-            model=env.get("ZEAZ_ENGINEERING_MODEL", "zeaz-fast"),
+            model=model_alias,
         ),
         progress=progress,
     )
@@ -92,6 +144,7 @@ def parser() -> argparse.ArgumentParser:
     snap.add_argument("--repository", default=".")
 
     sub.add_parser("profile")
+    sub.add_parser("model-select")
 
     r = sub.add_parser("run")
     r.add_argument("task_id")
@@ -214,6 +267,12 @@ def main() -> int:
             },
             indent=2,
         ))
+        return 0
+
+    if args.command == "model-select":
+        env = load_env(ROOT / ".env")
+        alias, selection = _engineering_alias(env)
+        print(json.dumps({"selected_alias": alias, **selection}, indent=2))
         return 0
 
     if args.command == "run":
