@@ -97,6 +97,13 @@ services:
       - open-webui-data:/app/backend/data
     ports:
       - "127.0.0.1:${OPENWEBUI_PORT:-3000}:8080"
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     networks: [ai]
 
 networks:
