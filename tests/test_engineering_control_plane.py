@@ -94,10 +94,6 @@ class WorktreeTests(unittest.TestCase):
             self.assertFalse(manager._marker(target).exists())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class NewFileReviewRegressionTests(unittest.TestCase):
     def test_intent_to_add_exposes_new_file_in_diff(self):
         with tempfile.TemporaryDirectory() as td:
@@ -189,3 +185,28 @@ class LoopCheckpointTests(unittest.TestCase):
         ).run([item])
         self.assertEqual(len(result.blocked), 1)
         self.assertEqual(checkpoints[-1]["state"], "BLOCKED_ATTEMPTS")
+
+
+class SnapshotScopeTests(unittest.TestCase):
+    def test_scope_limits_context(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "services").mkdir()
+            (root / "docs").mkdir()
+            (root / "services" / "app.py").write_text("service-content\n", encoding="utf-8")
+            (root / "docs" / "large.md").write_text("docs-content\n" * 1000, encoding="utf-8")
+            text = RepositorySnapshotter(root, include_paths={"services"}).snapshot()
+            self.assertIn("service-content", text)
+            self.assertNotIn("docs-content", text)
+
+    def test_default_snapshot_budget_is_bounded(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for index in range(20):
+                (root / f"file-{index}.txt").write_text("x" * 20000, encoding="utf-8")
+            text = RepositorySnapshotter(root).snapshot()
+            self.assertLessEqual(len(text.encode("utf-8")), 96 * 1024)
+
+
+if __name__ == "__main__":
+    unittest.main()

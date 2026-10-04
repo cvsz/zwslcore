@@ -156,6 +156,14 @@ Run queued work:
 .\scripts\engineer-wsl.ps1 continuous --max-iterations 4
 ```
 
+Continuous runs now emit live phase progress for baseline, worktree creation, scoped snapshot size, planning, editing, validation, security review, commit and final status. From another PowerShell window, inspect a running item by fingerprint prefix:
+
+```powershell
+.\scripts\engineer-wsl.ps1 work-status 40780a4e4234
+```
+
+When `--allow-path` is supplied, repository context is built only from those paths. The default local-model snapshot is bounded to 96 KiB / 120 files / 64 KiB per file to avoid feeding multi-megabyte repositories into CPU-only models.
+
 Blocked/exhausted work does not silently reset its attempt budget across process restarts. To explicitly retry blocked work:
 
 ```powershell
