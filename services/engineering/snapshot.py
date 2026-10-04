@@ -22,7 +22,7 @@ class RepositorySnapshotter:
         *,
         max_files: int = 120,
         max_file_bytes: int = 64 * 1024,
-        max_total_bytes: int = 96 * 1024,
+        max_total_bytes: int = 64 * 1024,
         include_paths: set[str] | None = None,
     ) -> None:
         self.root = Path(root).resolve()
