@@ -262,6 +262,7 @@ class ContinuousRetryResetTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
             (repo / "services").mkdir(parents=True)
+            (repo / "services" / "__init__.py").write_text("", encoding="utf-8")
             subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True)
             subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.com"], check=True)
             subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test"], check=True)
