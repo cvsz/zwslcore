@@ -51,3 +51,48 @@ Managed worktrees:
 ## Model
 
 By default the control plane uses the local provider alias zeaz-local. Override by setting ZEAZ_ENGINEERING_MODEL in .env.
+
+
+## Hardware profile
+
+Inspect the current WSL hardware and model recommendations:
+
+    python3 scripts/engineer.py profile
+
+The profile records OS/architecture, logical CPU count, total/available RAM, detected GPU text and a deterministic CPU/GPU profile. Model recommendations follow the same RAM thresholds used by the installer.
+
+## Durable continuous work
+
+Queue a work item:
+
+    python3 scripts/engineer.py work-add "Repair provider" --kind REPAIR --description "Repair provider behavior" --repository . --priority 80 --allow-path services --validate "python3 -m unittest discover -s tests -v"
+
+Inspect the queue:
+
+    python3 scripts/engineer.py work-list
+
+Run bounded work:
+
+    python3 scripts/engineer.py continuous --max-iterations 4
+
+The durable JSON ledger lives at ~/.zwslcore/state/continuous.json. Completed fingerprints are not repeated. Consumed attempts survive process restarts. Blocked work requires explicit --retry-blocked to reset its budget.
+
+Continuous retries reset only zwslcore-managed worktrees before the next attempt. Remote push is never performed by the engineering runtime.
+
+## Provider cost policy
+
+Every provider has a cost class:
+
+- FREE_LOCAL
+- FREE_REMOTE
+- CUSTOMER_KEY
+- PAID_PLATFORM
+- UNKNOWN
+
+ZEAZ_COST_POLICY controls routing:
+
+- ZERO_COST_ONLY is the default and blocks paid/unknown routes.
+- PREFER_ZERO_COST ranks free routes first.
+- PERMIT_PAID permits configured routes regardless of class.
+
+A provider being configured is therefore not sufficient to make it eligible for routing; it must also satisfy the active cost policy.
