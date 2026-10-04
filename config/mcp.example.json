@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "example": {
+      "enabled": false,
+      "command": ["python3", "/absolute/path/to/mcp_server.py"],
+      "inherit_env": [],
+      "environment": {},
+      "timeout_seconds": 30,
+      "protocol_version": "2025-06-18"
+    }
+  }
+}
