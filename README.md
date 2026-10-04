@@ -161,6 +161,24 @@ Ollama remains the default backend. CPU-only hosts stay on the conservative 4096
 
 See [Acceleration and quantization policy](docs/ACCELERATION.md).
 
+### Engineering TUI
+
+Open the read-only terminal dashboard from PowerShell:
+
+```powershell
+.\scripts\engineer-wsl.ps1 tui
+```
+
+Useful variants:
+
+```powershell
+.\scripts\engineer-wsl.ps1 tui --interval 1
+.\scripts\engineer-wsl.ps1 tui --limit 20
+.\scripts\engineer-wsl.ps1 tui --once --no-color
+```
+
+The TUI uses only the Python standard library and ANSI terminal control. It shows hardware profile, automatic model selection, queue state, attempt budgets, phase cursors, recent tasks, evidence availability and runtime policy. It is intentionally read-only; task mutation remains explicit through `run`, `resume`, `work-add` and `continuous`.
+
 ### Continuous engineering
 
 Queue one bounded work item from PowerShell:
