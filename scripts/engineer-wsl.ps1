@@ -1,8 +1,8 @@
 param(
+  [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+  [string[]]$EngineerArgs,
   [string]$Distro = "Ubuntu-26.04",
-  [string]$RepoPath = "~/zwslcore",
-  [Parameter(ValueFromRemainingArguments = $true)]
-  [string[]]$EngineerArgs
+  [string]$RepoPath = "~/zwslcore"
 )
 
 $ErrorActionPreference = "Stop"
