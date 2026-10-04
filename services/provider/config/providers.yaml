@@ -1,0 +1,65 @@
+default_model: zeaz-free
+
+providers:
+  ollama:
+    api: openai
+    base_url: http://ollama:11434/v1
+    api_key: ollama
+
+  litellm:
+    api: openai
+    base_url: http://litellm:4000/v1
+    api_key: ${LITELLM_MASTER_KEY}
+
+  openrouter:
+    enabled: ${FREE_CLOUD_FALLBACK_ENABLED:-false}
+    api: openai
+    base_url: https://openrouter.ai/api/v1
+    api_key: ${OPENROUTER_API_KEY:-}
+
+  gemini:
+    enabled: ${FREE_CLOUD_FALLBACK_ENABLED:-false}
+    api: openai
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    api_key: ${GEMINI_API_KEY:-}
+
+  groq:
+    enabled: ${FREE_CLOUD_FALLBACK_ENABLED:-false}
+    api: openai
+    base_url: https://api.groq.com/openai/v1
+    api_key: ${GROQ_API_KEY:-}
+
+models:
+  zeaz-fast:
+    provider: ollama
+    model: qwen2.5-coder:3b
+
+  zeaz-coder:
+    provider: ollama
+    model: qwen2.5-coder:7b
+
+  zeaz-reasoning:
+    provider: ollama
+    model: qwen3:8b
+
+  zeaz-local:
+    provider: ollama
+    model: ${ZEAZ_LOCAL_MODEL:-qwen3:8b}
+
+  zeaz-free:
+    provider: ollama
+    model: ${ZEAZ_LOCAL_MODEL:-qwen3:8b}
+    fallbacks:
+      - provider: openrouter
+        model: ${OPENROUTER_FREE_MODEL:-openrouter/free}
+      - provider: gemini
+        model: ${GEMINI_FREE_MODEL:-gemini-2.5-flash-lite}
+      - provider: groq
+        model: ${GROQ_FREE_MODEL:-openai/gpt-oss-20b}
+
+  zeaz-auto:
+    provider: litellm
+    model: zeaz-coder
+    fallbacks:
+      - provider: ollama
+        model: ${ZEAZ_LOCAL_MODEL:-qwen3:8b}
