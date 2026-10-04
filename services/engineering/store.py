@@ -133,6 +133,27 @@ class SQLiteEngineeringStore:
                 ),
             )
 
+    def list_checkpoints(self, task_id: str) -> list[Checkpoint]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM checkpoints
+                WHERE task_id = ?
+                ORDER BY created_at ASC, id ASC
+                """,
+                (task_id,),
+            ).fetchall()
+        return [
+            Checkpoint(
+                id=row["id"],
+                task_id=row["task_id"],
+                phase=row["phase"],
+                created_at=row["created_at"],
+                payload=json.loads(row["payload_json"]),
+            )
+            for row in rows
+        ]
+
     def latest_checkpoint(self, task_id: str) -> Checkpoint | None:
         with self._connect() as conn:
             row = conn.execute(
