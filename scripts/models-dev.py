@@ -124,11 +124,20 @@ def main() -> int:
         )
         if args.include_remote:
             cloud_enabled = env.get("FREE_CLOUD_FALLBACK_ENABLED", "false").lower() == "true"
+            enabled_remote = set()
+            if cloud_enabled:
+                for provider_id, key_name in (
+                    ("openrouter", "OPENROUTER_API_KEY"),
+                    ("gemini", "GEMINI_API_KEY"),
+                    ("groq", "GROQ_API_KEY"),
+                ):
+                    if env.get(key_name, "").strip():
+                        enabled_remote.add(provider_id)
             candidates.extend(
                 models_dev_candidates(
                     catalog,
                     configured_providers={"openrouter", "gemini", "groq"},
-                    enabled_providers={"openrouter", "gemini", "groq"} if cloud_enabled else set(),
+                    enabled_providers=enabled_remote,
                     cost_classes={
                         "openrouter": "FREE_REMOTE",
                         "gemini": "FREE_REMOTE",
