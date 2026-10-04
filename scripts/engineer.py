@@ -34,7 +34,11 @@ def load_env(path: Path) -> dict[str, str]:
     return values
 
 
-def build_runtime(store: SQLiteEngineeringStore) -> EngineeringRuntime:
+def build_runtime(
+    store: SQLiteEngineeringStore,
+    *,
+    progress=None,
+) -> EngineeringRuntime:
     env = load_env(ROOT / ".env")
     key = env.get("PROVIDER_CLIENT_KEY", os.environ.get("PROVIDER_CLIENT_KEY", ""))
     if not key:
@@ -47,6 +51,7 @@ def build_runtime(store: SQLiteEngineeringStore) -> EngineeringRuntime:
             api_key=key,
             model=env.get("ZEAZ_ENGINEERING_MODEL", "zeaz-local"),
         ),
+        progress=progress,
     )
 
 
@@ -92,6 +97,9 @@ def parser() -> argparse.ArgumentParser:
     wa.add_argument("--commit", action="store_true")
 
     sub.add_parser("work-list")
+
+    ws = sub.add_parser("work-status")
+    ws.add_argument("fingerprint", nargs="?")
 
     cont = sub.add_parser("continuous")
     cont.add_argument("--max-iterations", type=int, default=12)
@@ -155,7 +163,7 @@ def main() -> int:
             print("task not found", file=sys.stderr)
             return 2
         try:
-            result = build_runtime(store).run(
+            result = build_runtime(store, progress=print).run(
                 task,
                 validators=args.validate or ["git diff --check"],
                 allowed_paths=set(args.allow_path) if args.allow_path else None,
@@ -196,9 +204,50 @@ def main() -> int:
             )
         return 0
 
+    if args.command == "work-status":
+        records = ledger.records()
+        if args.fingerprint:
+            matches = [
+                record for record in records
+                if record["fingerprint"].startswith(args.fingerprint)
+            ]
+            if not matches:
+                print("work item not found", file=sys.stderr)
+                return 2
+            if len(matches) > 1:
+                print("fingerprint prefix is ambiguous", file=sys.stderr)
+                return 2
+            records = matches
+
+        output = []
+        for record in records:
+            item = dict(record)
+            task_id = item.get("task_id")
+            if task_id:
+                task = store.get_task(task_id)
+                checkpoint = store.latest_checkpoint(task_id) if task else None
+                item["task"] = (
+                    task.__dict__ | {
+                        "risk": task.risk.value,
+                        "status": task.status.value,
+                        "push_policy": task.push_policy.value,
+                    }
+                    if task else None
+                )
+                item["latest_task_checkpoint"] = checkpoint.__dict__ if checkpoint else None
+            output.append(item)
+
+        print(json.dumps(output[0] if args.fingerprint else output, indent=2, default=str))
+        return 0
+
     if args.command == "continuous":
         try:
-            runner = ContinuousEngineeringRunner(store, ledger, build_runtime(store))
+            runner = ContinuousEngineeringRunner(
+                store,
+                ledger,
+                build_runtime(store, progress=print),
+                progress=print,
+            )
             result = runner.run(
                 max_iterations=max(1, args.max_iterations),
                 retry_blocked=args.retry_blocked,
