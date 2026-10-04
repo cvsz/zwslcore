@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from .ledger import JsonContinuousLedger
@@ -27,10 +28,13 @@ class ContinuousEngineeringRunner:
         store: SQLiteEngineeringStore,
         ledger: JsonContinuousLedger,
         runtime: EngineeringRuntime,
+        *,
+        progress: Callable[[str], None] | None = None,
     ) -> None:
         self.store = store
         self.ledger = ledger
         self.runtime = runtime
+        self.progress = progress or (lambda message: None)
 
     def add(self, item: WorkItem) -> dict[str, Any]:
         return self.ledger.register(item)
@@ -42,9 +46,15 @@ class ContinuousEngineeringRunner:
         retry_blocked: bool = False,
     ) -> LoopResult:
         seed = self.ledger.pending(retry_blocked=retry_blocked)
+        self.progress(f"[continuous] pending={len(seed)} max_iterations={max_iterations} retry_blocked={retry_blocked}")
 
         def implement(item: WorkItem) -> ExecutionResult:
             record = self.ledger.register(item)
+            self.progress(
+                f"[continuous] START kind={item.kind.value} priority={item.priority} "
+                f"attempt={int(record.get('attempts', 0)) + 1}/{int(record.get('max_attempts', item.max_attempts))} "
+                f"title={item.title}"
+            )
             task_id = record.get("task_id") or f"work_{item.fingerprint[:20]}"
             task = self.store.get_task(task_id)
             payload = item.payload
@@ -71,6 +81,7 @@ class ContinuousEngineeringRunner:
                     allowed_paths=set(payload.get("allowed_paths") or ()) or None,
                     commit=bool(payload.get("commit", False)),
                 )
+                self.progress(f"[continuous] task={completed.id} status={completed.status.value}")
                 return ExecutionResult(
                     passed=completed.status == TaskStatus.SUCCEEDED,
                     task=completed,
@@ -78,6 +89,7 @@ class ContinuousEngineeringRunner:
                 )
             except Exception as exc:
                 latest = self.store.get_task(task.id) or task
+                self.progress(f"[continuous] task={task.id} error={str(exc)[:500]}")
                 self.ledger.update(item.fingerprint, last_error=str(exc)[:2000])
                 return ExecutionResult(False, latest, str(exc))
 
@@ -96,6 +108,10 @@ class ContinuousEngineeringRunner:
                 durable_state = "BLOCKED"
             else:
                 durable_state = "PENDING"
+            self.progress(
+                f"[continuous] CHECKPOINT state={durable_state} "
+                f"attempt={value['attempt']} title={value['title']}"
+            )
             self.ledger.update(
                 value["item_id"],
                 state=durable_state,
