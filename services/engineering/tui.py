@@ -133,7 +133,7 @@ def build_dashboard(
     else:
         header = (
             f"{'FP':12} {'STATE':12} {'ATTEMPTS':12} {'PHASE':18} "
-            f"{'KIND':18} TITLE"
+            f"{'MODEL':12} {'KIND':18} TITLE"
         )
         lines.append(_paint(header, BOLD, color))
         lines.append("─" * width)
@@ -145,15 +145,23 @@ def build_dashboard(
             task = tasks.get(task_id)
             phase = ""
             task_status = ""
+            task_model = ""
             if task is not None:
                 task_status = task.status.value
                 phase = str(task.metadata.get("phase_cursor") or task_status)
+                task_model = str(
+                    task.metadata.get("model_working")
+                    or task.metadata.get("model_escalated_to")
+                    or task.metadata.get("model_selected_for_run")
+                    or ""
+                )
             shown_state = task_status if state == "RUNNING" and task_status else state
             row = (
                 f"{str(record.get('fingerprint', ''))[:12]:12} "
                 f"{shown_state[:12]:12} "
                 f"{_bar(attempts, maximum, 6)} {attempts}/{maximum:<3} "
                 f"{_clip(phase, 18):18} "
+                f"{_clip(task_model, 12):12} "
                 f"{_clip(record.get('kind', ''), 18):18} "
                 f"{_clip(record.get('title', ''), max(8, width - 83))}"
             )
@@ -170,6 +178,7 @@ def build_dashboard(
             f"{task.id[:26]:26} "
             f"{task.status.value[:12]:12} "
             f"phase={_clip(task.metadata.get('phase_cursor', ''), 16):16} "
+            f"model={_clip(task.metadata.get('model_working') or task.metadata.get('model_escalated_to') or task.metadata.get('model_selected_for_run', ''), 12):12} "
             f"attempt={task.attempts}/{task.max_attempts} "
             f"evidence={evidence:<3} age={age}s "
             f"{_clip(task.title, max(8, width - 93))}"
