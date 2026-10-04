@@ -34,6 +34,10 @@ def load_env(path: Path) -> dict[str, str]:
     return values
 
 
+def emit_progress(message: str) -> None:
+    print(message, flush=True)
+
+
 def build_runtime(
     store: SQLiteEngineeringStore,
     *,
@@ -163,7 +167,7 @@ def main() -> int:
             print("task not found", file=sys.stderr)
             return 2
         try:
-            result = build_runtime(store, progress=print).run(
+            result = build_runtime(store, progress=emit_progress).run(
                 task,
                 validators=args.validate or ["git diff --check"],
                 allowed_paths=set(args.allow_path) if args.allow_path else None,
@@ -245,8 +249,8 @@ def main() -> int:
             runner = ContinuousEngineeringRunner(
                 store,
                 ledger,
-                build_runtime(store, progress=print),
-                progress=print,
+                build_runtime(store, progress=emit_progress),
+                progress=emit_progress,
             )
             result = runner.run(
                 max_iterations=max(1, args.max_iterations),
