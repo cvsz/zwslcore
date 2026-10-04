@@ -1,17 +1,17 @@
 model_list:
   - model_name: zeaz-fast
     litellm_params:
-      model: ollama/qwen2.5-coder:3b
+      model: os.environ/ZEAZ_LITELLM_FAST_MODEL
       api_base: http://ollama:11434
 
   - model_name: zeaz-coder
     litellm_params:
-      model: ollama/qwen2.5-coder:7b
+      model: os.environ/ZEAZ_LITELLM_CODER_MODEL
       api_base: http://ollama:11434
 
   - model_name: zeaz-reasoning
     litellm_params:
-      model: ollama/qwen3:8b
+      model: os.environ/ZEAZ_LITELLM_REASONING_MODEL
       api_base: http://ollama:11434
 
 
