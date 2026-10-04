@@ -12,10 +12,42 @@ from services.engineering.loop import ContinuousEngineeringLoop, LoopPolicy, Wor
 from services.provider.zeaz_provider.cost import CostClass, CostPolicy, cost_allowed, cost_rank
 from services.engineering.models import Checkpoint, EngineeringTask, TaskStatus
 from services.engineering.review import SecurityGate, StaticReviewer
-from services.engineering.runtime import EngineeringRuntime
+from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
 from services.engineering.store import SQLiteEngineeringStore
 from services.engineering.worktree import WorktreeManager
+
+
+class ProviderStructuredOutputTests(unittest.TestCase):
+    def test_chat_body_includes_strict_json_schema(self):
+        client = ProviderClient(model="zeaz-fast")
+        body = client._chat_body(
+            "edit",
+            "system",
+            max_tokens=4096,
+            response_schema=EngineeringRuntime.EDIT_RESPONSE_SCHEMA,
+        )
+        self.assertEqual(body["response_format"]["type"], "json_schema")
+        spec = body["response_format"]["json_schema"]
+        self.assertTrue(spec["strict"])
+        self.assertEqual(spec["name"], "engineering_changes")
+        schema = spec["schema"]
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(schema["required"], ["changes"])
+        self.assertFalse(schema["additionalProperties"])
+        item = schema["properties"]["changes"]["items"]
+        self.assertEqual(set(item["required"]), {"path", "content"})
+        self.assertFalse(item["additionalProperties"])
+
+    def test_plain_chat_omits_response_format(self):
+        client = ProviderClient(model="zeaz-fast")
+        body = client._chat_body(
+            "plan",
+            "system",
+            max_tokens=1200,
+            response_schema=None,
+        )
+        self.assertNotIn("response_format", body)
 
 
 class StoreTests(unittest.TestCase):
