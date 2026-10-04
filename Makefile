@@ -17,7 +17,8 @@ help:
 	  'engineer-tasks list durable engineering tasks' \
 	  'engineer-profile show detected hardware/model profile' \
 	  'engineer-work  list durable continuous work items' \
-	  'engineer-test run engineering control-plane tests' \
+	  'engineer-tui   open read-only engineering terminal dashboard' \
+	  'engineer-test  run engineering selector/TUI/control-plane tests' \
 	  'config        validate Compose configuration' \
 	  'provider-build build the in-repo provider gateway' \
 	  'ci            repository + stack static validation'
@@ -82,7 +83,7 @@ engineer-tui:
 	python3 scripts/engineer.py tui
 
 engineer-test:
-	python3 -m unittest tests.test_engineering_control_plane -v
+	python3 -m unittest tests.test_model_selector tests.test_engineering_tui tests.test_engineering_control_plane -v
 
 provider-build:
 	docker compose --env-file .env build provider
