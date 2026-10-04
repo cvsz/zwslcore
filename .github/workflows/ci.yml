@@ -31,7 +31,9 @@ jobs:
           set -euo pipefail
           bash -n scripts/install.sh
           bash -n scripts/doctor.sh
-          python3 -m py_compile scripts/sync-free-models.py
+          python3 -m py_compile scripts/sync-free-models.py services/model_catalog/catalog.py
+          python3 -m compileall -q services/provider/zeaz_provider
+          python3 -m unittest tests.test_model_catalog -v
           cp .env.example .env
           docker compose --env-file .env config --quiet
           rm -f .env
