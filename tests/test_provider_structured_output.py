@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import unittest
 
-from services.provider.zeaz_provider.providers import (
-    _ollama_chat_to_openai,
-    _ollama_structured_payload,
-    _structured_schema,
+from services.provider.zeaz_provider.structured import (
+    ollama_chat_to_openai,
+    ollama_structured_payload,
+    structured_schema,
 )
 
 
