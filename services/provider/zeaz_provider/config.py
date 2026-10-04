@@ -56,6 +56,7 @@ class ProviderConfig:
     circuit_failure_threshold: int = 5
     circuit_reset_seconds: float = 30.0
     cost_class: str = CostClass.UNKNOWN.value
+    native_structured_outputs: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not 1 <= len(self.name) <= 128:
@@ -69,6 +70,8 @@ class ProviderConfig:
             raise ValueError("provider API must be anthropic, azure, openai, or responses")
         _validate_origin(self.base_url, "provider base_url")
         parse_cost_class(self.cost_class)
+        if type(self.native_structured_outputs) is not bool:
+            raise ValueError("provider native_structured_outputs must be a boolean")
         if not isinstance(self.api_key, str) or "\x00" in self.api_key:
             raise ValueError("provider api_key is invalid")
         if not isinstance(self.account, str) or not 1 <= len(self.account) <= 128:
