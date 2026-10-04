@@ -311,3 +311,18 @@ When a model-quality failure promotes a task from one local alias to the next al
 A later process invocation restores that task to its persisted recovery alias when the alias is still present in the current hardware-safe ladder. Fresh tasks always start from the current default selector result and never inherit another task's promoted model.
 
 When a task succeeds, the runtime records `model_working` and `model_last_success_at`. The TUI displays the task-specific recovery/working model so the queue view distinguishes the global default model from the model actually being used to recover a blocked task.
+
+
+## Orphan task lifecycle
+
+Reconciliation treats a nonterminal SQLite task without a linked continuous-work record as an orphan. Orphans are reported but are not modified automatically because intent cannot be inferred safely.
+
+Resolve an orphan explicitly by either enqueueing it:
+
+    python3 scripts/engineer.py enqueue-task TASK_ID --kind REPAIR
+
+or cancelling it:
+
+    python3 scripts/engineer.py cancel TASK_ID --reason "no longer required"
+
+Cancellation is idempotent for already-cancelled tasks, refuses succeeded tasks, writes a CANCELLED checkpoint, updates linked ledger records to CANCELLED, records cancellation history, and writes a fresh evidence bundle.
