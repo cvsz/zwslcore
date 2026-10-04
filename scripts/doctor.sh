@@ -26,10 +26,15 @@ check() {
 
 check "docker" docker info
 check "compose config" docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" config --quiet
-check "ollama container" docker inspect -f '{{.State.Running}}' zwslcore-ollama
-check "litellm container" docker inspect -f '{{.State.Running}}' zwslcore-litellm
-check "provider container" docker inspect -f '{{.State.Running}}' zwslcore-provider
-check "open-webui container" docker inspect -f '{{.State.Running}}' zwslcore-open-webui
+container_running() {
+  local name="$1"
+  [[ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || true)" == "true" ]]
+}
+
+check "ollama container" container_running zwslcore-ollama
+check "litellm container" container_running zwslcore-litellm
+check "provider container" container_running zwslcore-provider
+check "open-webui container" container_running zwslcore-open-webui
 check "ollama api" curl -fsS "http://127.0.0.1:${OLLAMA_PORT:-11434}/api/tags"
 check "litellm models" curl -fsS -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" "http://127.0.0.1:${LITELLM_PORT:-4000}/v1/models"
 check "provider live" curl -fsS "http://127.0.0.1:${PROVIDER_PORT:-8080}/health/live"
