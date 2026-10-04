@@ -148,8 +148,14 @@ class EngineeringRuntime:
         validators: list[str] | None = None,
         allowed_paths: set[str] | None = None,
         commit: bool = False,
+        resume: bool = False,
     ) -> EngineeringTask:
         validators = validators or ["git diff --check"]
+        task.metadata["run_config"] = {
+            "validators": list(validators),
+            "allowed_paths": sorted(allowed_paths or ()),
+            "commit": bool(commit),
+        }
         self.store.save_task(task)
 
         try:
@@ -160,14 +166,27 @@ class EngineeringRuntime:
             self.provider.preflight()
             self.progress(f"[engineering] {task.id} PROVIDER_PREFLIGHT_PASS")
 
-            worktree, branch = self.worktrees.create(task.repository, task.id, task.title)
-            task.worktree_path = str(worktree)
-            task.branch_name = branch
-            self.progress(f"[engineering] worktree={worktree} branch={branch}")
+            if resume and task.worktree_path and Path(task.worktree_path).exists():
+                self.worktrees.reset(task.worktree_path)
+                worktree = Path(task.worktree_path).resolve()
+                branch = task.branch_name or self.worktrees.safe_branch_name(task.id, task.title)
+                self.progress(f"[engineering] RESUME_WORKTREE worktree={worktree} branch={branch}")
+            else:
+                worktree, branch = self.worktrees.create(task.repository, task.id, task.title)
+                task.worktree_path = str(worktree)
+                task.branch_name = branch
+                self.progress(f"[engineering] worktree={worktree} branch={branch}")
+
+            baseline_head = self._git(worktree, ["rev-parse", "HEAD"], capture=True).strip()
+            task.metadata["baseline_head"] = baseline_head
 
             task.attempts += 1
             self.progress(f"[engineering] attempt={task.attempts}/{task.max_attempts}")
-            self._checkpoint(task, "BASELINE", {"worktree": str(worktree), "branch": branch})
+            self._checkpoint(
+                task,
+                "BASELINE",
+                {"worktree": str(worktree), "branch": branch, "head": baseline_head},
+            )
 
             task.status = TaskStatus.PLANNING
             self.store.save_task(task)
@@ -185,13 +204,35 @@ class EngineeringRuntime:
                 f"[engineering] candidate_files={len(candidates)} "
                 f"sample={','.join(candidates[:6]) if candidates else 'none'}"
             )
-            plan = self.provider.chat(
-                self._plan_prompt(task, snapshot),
-                "You are a careful senior software engineer. Plan a minimal, testable change. "
-                "Never request secret files, credential access, remote pushes, or test weakening.",
-                max_tokens=1200,
-            )
-            self._checkpoint(task, "PLAN", {"plan": plan[:12000]})
+            plan_checkpoint = self.store.latest_checkpoint(task.id, "PLAN") if resume else None
+            reusable_plan = ""
+            if plan_checkpoint is not None:
+                checkpoint_head = str(plan_checkpoint.payload.get("baseline_head", ""))
+                candidate_plan = plan_checkpoint.payload.get("plan")
+                if (
+                    isinstance(candidate_plan, str)
+                    and candidate_plan.strip()
+                    and checkpoint_head == baseline_head
+                ):
+                    reusable_plan = candidate_plan
+
+            if reusable_plan:
+                plan = reusable_plan
+                self.progress(
+                    f"[engineering] RESUME_PLAN checkpoint={plan_checkpoint.id} head={baseline_head[:12]}"
+                )
+            else:
+                plan = self.provider.chat(
+                    self._plan_prompt(task, snapshot),
+                    "You are a careful senior software engineer. Plan a minimal, testable change. "
+                    "Never request secret files, credential access, remote pushes, or test weakening.",
+                    max_tokens=1200,
+                )
+                self._checkpoint(
+                    task,
+                    "PLAN",
+                    {"plan": plan[:12000], "baseline_head": baseline_head},
+                )
 
             task.status = TaskStatus.EDITING
             self.store.save_task(task)
@@ -552,7 +593,11 @@ class EngineeringRuntime:
         return {"passed": not failures, "failures": failures, "results": results}
 
     def _checkpoint(self, task: EngineeringTask, phase: str, payload: dict[str, Any]) -> None:
-        self.store.save_checkpoint(Checkpoint(task_id=task.id, phase=phase, payload=payload))
+        checkpoint = Checkpoint(task_id=task.id, phase=phase, payload=payload)
+        self.store.save_checkpoint(checkpoint)
+        task.metadata["phase_cursor"] = phase
+        task.metadata["phase_checkpoint_id"] = checkpoint.id
+        self.store.save_task(task)
 
     def _export_evidence(self, task: EngineeringTask) -> None:
         try:

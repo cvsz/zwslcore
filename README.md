@@ -114,7 +114,8 @@ Capabilities:
 - bounded UPGRADE / UPDATE / IMPLEMENT_FEATURE / REPAIR orchestration;
 - hardware profiling with deterministic local-model recommendations;
 - durable continuous-work ledger with restart-safe attempt budgets;
-- secret-minimized evidence bundles with SHA-256 integrity verification.
+- secret-minimized evidence bundles with SHA-256 integrity verification;
+- conservative task resume with HEAD-bound plan reuse and persisted phase cursors.
 
 Example:
 
@@ -180,6 +181,14 @@ Continuous runs now emit live phase progress for baseline, worktree creation, sc
 ```
 
 When `--allow-path` is supplied, repository context is built only from those paths. The default local-model snapshot is bounded to 32 KiB / 120 files / 64 KiB per file to avoid feeding multi-megabyte repositories into CPU-only models.
+
+A blocked/failed task can be resumed without re-running planning when the managed worktree HEAD still matches the PLAN checkpoint baseline:
+
+```powershell
+.\scripts\engineer-wsl.ps1 resume TASK_ID
+```
+
+Resume always resets the managed worktree to clean HEAD and reruns EDITING, VALIDATING and REVIEWING. If HEAD changed, planning is performed again automatically. The previous run configuration is reused unless new `--validate`, `--allow-path`, `--commit` or `--no-commit` options are supplied.
 
 Every completed or failed engineering task writes an evidence bundle under `~/.zwslcore/evidence/<TASK_ID>/`. Inspect or verify it with:
 

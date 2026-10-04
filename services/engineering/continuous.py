@@ -99,6 +99,7 @@ class ContinuousEngineeringRunner:
                     validators=list(payload.get("validators") or ["git diff --check"]),
                     allowed_paths=set(payload.get("allowed_paths") or ()) or None,
                     commit=bool(payload.get("commit", False)),
+                    resume=self.store.latest_checkpoint(task.id, "PLAN") is not None,
                 )
                 self.progress(f"[continuous] task={completed.id} status={completed.status.value}")
                 return ExecutionResult(
