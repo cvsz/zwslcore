@@ -113,7 +113,8 @@ Capabilities:
 - local commits only when explicitly requested;
 - bounded UPGRADE / UPDATE / IMPLEMENT_FEATURE / REPAIR orchestration;
 - hardware profiling with deterministic local-model recommendations;
-- durable continuous-work ledger with restart-safe attempt budgets.
+- durable continuous-work ledger with restart-safe attempt budgets;
+- secret-minimized evidence bundles with SHA-256 integrity verification.
 
 Example:
 
@@ -179,6 +180,16 @@ Continuous runs now emit live phase progress for baseline, worktree creation, sc
 ```
 
 When `--allow-path` is supplied, repository context is built only from those paths. The default local-model snapshot is bounded to 32 KiB / 120 files / 64 KiB per file to avoid feeding multi-megabyte repositories into CPU-only models.
+
+Every completed or failed engineering task writes an evidence bundle under `~/.zwslcore/evidence/<TASK_ID>/`. Inspect or verify it with:
+
+```powershell
+.\scripts\engineer-wsl.ps1 evidence TASK_ID
+.\scripts\engineer-wsl.ps1 evidence-show TASK_ID
+.\scripts\engineer-wsl.ps1 evidence-verify TASK_ID
+```
+
+Evidence includes task state, checkpoint chronology, validation commands/return codes, review findings, Git HEAD/branch/changed paths, and hashes of diff/checkpoint payloads. Raw diff and validator stdout/stderr are not persisted by default.
 
 Blocked/exhausted work does not silently reset its attempt budget across process restarts. To explicitly retry blocked work:
 
