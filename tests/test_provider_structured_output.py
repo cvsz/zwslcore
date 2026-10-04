@@ -18,11 +18,11 @@ class NativeOllamaStructuredOutputTests(unittest.TestCase):
                 "json_schema": {"name": "status", "strict": True, "schema": schema},
             }
         }
-        self.assertEqual(_structured_schema(payload), schema)
+        self.assertEqual(structured_schema(payload), schema)
 
     def test_builds_native_ollama_format_request(self):
         schema = {"type": "object", "required": ["status"], "properties": {"status": {"type": "string"}}}
-        value = _ollama_structured_payload(
+        value = ollama_structured_payload(
             {
                 "model": "qwen2.5-coder:3b",
                 "messages": [{"role": "user", "content": "Return status OK"}],
@@ -39,7 +39,7 @@ class NativeOllamaStructuredOutputTests(unittest.TestCase):
         self.assertEqual(value["options"]["num_predict"], 128)
 
     def test_normalizes_native_response_to_openai(self):
-        value = _ollama_chat_to_openai(
+        value = ollama_chat_to_openai(
             {
                 "message": {"role": "assistant", "content": '{"status":"OK"}'},
                 "done": True,
