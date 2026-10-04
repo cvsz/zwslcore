@@ -21,6 +21,7 @@ from services.engineering.models import EngineeringTask, TaskRisk, TaskStatus
 from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
 from services.engineering.store import SQLiteEngineeringStore
+from services.model_catalog.selector import select_engineering_alias
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -50,12 +51,28 @@ def build_runtime(
     if not key:
         raise RuntimeError("PROVIDER_CLIENT_KEY is missing; run make install first")
     provider_port = env.get("PROVIDER_PORT", os.environ.get("PROVIDER_PORT", "8080"))
+    configured_model = env.get("ZEAZ_ENGINEERING_MODEL", "auto").strip() or "auto"
+    if configured_model.lower() == "auto":
+        profile = detect_hardware()
+        ranked = select_engineering_alias(
+            env,
+            hardware_profile=profile.profile,
+            ram_available_gb=profile.ram_available_gb,
+        )
+        configured_model = ranked.candidate.alias
+        if progress:
+            progress(
+                f"[engineering] MODEL_SELECT alias={configured_model} "
+                f"model={ranked.candidate.id} score={ranked.score} "
+                f"reasons={','.join(ranked.reasons)}"
+            )
+
     return EngineeringRuntime(
         store,
         ProviderClient(
             base_url=f"http://127.0.0.1:{provider_port}/v1",
             api_key=key,
-            model=env.get("ZEAZ_ENGINEERING_MODEL", "zeaz-fast"),
+            model=configured_model,
         ),
         progress=progress,
     )
