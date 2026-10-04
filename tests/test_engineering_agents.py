@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import tempfile
 import unittest
@@ -24,7 +25,9 @@ class Provider:
     def chat(self, prompt, system, **kwargs):
         if "Produce a concise implementation plan" in prompt:
             return "Inspect the scoped code and describe the minimal safe change."
-        return '{"changes":[{"path":"services/example.py","content":"value = 2\n"}]}'
+        return json.dumps({
+            "changes": [{"path": "services/example.py", "content": "value = 2\\n"}]
+        })
 
 
 def make_repo(root: Path) -> Path:
