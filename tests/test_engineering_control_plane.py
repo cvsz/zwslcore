@@ -235,6 +235,28 @@ class SnapshotScopeTests(unittest.TestCase):
             self.assertLessEqual(len(text.encode("utf-8")), 32 * 1024)
 
 
+class ScopePromptTests(unittest.TestCase):
+    def test_edit_prompt_declares_allowed_scope(self):
+        task = EngineeringTask(title="scope")
+        prompt = EngineeringRuntime._edit_prompt(
+            task,
+            "--- FILE: services/engineering/runtime.py ---\npass\n",
+            "plan",
+            {"services"},
+        )
+        self.assertIn("allowed path prefixes: services", prompt)
+        self.assertIn("MUST NOT include the repository name", prompt)
+        self.assertIn("Do not propose README.md", prompt)
+
+    def test_repair_prompt_drops_out_of_scope_changes(self):
+        prompt = EngineeringRuntime._repair_prompt(
+            '{"changes":[{"path":"README.md","content":"x"}]}',
+            {"services"},
+        )
+        self.assertIn("drop any proposed change outside the allowed scope", prompt)
+        self.assertIn("allowed path prefixes: services", prompt)
+
+
 class ProviderPreflightTests(unittest.TestCase):
     def test_preflight_failure_does_not_consume_attempt_or_create_worktree(self):
         class FailingProvider:

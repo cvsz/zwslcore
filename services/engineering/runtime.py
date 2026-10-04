@@ -189,7 +189,7 @@ class EngineeringRuntime:
             self.store.save_task(task)
             self.progress(f"[engineering] {task.id} EDITING")
             response = self.provider.chat(
-                self._edit_prompt(task, snapshot, plan),
+                self._edit_prompt(task, snapshot, plan, allowed_paths),
                 "Return ONLY valid JSON with schema "
                 '{"changes":[{"path":"relative/path","content":"complete UTF-8 file content"}]}. '
                 "Use the smallest safe diff. Never include secrets, .env files, private keys, "
@@ -212,7 +212,7 @@ class EngineeringRuntime:
                     },
                 )
                 repaired = self.provider.chat(
-                    self._repair_prompt(response),
+                    self._repair_prompt(response, allowed_paths),
                     "Convert the supplied model output into ONLY valid JSON with schema "
                     '{"changes":[{"path":"relative/path","content":"complete UTF-8 file content"}]}. '
                     "Do not add commentary, Markdown fences, explanations, or new changes.",
@@ -300,17 +300,41 @@ class EngineeringRuntime:
         )
 
     @staticmethod
-    def _edit_prompt(task: EngineeringTask, snapshot: str, plan: str) -> str:
+    def _scope_instruction(allowed_paths: set[str] | None) -> str:
+        if not allowed_paths:
+            return (
+                "Paths must be repository-relative and must not include a repository-name prefix."
+            )
+        allowed = ", ".join(sorted(path.rstrip("/") for path in allowed_paths))
+        return (
+            "Every change path MUST be repository-relative, MUST NOT include the repository name "
+            f"as a prefix, and MUST be inside one of these allowed path prefixes: {allowed}. "
+            "Do not propose README.md, docs, or any other path outside that scope."
+        )
+
+    @classmethod
+    def _edit_prompt(
+        cls,
+        task: EngineeringTask,
+        snapshot: str,
+        plan: str,
+        allowed_paths: set[str] | None,
+    ) -> str:
         return (
             f"Task: {task.title}\nDescription: {task.description}\n"
+            f"Scope rule: {cls._scope_instruction(allowed_paths)}\n"
+            "Use only file paths that are present in the repository snapshot unless a new file "
+            "inside the allowed scope is essential.\n"
             f"Plan:\n{plan}\n\nRepository snapshot:\n{snapshot}"
         )
 
-    @staticmethod
-    def _repair_prompt(raw: str) -> str:
+    @classmethod
+    def _repair_prompt(cls, raw: str, allowed_paths: set[str] | None) -> str:
         return (
-            "The following edit response did not satisfy the required JSON schema. "
-            "Preserve only its intended file changes and convert it to valid JSON.\n\n"
+            "The following edit response did not satisfy the required JSON schema and/or path policy. "
+            "Preserve only intended file changes that comply with the scope rule. "
+            f"Scope rule: {cls._scope_instruction(allowed_paths)}\n"
+            "Return only schema-valid JSON and drop any proposed change outside the allowed scope.\n\n"
             f"RAW RESPONSE:\n{raw[:12000]}"
         )
 
