@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
-from .agents import get_agent
+from .agents import AgentRegistry
 from .models import EngineeringTask, TaskRisk
 
 
@@ -32,8 +32,10 @@ def make_child_task(
     agent_name: str,
     risk: TaskRisk | None = None,
     max_attempts: int = 2,
+    agent_registry: AgentRegistry | None = None,
 ) -> EngineeringTask:
-    agent = get_agent(agent_name)
+    registry = agent_registry or AgentRegistry(path=None)
+    agent = registry.get(agent_name)
     if agent.mode != "subagent":
         raise ValueError(
             f"agent {agent_name!r} is not a subagent; choose one of: explore, general, review"
