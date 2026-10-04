@@ -21,6 +21,8 @@ from services.engineering.models import EngineeringTask, TaskRisk, TaskStatus
 from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
 from services.engineering.store import SQLiteEngineeringStore
+from services.engineering.tui import run_tui
+from services.model_catalog.selector import select_engineering_alias
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -50,12 +52,28 @@ def build_runtime(
     if not key:
         raise RuntimeError("PROVIDER_CLIENT_KEY is missing; run make install first")
     provider_port = env.get("PROVIDER_PORT", os.environ.get("PROVIDER_PORT", "8080"))
+    configured_model = env.get("ZEAZ_ENGINEERING_MODEL", "auto").strip() or "auto"
+    if configured_model.lower() == "auto":
+        profile = detect_hardware()
+        ranked = select_engineering_alias(
+            env,
+            hardware_profile=profile.profile,
+            ram_available_gb=profile.ram_available_gb,
+        )
+        configured_model = ranked.candidate.alias
+        if progress:
+            progress(
+                f"[engineering] MODEL_SELECT alias={configured_model} "
+                f"model={ranked.candidate.id} score={ranked.score} "
+                f"reasons={','.join(ranked.reasons)}"
+            )
+
     return EngineeringRuntime(
         store,
         ProviderClient(
             base_url=f"http://127.0.0.1:{provider_port}/v1",
             api_key=key,
-            model=env.get("ZEAZ_ENGINEERING_MODEL", "zeaz-fast"),
+            model=configured_model,
         ),
         progress=progress,
     )
@@ -92,6 +110,12 @@ def parser() -> argparse.ArgumentParser:
     snap.add_argument("--repository", default=".")
 
     sub.add_parser("profile")
+
+    tui = sub.add_parser("tui")
+    tui.add_argument("--interval", type=float, default=2.0)
+    tui.add_argument("--once", action="store_true")
+    tui.add_argument("--no-color", action="store_true")
+    tui.add_argument("--limit", type=int, default=12)
 
     r = sub.add_parser("run")
     r.add_argument("task_id")
@@ -285,6 +309,18 @@ def main() -> int:
         return 0
 
     ledger = JsonContinuousLedger(args.ledger)
+
+    if args.command == "tui":
+        env = load_env(ROOT / ".env")
+        return run_tui(
+            store,
+            ledger,
+            env=env,
+            interval=max(0.25, args.interval),
+            once=args.once,
+            color=False if args.no_color else None,
+            limit=max(1, args.limit),
+        )
 
     if args.command == "work-add":
         item = WorkItem(

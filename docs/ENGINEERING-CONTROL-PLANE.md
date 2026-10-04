@@ -50,7 +50,7 @@ Managed worktrees:
 
 ## Model
 
-By default the control plane uses the CPU-friendly local provider alias zeaz-fast. Override by setting ZEAZ_ENGINEERING_MODEL in .env. The larger zeaz-coder and zeaz-local aliases remain available when quality is preferred over latency.
+By default `ZEAZ_ENGINEERING_MODEL=auto`. Before constructing the Provider client, the control plane ranks the configured local aliases by hardware fit, zero-cost class, context capacity and structured-output support. On CPU-constrained hosts this normally selects `zeaz-fast`; higher-memory/GPU hosts may prefer a larger local alias. Set `ZEAZ_ENGINEERING_MODEL` to an explicit Provider alias to override automatic selection.
 
 
 ## Hardware profile
@@ -207,3 +207,33 @@ Before resume, the runtime:
 6. reuses a PLAN checkpoint only when its baseline HEAD matches the reconciled HEAD.
 
 This prevents long-lived blocked tasks from repeatedly planning against obsolete repository snapshots after main has advanced.
+
+
+## Terminal UI
+
+The engineering CLI includes a zero-dependency, read-only terminal dashboard:
+
+    python3 scripts/engineer.py tui
+
+From Windows PowerShell:
+
+    .\scripts\engineer-wsl.ps1 tui
+
+Options:
+
+    --interval SECONDS
+    --limit N
+    --once
+    --no-color
+
+The dashboard auto-refreshes and displays:
+
+- current hardware profile and accelerator backend;
+- configured/automatically selected engineering model alias;
+- queue counts and per-item state;
+- attempt budget progress;
+- current phase cursor;
+- recent task status and evidence availability;
+- current runtime quantization/context/Flash Attention policy.
+
+The TUI never executes or mutates tasks. Ctrl+C exits cleanly. Use `--once --no-color` for logs, CI captures or non-interactive terminals.

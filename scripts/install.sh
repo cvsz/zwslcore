@@ -158,7 +158,7 @@ import sys
 path = Path(sys.argv[1])
 fast, coder, reasoning, local = sys.argv[2:6]
 accelerator, quantization, context_length, flash_attention = sys.argv[6:10]
-engineering = "zeaz-fast"
+engineering = "auto"
 updates = {
     "ZEAZ_FAST_MODEL": fast,
     "ZEAZ_CODER_MODEL": coder,

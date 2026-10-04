@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs models free-models models-dev-sync models-dev-stats engineer-tasks engineer-profile engineer-work engineer-test config provider-build ci
+.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs models free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config provider-build ci
 
 help:
 	@printf '%s\n' \
@@ -13,10 +13,12 @@ help:
 	  'free-models   discover current OpenRouter zero-price text models' \
 	  'models-dev-sync sync provider/model metadata from models.dev' \
 	  'models-dev-stats inspect cached models.dev catalog counts' \
+	  'models-dev-recommend rank local-first model candidates' \
 	  'engineer-tasks list durable engineering tasks' \
 	  'engineer-profile show detected hardware/model profile' \
 	  'engineer-work  list durable continuous work items' \
-	  'engineer-test run engineering control-plane tests' \
+	  'engineer-tui   open read-only engineering terminal dashboard' \
+	  'engineer-test  run engineering selector/TUI/control-plane tests' \
 	  'config        validate Compose configuration' \
 	  'provider-build build the in-repo provider gateway' \
 	  'ci            repository + stack static validation'
@@ -65,6 +67,9 @@ models-dev-sync:
 models-dev-stats:
 	python3 scripts/models-dev.py stats
 
+models-dev-recommend:
+	python3 scripts/models-dev.py recommend --structured-output --min-context 4096
+
 engineer-tasks:
 	python3 scripts/engineer.py list
 
@@ -74,15 +79,18 @@ engineer-profile:
 engineer-work:
 	python3 scripts/engineer.py work-list
 
+engineer-tui:
+	python3 scripts/engineer.py tui
+
 engineer-test:
-	python3 -m unittest tests.test_engineering_control_plane -v
+	python3 -m unittest tests.test_model_selector tests.test_engineering_tui tests.test_engineering_control_plane -v
 
 provider-build:
 	docker compose --env-file .env build provider
 
 ci: validate-template
-	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py
+	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
 	python3 -m compileall -q services/provider/zeaz_provider services/engineering scripts/engineer.py
-	python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_engineering_control_plane -v
+	python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selector tests.test_engineering_tui tests.test_engineering_control_plane -v
 	bash -n scripts/install.sh
 	bash -n scripts/doctor.sh

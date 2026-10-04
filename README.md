@@ -161,6 +161,24 @@ Ollama remains the default backend. CPU-only hosts stay on the conservative 4096
 
 See [Acceleration and quantization policy](docs/ACCELERATION.md).
 
+### Engineering TUI
+
+Open the read-only terminal dashboard from PowerShell:
+
+```powershell
+.\scripts\engineer-wsl.ps1 tui
+```
+
+Useful variants:
+
+```powershell
+.\scripts\engineer-wsl.ps1 tui --interval 1
+.\scripts\engineer-wsl.ps1 tui --limit 20
+.\scripts\engineer-wsl.ps1 tui --once --no-color
+```
+
+The TUI uses only the Python standard library and ANSI terminal control. It shows hardware profile, automatic model selection, queue state, attempt budgets, phase cursors, recent tasks, evidence availability and runtime policy. It is intentionally read-only; task mutation remains explicit through `run`, `resume`, `work-add` and `continuous`.
+
 ### Continuous engineering
 
 Queue one bounded work item from PowerShell:
@@ -175,7 +193,7 @@ Run queued work:
 .\scripts\engineer-wsl.ps1 continuous --max-iterations 4
 ```
 
-Continuous runs now emit live phase progress for baseline, worktree creation, scoped snapshot size, planning, editing, validation, security review, commit and final status. Autonomous engineering defaults to the CPU-friendly `zeaz-fast` alias; the larger `zeaz-coder`/`zeaz-local` models remain available for interactive use. From another PowerShell window, inspect a running item by fingerprint prefix:
+Continuous runs emit live phase progress for baseline, worktree creation, scoped snapshot size, planning, editing, validation, security review, commit and final status. Autonomous engineering defaults to `ZEAZ_ENGINEERING_MODEL=auto`, which ranks only configured local Provider aliases against hardware fit, zero-cost policy, context and structured-output requirements. Explicit aliases such as `zeaz-fast`, `zeaz-coder` or `zeaz-local` still override automatic selection. From another PowerShell window, inspect a running item by fingerprint prefix:
 
 ```powershell
 .\scripts\engineer-wsl.ps1 work-status 40780a4e4234
@@ -235,11 +253,12 @@ make models-dev-sync
 make models-dev-stats
 python3 scripts/models-dev.py providers
 python3 scripts/models-dev.py lookup openai/gpt-5.4
+python3 scripts/models-dev.py recommend --structured-output --min-context 4096
 ```
 
 The combined `catalog.json?type=all` endpoint is cached atomically under `~/.zwslcore/cache/models.dev.catalog.json`. Fresh cache is preferred; network refresh falls back to a stale cache when the service is unavailable. The cache retains canonical model metadata separately from provider offerings, including published capabilities, token limits and provider pricing. No provider API keys are sent to Models.dev.
 
-This catalog is advisory metadata. Local Ollama availability and zwslcore Provider routing remain authoritative for what this machine can actually execute.
+This catalog is advisory metadata. Local Ollama availability and zwslcore Provider routing remain authoritative for what this machine can actually execute. The recommendation engine is explainable: every result includes its score, eligibility, reasons and blockers. Remote candidates are excluded unless `--include-remote` is requested, and remain ineligible when cloud fallback is disabled.
 
 ## Free model discovery
 
