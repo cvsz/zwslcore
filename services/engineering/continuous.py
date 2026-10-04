@@ -138,6 +138,16 @@ class ContinuousEngineeringRunner:
                 updates = {"last_error": str(exc)[:2000]}
                 if consumed:
                     updates["attempts"] = int(record.get("attempts", 0)) + 1
+                    promoted = self.runtime.promote_model(str(exc))
+                    if promoted:
+                        latest.metadata["model_escalated_to"] = promoted
+                        latest.metadata["model_escalation_error"] = str(exc)[:1000]
+                        self.store.save_task(latest)
+                        updates["last_checkpoint"] = {
+                            "state": "MODEL_ESCALATE",
+                            "task_id": latest.id,
+                            "model": promoted,
+                        }
                 self.progress(f"[continuous] task={task.id} error={str(exc)[:500]}")
                 self.ledger.update(item.fingerprint, **updates)
                 return ExecutionResult(False, latest, str(exc), consume_attempt=consumed)
