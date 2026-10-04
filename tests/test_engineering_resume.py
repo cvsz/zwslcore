@@ -87,7 +87,7 @@ class EngineeringResumeTests(unittest.TestCase):
             self.assertEqual(result.metadata["phase_cursor"], "REVIEW")
             self.assertIn("run_config", result.metadata)
 
-    def test_resume_replans_when_head_changed(self):
+    def test_resume_replans_when_source_head_changed(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             repo = make_repo(root)
@@ -100,7 +100,7 @@ class EngineeringResumeTests(unittest.TestCase):
                 worktrees=manager,
                 evidence=EvidenceExporter(store, root / "evidence"),
             )
-            task = EngineeringTask(title="resume changed head", repository=str(repo), max_attempts=3)
+            task = EngineeringTask(title="resume changed source", repository=str(repo), max_attempts=3)
 
             with self.assertRaises(ValueError):
                 runtime.run(
@@ -109,15 +109,27 @@ class EngineeringResumeTests(unittest.TestCase):
                     allowed_paths={"services"},
                 )
             self.assertEqual(provider.plan_calls, 1)
+            stale_head = subprocess.run(
+                ["git", "-C", task.worktree_path, "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
 
-            worktree = Path(task.worktree_path)
-            (worktree / "services" / "baseline.py").write_text("baseline = 1\n", encoding="utf-8")
-            subprocess.run(["git", "-C", str(worktree), "add", "."], check=True)
+            (repo / "services" / "baseline.py").write_text("baseline = 1\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
             subprocess.run(
-                ["git", "-C", str(worktree), "commit", "-m", "advance head"],
+                ["git", "-C", str(repo), "commit", "-m", "advance source head"],
                 check=True,
                 capture_output=True,
             )
+            source_head = subprocess.run(
+                ["git", "-C", str(repo), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            self.assertNotEqual(stale_head, source_head)
 
             provider.fail_edits = False
             result = runtime.run(
@@ -127,8 +139,17 @@ class EngineeringResumeTests(unittest.TestCase):
                 resume=True,
             )
 
+            worktree_head = subprocess.run(
+                ["git", "-C", result.worktree_path, "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
             self.assertEqual(result.status, TaskStatus.SUCCEEDED)
             self.assertEqual(provider.plan_calls, 2)
+            self.assertEqual(worktree_head, source_head)
+            self.assertEqual(result.metadata["resume_previous_head"], stale_head)
+            self.assertEqual(result.metadata["resume_source_head"], source_head)
 
 
 if __name__ == "__main__":
