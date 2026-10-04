@@ -81,8 +81,8 @@ provider-build:
 	docker compose --env-file .env build provider
 
 ci: validate-template
-	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py
+	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selection.py
 	python3 -m compileall -q services/provider/zeaz_provider services/engineering scripts/engineer.py
-	python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_engineering_control_plane -v
+	python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selection tests.test_engineering_control_plane -v
 	bash -n scripts/install.sh
 	bash -n scripts/doctor.sh
