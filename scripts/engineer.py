@@ -53,7 +53,7 @@ def build_runtime(
         ProviderClient(
             base_url=f"http://127.0.0.1:{provider_port}/v1",
             api_key=key,
-            model=env.get("ZEAZ_ENGINEERING_MODEL", "zeaz-local"),
+            model=env.get("ZEAZ_ENGINEERING_MODEL", "zeaz-fast"),
         ),
         progress=progress,
     )
