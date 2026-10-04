@@ -46,6 +46,8 @@ jobs:
             exit 1
           fi
           docker compose --env-file .env build provider
+          docker compose --env-file .env run --rm --no-deps --entrypoint python provider \
+            -c 'import sys; import zeaz_provider; from zeaz_provider.main import app; print(sys.version); print(app.title)'
           docker run --rm \
             -v "$PWD/services/provider:/src" \
             -w /src \

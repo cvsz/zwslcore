@@ -222,7 +222,7 @@ The production runtime lives inside WSL. From PowerShell, use the wrapper instea
 
 ## Runtime version policy
 
-Default service images are pinned to tested stable release tags instead of mutable `latest` or `main` tags. The installer migrates the old known mutable defaults while preserving explicit custom image overrides. Upgrade image versions deliberately through `.env` and rerun `make install`.
+Default service images are pinned to tested stable release tags instead of mutable `latest` or `main` tags. The in-repo Provider runtime is pinned to Python 3.14.7 after package-install/import compatibility and built-image smoke validation in CI. The installer migrates the old known mutable defaults while preserving explicit custom image overrides. Upgrade image versions deliberately through `.env` and rerun `make install`.
 
 ## Security defaults
 
