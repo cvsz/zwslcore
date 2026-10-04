@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import shlex
+import socket
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -16,6 +18,10 @@ from .snapshot import RepositorySnapshotter
 from .store import SQLiteEngineeringStore
 from .validation import evaluate_validation, validate_mode
 from .worktree import WorktreeManager
+
+
+class ProviderTransportError(RuntimeError):
+    pass
 
 
 class ProviderClient:
@@ -38,23 +44,44 @@ class ProviderClient:
         request: urllib.request.Request,
         *,
         timeout: int | None = None,
+        attempts: int = 1,
     ) -> dict[str, Any]:
-        try:
-            with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
-                value = json.load(response)
-        except urllib.error.HTTPError as exc:
-            body = exc.read(8192).decode("utf-8", errors="replace").strip()
-            detail = body or exc.reason or "no response body"
-            raise RuntimeError(
-                f"provider HTTP {exc.code} for {request.full_url}: {detail[:4000]}"
-            ) from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(
-                f"provider request failed for {request.full_url}: {exc.reason}"
-            ) from exc
-        if not isinstance(value, dict):
-            raise RuntimeError(f"provider returned non-object JSON for {request.full_url}")
-        return value
+        timeout_value = timeout or self.timeout
+        attempts = max(1, attempts)
+        last_transport: BaseException | None = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                with urllib.request.urlopen(request, timeout=timeout_value) as response:
+                    value = json.load(response)
+                if not isinstance(value, dict):
+                    raise RuntimeError(
+                        f"provider returned non-object JSON for {request.full_url}"
+                    )
+                return value
+            except urllib.error.HTTPError as exc:
+                body = exc.read(8192).decode("utf-8", errors="replace").strip()
+                detail = body or exc.reason or "no response body"
+                raise RuntimeError(
+                    f"provider HTTP {exc.code} for {request.full_url}: {detail[:4000]}"
+                ) from exc
+            except urllib.error.URLError as exc:
+                last_transport = exc
+                reason = exc.reason
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, TimeoutError, socket.timeout, OSError) as exc:
+                last_transport = exc
+                reason = exc
+
+            if attempt < attempts:
+                time.sleep(min(0.5 * attempt, 1.5))
+                continue
+
+            raise ProviderTransportError(
+                f"provider transport failed after {attempts} attempt(s) for "
+                f"{request.full_url}: {reason}"
+            ) from last_transport
+
+        raise AssertionError("unreachable")
 
     def _chat_body(
         self,
@@ -93,6 +120,7 @@ class ProviderClient:
                 method="GET",
             ),
             timeout=min(self.timeout, 15),
+            attempts=3,
         )
         if health.get("status") not in {None, "ok", "ready", "healthy"}:
             raise RuntimeError(f"provider readiness failed: {health}")
@@ -104,6 +132,7 @@ class ProviderClient:
                 method="GET",
             ),
             timeout=min(self.timeout, 15),
+            attempts=3,
         )
         ids = {
             item.get("id")
