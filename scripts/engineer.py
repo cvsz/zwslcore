@@ -843,6 +843,11 @@ def main() -> int:
         )
 
     if args.command == "work-add":
+        try:
+            AgentRegistry(args.agent_config).get(args.agent)
+        except (AgentConfigError, ValueError) as exc:
+            print(f"agent config: {exc}", file=sys.stderr)
+            return 2
         item = WorkItem(
             title=args.title,
             kind=WorkKind(args.kind),
@@ -896,6 +901,11 @@ def main() -> int:
         commit = args.commit or bool(config.get("commit", False))
         validation_mode = args.validation_mode or str(config.get("validation_mode", "strict"))
         agent_name = args.agent or str(config.get("agent", "build"))
+        try:
+            AgentRegistry(args.agent_config).get(agent_name)
+        except (AgentConfigError, ValueError) as exc:
+            print(f"agent config: {exc}", file=sys.stderr)
+            return 2
         max_attempts = args.max_attempts or task.max_attempts or 2
         item = WorkItem(
             title=task.title,
