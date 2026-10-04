@@ -63,9 +63,11 @@ The installer:
 3. validates Compose;
 4. starts Ollama;
 5. detects currently available memory;
-6. pulls CPU-friendly models appropriate to available RAM;
-7. starts LiteLLM and Open WebUI;
-8. runs runtime diagnostics.
+6. detects CPU/NVIDIA/ROCm acceleration capability;
+7. applies a hardware-aware Ollama runtime profile and quantization policy;
+8. pulls local models appropriate to available RAM;
+9. starts LiteLLM and Open WebUI;
+10. runs runtime diagnostics.
 
 Open:
 
@@ -141,6 +143,20 @@ From Windows PowerShell, use the WSL wrapper instead of calling Windows Python:
 PowerShell does not use Bash's trailing `\` for line continuation. Keep each wrapper command on one line, or use PowerShell's backtick when splitting a command.
 
 See [Engineering Control Plane](docs/ENGINEERING-CONTROL-PLANE.md).
+
+### GPU acceleration and quantization
+
+Run:
+
+```powershell
+.\scripts\engineer-wsl.ps1 profile
+```
+
+The profile reports the detected accelerator backend, GPU memory when available, recommended Ollama context size, Flash Attention setting, Q4_K_M quantization policy, and whether the host is a candidate for optional vLLM deployment.
+
+Ollama remains the default backend. CPU-only hosts stay on the conservative 4096-context profile; supported NVIDIA/ROCm hosts receive larger context/Flash Attention recommendations without forcing GPU-only Compose settings.
+
+See [Acceleration and quantization policy](docs/ACCELERATION.md).
 
 ### Continuous engineering
 

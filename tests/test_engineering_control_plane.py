@@ -137,6 +137,30 @@ class HardwareProfileTests(unittest.TestCase):
         self.assertEqual(models["reasoning"], "qwen2.5-coder:7b")
         self.assertEqual(models["default"], "qwen2.5-coder:7b")
         self.assertEqual(models["engineering"], "qwen2.5-coder:3b")
+        runtime = profile.recommended_runtime()
+        self.assertEqual(runtime["backend"], "ollama")
+        self.assertEqual(runtime["quantization"], "Q4_K_M")
+        self.assertEqual(runtime["context_length"], 4096)
+        self.assertFalse(runtime["flash_attention"])
+        self.assertFalse(runtime["vllm_candidate"])
+
+    def test_nvidia_12gb_runtime_profile(self):
+        profile = HardwareProfile(
+            os="linux",
+            architecture="x86_64",
+            cpu="cpu",
+            logical_cpus=8,
+            ram_total_gb=32,
+            ram_available_gb=24,
+            gpu="NVIDIA GPU",
+            profile="GPU_READY",
+            accelerator_backend="nvidia",
+            gpu_memory_gb=12,
+        )
+        runtime = profile.recommended_runtime()
+        self.assertEqual(runtime["context_length"], 8192)
+        self.assertTrue(runtime["flash_attention"])
+        self.assertTrue(runtime["vllm_candidate"])
 
 
 class CostPolicyTests(unittest.TestCase):
