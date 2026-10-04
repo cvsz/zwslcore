@@ -25,6 +25,19 @@ Windows 11
 
 All published ports bind to `127.0.0.1` by default.
 
+## Windows one-command host bootstrap
+
+For a new Windows 11 machine, open **PowerShell as Administrator** from this repository:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\install-wsl2.ps1
+```
+
+This installs/enables WSL2, Ubuntu 26.04, systemd, Git, Python, build tools, Docker Engine, Buildx, Docker Compose and then installs zwslcore. A Windows restart may be required after enabling virtualization features; rerun the same command afterward.
+
+See [Windows + WSL2 full installation](docs/WINDOWS-WSL2-INSTALL.md).
+
 ## Install
 
 Prerequisites:
@@ -119,6 +132,8 @@ services/
 config/
   litellm.yaml
 scripts/
+  install-wsl2.ps1
+  bootstrap-wsl.sh
   install.sh
   doctor.sh
   create-local-models.sh
