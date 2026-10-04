@@ -24,12 +24,18 @@ class RepositorySnapshotter:
         max_file_bytes: int = 64 * 1024,
         max_total_bytes: int = 32 * 1024,
         include_paths: set[str] | None = None,
+        priority_terms: set[str] | None = None,
     ) -> None:
         self.root = Path(root).resolve()
         self.max_files = max_files
         self.max_file_bytes = max_file_bytes
         self.max_total_bytes = max_total_bytes
         self.include_paths = set(include_paths or ())
+        self.priority_terms = {
+            term.strip().lower()
+            for term in (priority_terms or set())
+            if term and term.strip()
+        }
 
     def snapshot(self) -> str:
         chunks: list[str] = []
@@ -51,6 +57,8 @@ class RepositorySnapshotter:
                         if d not in self.EXCLUDED_DIRS and not (current_path / d).is_symlink()
                     )
                     candidates.extend(current_path / name for name in sorted(files))
+
+            candidates = sorted(candidates, key=self._priority_key)
 
             for path in candidates:
                 if count >= self.max_files or total >= self.max_total_bytes:
@@ -101,6 +109,14 @@ class RepositorySnapshotter:
         if not roots:
             raise ValueError("none of the declared snapshot include paths exist")
         return roots
+
+    def _priority_key(self, path: Path) -> tuple[int, str]:
+        try:
+            rel = path.relative_to(self.root).as_posix().lower()
+        except ValueError:
+            rel = path.as_posix().lower()
+        matches = sum(1 for term in self.priority_terms if term in rel)
+        return (-matches, rel)
 
     def _excluded(self, path: Path) -> bool:
         name = path.name.lower()
