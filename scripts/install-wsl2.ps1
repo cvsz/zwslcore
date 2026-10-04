@@ -81,6 +81,24 @@ function Get-InstalledDistros {
   return @(ConvertFrom-WslDistroOutput -Lines $items)
 }
 
+function Get-WslDistroVersion([string]$Name) {
+  $lines = & wsl.exe --list --verbose 2>$null
+  if ($LASTEXITCODE -ne 0) { return $null }
+
+  foreach ($rawLine in $lines) {
+    if ($null -eq $rawLine) { continue }
+    $line = ([string]$rawLine).Replace([string][char]0, "").Trim()
+    if (-not $line) { continue }
+
+    $line = $line.TrimStart("*").Trim()
+    if ($line -match "^$([regex]::Escape($Name))[ ]{2,}.*[ ]{2,}([12])$") {
+      return [int]$Matches[1]
+    }
+  }
+
+  return $null
+}
+
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BootstrapPath = Join-Path $ScriptRoot "bootstrap-wsl.sh"
 
@@ -168,8 +186,15 @@ if ($installed -notcontains $Distro) {
   Invoke-Native wsl.exe @("--install", "--distribution", $Distro, "--no-launch", "--web-download")
 }
 
-Write-Step "Forcing WSL2 and selecting default distribution"
-Invoke-Native wsl.exe @("--set-version", $Distro, "2")
+Write-Step "Ensuring WSL2 and selecting default distribution"
+$currentVersion = Get-WslDistroVersion -Name $Distro
+if ($currentVersion -eq 2) {
+  Write-Host "[zwslcore-wsl] $Distro is already WSL2; skipping conversion."
+} else {
+  & wsl.exe --terminate $Distro *> $null
+  Start-Sleep -Seconds 1
+  Invoke-Native wsl.exe @("--set-version", $Distro, "2")
+}
 Invoke-Native wsl.exe @("--set-default", $Distro)
 
 Write-Step "Enabling systemd and interop"
