@@ -237,3 +237,30 @@ The dashboard auto-refreshes and displays:
 - current runtime quantization/context/Flash Attention policy.
 
 The TUI never executes or mutates tasks. Ctrl+C exits cleanly. Use `--once --no-color` for logs, CI captures or non-interactive terminals.
+
+
+## Adaptive recovery
+
+Blocked queue items can be recovered with:
+
+    python3 scripts/engineer.py recover --max-iterations 4
+
+The recovery command is equivalent to a bounded continuous run with blocked-item retry enabled, plus the runtime's adaptive inference policy.
+
+For auto-selected local engineering models:
+
+- context 4096 -> snapshot budget 8192 bytes
+- context 8192 -> snapshot budget 16384 bytes
+- context 16384+ -> snapshot budget capped at 32768 bytes
+
+Repository snapshot ordering uses meaningful words from the task title and description as path-priority hints. For example, a task named "Improve provider diagnostics" prioritizes paths containing provider or diagnostics before unrelated files.
+
+On CPU_MEDIUM with at least 10 GiB available RAM, the model ladder normally starts:
+
+    zeaz-fast -> zeaz-coder
+
+The first model remains the low-latency path. A consumed attempt promotes to the next model only for model-quality errors such as malformed structured edits, empty/no-op edits or out-of-scope edit generation. Transport, validation and security failures do not trigger promotion.
+
+CPU_SMALL filters out local aliases with a negative hardware-fit score, so recovery does not force a model that is too large for the detected machine.
+
+The active model, model ladder, snapshot budget and any model escalation are persisted in task metadata and therefore appear in durable evidence.
