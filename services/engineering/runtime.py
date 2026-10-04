@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shlex
 import subprocess
+import urllib.error
 import urllib.request
 from pathlib import Path
 from collections.abc import Callable
@@ -30,6 +31,61 @@ class ProviderClient:
         self.model = model
         self.timeout = timeout
 
+    def _request_json(
+        self,
+        request: urllib.request.Request,
+        *,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        try:
+            with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
+                value = json.load(response)
+        except urllib.error.HTTPError as exc:
+            body = exc.read(8192).decode("utf-8", errors="replace").strip()
+            detail = body or exc.reason or "no response body"
+            raise RuntimeError(
+                f"provider HTTP {exc.code} for {request.full_url}: {detail[:4000]}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(
+                f"provider request failed for {request.full_url}: {exc.reason}"
+            ) from exc
+        if not isinstance(value, dict):
+            raise RuntimeError(f"provider returned non-object JSON for {request.full_url}")
+        return value
+
+    def preflight(self) -> None:
+        health_url = self.base_url.removesuffix("/v1") + "/health/ready"
+        health = self._request_json(
+            urllib.request.Request(
+                health_url,
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                method="GET",
+            ),
+            timeout=min(self.timeout, 15),
+        )
+        if health.get("status") not in {None, "ok", "ready", "healthy"}:
+            raise RuntimeError(f"provider readiness failed: {health}")
+
+        models = self._request_json(
+            urllib.request.Request(
+                f"{self.base_url}/models",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                method="GET",
+            ),
+            timeout=min(self.timeout, 15),
+        )
+        ids = {
+            item.get("id")
+            for item in models.get("data", [])
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        }
+        if self.model not in ids:
+            raise RuntimeError(
+                f"engineering model '{self.model}' is not advertised by provider; "
+                f"available={sorted(ids)}"
+            )
+
     def chat(self, prompt: str, system: str) -> str:
         payload = json.dumps(
             {
@@ -50,8 +106,7 @@ class ProviderClient:
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=self.timeout) as response:
-            value = json.load(response)
+        value = self._request_json(req)
         choices = value.get("choices") or []
         if not choices:
             raise RuntimeError("provider returned no choices")
@@ -97,11 +152,17 @@ class EngineeringRuntime:
             task.status = TaskStatus.BASELINING
             self.store.save_task(task)
             self.progress(f"[engineering] {task.id} BASELINING")
+            self.progress(f"[engineering] {task.id} PROVIDER_PREFLIGHT model={self.provider.model}")
+            self.provider.preflight()
+            self.progress(f"[engineering] {task.id} PROVIDER_PREFLIGHT_PASS")
+
             worktree, branch = self.worktrees.create(task.repository, task.id, task.title)
             task.worktree_path = str(worktree)
             task.branch_name = branch
+            self.progress(f"[engineering] worktree={worktree} branch={branch}")
+
             task.attempts += 1
-            self.progress(f"[engineering] worktree={worktree} branch={branch} attempt={task.attempts}/{task.max_attempts}")
+            self.progress(f"[engineering] attempt={task.attempts}/{task.max_attempts}")
             self._checkpoint(task, "BASELINE", {"worktree": str(worktree), "branch": branch})
 
             task.status = TaskStatus.PLANNING
