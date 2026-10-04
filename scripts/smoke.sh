@@ -13,6 +13,25 @@ set +a
 
 curl -fsS --max-time 20   -H "Authorization: Bearer ${LITELLM_MASTER_KEY}"   "http://127.0.0.1:${LITELLM_PORT:-4000}/v1/models"   | python3 -c 'import json,sys; data=json.load(sys.stdin); assert any(m.get("id") == "zeaz-coder" for m in data.get("data", []))'
 
+litellm_payload='{"model":"zeaz-coder","messages":[{"role":"user","content":"Reply exactly OK"}],"temperature":0,"max_tokens":8}'
+litellm_response="$(
+  curl -fsS --max-time 180 \
+    -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
+    -H "Content-Type: application/json" \
+    -d "$litellm_payload" \
+    "http://127.0.0.1:${LITELLM_PORT:-4000}/v1/chat/completions"
+)"
+python3 - "$litellm_response" <<'PY'
+import json
+import sys
+
+value = json.loads(sys.argv[1])
+choices = value.get("choices")
+if not isinstance(choices, list) or not choices:
+    raise SystemExit("LiteLLM returned no choices")
+print("[PASS] litellm inference")
+PY
+
 payload='{"model":"zeaz-local","messages":[{"role":"user","content":"Reply exactly OK"}],"temperature":0,"max_tokens":8}'
 response="$(
   curl -fsS --max-time 180     -H "Authorization: Bearer ${PROVIDER_CLIENT_KEY}"     -H "Content-Type: application/json"     -d "$payload"     "http://127.0.0.1:${PROVIDER_PORT:-8080}/v1/chat/completions"
