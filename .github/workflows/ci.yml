@@ -31,6 +31,7 @@ jobs:
           set -euo pipefail
           bash -n scripts/install.sh
           bash -n scripts/doctor.sh
+          bash -n scripts/bootstrap-wsl.sh
           python3 -m py_compile scripts/sync-free-models.py services/model_catalog/catalog.py
           python3 -m compileall -q services/provider/zeaz_provider
           python3 -m unittest tests.test_model_catalog -v
@@ -51,3 +52,28 @@ jobs:
         shell: bash
         run: |
           ruby -e 'require "yaml"; Dir.glob(".github/**/*.{yml,yaml}").each { |f| YAML.load_file(f); puts "ok #{f}" }'
+
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Parse PowerShell installer
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/install-wsl2.ps1'),
+            [ref]$null,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
+      - name: Validate installer local assets
+        shell: pwsh
+        run: |
+          ./scripts/install-wsl2.ps1 -ValidateOnly
