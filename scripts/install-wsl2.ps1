@@ -65,11 +65,11 @@ function Get-OnlineDistros {
   }
   if ($LASTEXITCODE -ne 0) { return @() }
 
-  $parsed = ConvertFrom-WslDistroOutput @($items)
+  $parsed = ConvertFrom-WslDistroOutput -Lines $items
   if ($parsed.Count -eq 0) {
     $fallback = & wsl.exe --list --online 2>$null
     if ($LASTEXITCODE -eq 0) {
-      $parsed = ConvertFrom-WslDistroOutput @($fallback)
+      $parsed = ConvertFrom-WslDistroOutput -Lines $fallback
     }
   }
 
@@ -79,7 +79,7 @@ function Get-OnlineDistros {
 function Get-InstalledDistros {
   $items = & wsl.exe --list --quiet 2>$null
   if ($LASTEXITCODE -ne 0) { return @() }
-  return @(ConvertFrom-WslDistroOutput @($items))
+  return @(ConvertFrom-WslDistroOutput -Lines $items)
 }
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -99,7 +99,7 @@ if ($ValidateOnly) {
     "Ubuntu-26.04                    Ubuntu 26.04 LTS",
     "Ubuntu-24.04                    Ubuntu 24.04 LTS"
   )
-  $parsed = ConvertFrom-WslDistroOutput $sample
+  $parsed = ConvertFrom-WslDistroOutput -Lines $sample
   if ($parsed -notcontains "Ubuntu-26.04" -or $parsed -notcontains "Ubuntu-24.04") {
     throw "WSL distro parser self-test failed."
   }
