@@ -154,16 +154,26 @@ class SQLiteEngineeringStore:
             for row in rows
         ]
 
-    def latest_checkpoint(self, task_id: str) -> Checkpoint | None:
+    def latest_checkpoint(self, task_id: str, phase: str | None = None) -> Checkpoint | None:
         with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT * FROM checkpoints
-                WHERE task_id = ?
-                ORDER BY created_at DESC LIMIT 1
-                """,
-                (task_id,),
-            ).fetchone()
+            if phase is None:
+                row = conn.execute(
+                    """
+                    SELECT * FROM checkpoints
+                    WHERE task_id = ?
+                    ORDER BY created_at DESC LIMIT 1
+                    """,
+                    (task_id,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT * FROM checkpoints
+                    WHERE task_id = ? AND phase = ?
+                    ORDER BY created_at DESC LIMIT 1
+                    """,
+                    (task_id, phase),
+                ).fetchone()
         if not row:
             return None
         return Checkpoint(
