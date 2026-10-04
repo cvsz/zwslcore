@@ -117,3 +117,28 @@ The local engineering snapshot defaults to:
 - 32 KiB total text context
 
 When --allow-path is supplied, the snapshot is restricted to those declared paths. This keeps local CPU inference bounded and prevents unrelated repository content from dominating the prompt.
+
+
+## Durable evidence bundles
+
+Every EngineeringRuntime completion path attempts to write a secret-minimized evidence bundle:
+
+    ~/.zwslcore/evidence/TASK_ID/evidence.json
+    ~/.zwslcore/evidence/TASK_ID/evidence.sha256
+
+Commands:
+
+    python3 scripts/engineer.py evidence TASK_ID
+    python3 scripts/engineer.py evidence-show TASK_ID
+    python3 scripts/engineer.py evidence-verify TASK_ID
+
+The bundle contains:
+
+- task ID, risk, final status, attempts and branch/worktree metadata
+- ordered checkpoint chronology
+- validation commands, return codes and SHA-256 hashes of stdout/stderr
+- deterministic review findings without raw diff content
+- Git HEAD, branch, changed paths, diff byte count and diff SHA-256
+- a sidecar SHA-256 checksum for tamper detection
+
+Raw validator stdout/stderr and raw Git diff are intentionally excluded by default to reduce accidental secret retention. Common API-key/token patterns in final error summaries are redacted.

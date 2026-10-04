@@ -9,6 +9,7 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
+from .evidence import EvidenceExporter
 from .models import Checkpoint, EngineeringTask, TaskStatus
 from .review import SecurityGate, StaticReviewer
 from .snapshot import RepositorySnapshotter
@@ -130,6 +131,7 @@ class EngineeringRuntime:
         *,
         worktrees: WorktreeManager | None = None,
         progress: Callable[[str], None] | None = None,
+        evidence: EvidenceExporter | None = None,
     ) -> None:
         self.store = store
         self.provider = provider
@@ -137,6 +139,7 @@ class EngineeringRuntime:
         self.reviewer = StaticReviewer()
         self.gate = SecurityGate()
         self.progress = progress or (lambda message: None)
+        self.evidence = evidence or EvidenceExporter(store)
 
     def run(
         self,
@@ -318,6 +321,7 @@ class EngineeringRuntime:
             task.last_error = ""
             self.progress(f"[engineering] {task.id} SUCCEEDED")
             self.store.save_task(task)
+            self._export_evidence(task)
             return task
         except Exception as exc:
             task.status = TaskStatus.BLOCKED if task.attempts < task.max_attempts else TaskStatus.FAILED
@@ -325,6 +329,7 @@ class EngineeringRuntime:
             task.last_error = str(exc)[:2000]
             self.store.save_task(task)
             self._checkpoint(task, "FAILED", {"error": task.last_error})
+            self._export_evidence(task)
             raise
 
     @staticmethod
@@ -548,6 +553,20 @@ class EngineeringRuntime:
 
     def _checkpoint(self, task: EngineeringTask, phase: str, payload: dict[str, Any]) -> None:
         self.store.save_checkpoint(Checkpoint(task_id=task.id, phase=phase, payload=payload))
+
+    def _export_evidence(self, task: EngineeringTask) -> None:
+        try:
+            path, digest = self.evidence.export(task)
+        except Exception as exc:
+            task.metadata["evidence_error"] = str(exc)[:500]
+            self.store.save_task(task)
+            self.progress(f"[engineering] EVIDENCE_WRITE_FAILED error={str(exc)[:300]}")
+            return
+        task.metadata["evidence_path"] = str(path)
+        task.metadata["evidence_sha256"] = digest
+        task.metadata.pop("evidence_error", None)
+        self.store.save_task(task)
+        self.progress(f"[engineering] EVIDENCE_WRITTEN sha256={digest[:16]} path={path}")
 
     @staticmethod
     def _git(root: Path, args: list[str], *, capture: bool = False) -> str:
