@@ -66,12 +66,13 @@ def _cpu_name() -> str:
     return "unknown"
 
 
-def _gpu_name() -> str:
-    commands = (
-        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-        ["lspci"],
+def _gpu_info() -> tuple[str, bool]:
+    probes = (
+        (["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], True),
+        (["rocminfo"], True),
+        (["lspci"], False),
     )
-    for command in commands:
+    for command, compute_ready in probes:
         try:
             result = subprocess.run(command, capture_output=True, text=True, timeout=3)
         except (OSError, subprocess.TimeoutExpired):
@@ -79,22 +80,24 @@ def _gpu_name() -> str:
         if result.returncode != 0:
             continue
         lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        if command[0] == "rocminfo":
+            lines = [line for line in lines if "name:" in line.lower()]
         if command[0] == "lspci":
             lines = [
                 line for line in lines
                 if "vga compatible controller" in line.lower() or "3d controller" in line.lower()
             ]
         if lines:
-            return lines[0][:240]
-    return "none-detected"
+            return lines[0][:240], compute_ready
+    return "none-detected", False
 
 
 def detect_hardware() -> HardwareProfile:
     total, available = _memory_gb()
     logical = os.cpu_count() or 1
-    gpu = _gpu_name()
-    if gpu != "none-detected":
-        profile = "GPU"
+    gpu, accelerator_ready = _gpu_info()
+    if accelerator_ready:
+        profile = "GPU_READY"
     elif available >= 14:
         profile = "CPU_LARGE"
     elif available >= 10:
