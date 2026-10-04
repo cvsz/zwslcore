@@ -130,12 +130,13 @@ def main() -> int:
             ranked = rank_models(
                 candidates,
                 requirements,
-                hardware_models=recommended.values(),
+                hardware_models=[recommended[args.role]],
                 include_ineligible=args.include_ineligible,
             )
             print(json.dumps({
                 "source": source,
                 "hardware_profile": profile.profile,
+                "role": args.role,
                 "requirements": {
                     "structured_output": requirements.structured_output,
                     "tool_call": requirements.tool_call,
@@ -150,7 +151,7 @@ def main() -> int:
         selected = select_model(
             candidates,
             requirements,
-            hardware_models=recommended.values(),
+            hardware_models=[recommended[args.role]],
         )
         if selected is None:
             print("no eligible model found", file=sys.stderr)
@@ -158,6 +159,7 @@ def main() -> int:
         print(json.dumps({
             "source": source,
             "hardware_profile": profile.profile,
+            "role": args.role,
             "selected": selected.as_dict(),
         }, indent=2))
         return 0
