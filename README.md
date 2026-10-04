@@ -222,6 +222,18 @@ zwslcore now includes an operator-controlled local stdio MCP client. Configure s
 
 MCP processes start with `shell=False`, bounded request/message limits, and an environment allowlist. Autonomous agents do **not** receive MCP tool execution in this slice; remote HTTP/SSE/OAuth transports are also intentionally deferred. See [MCP integration](docs/MCP.md).
 
+### Undo / redo engineering changes
+
+Successful non-commit engineering runs capture a bounded local change snapshot under `~/.zwslcore/snapshots/<TASK_ID>/`. The snapshot stores a binary-capable Git patch plus SHA-256 metadata.
+
+```powershell
+.\scripts\engineer-wsl.ps1 snapshot-status TASK_ID
+.\scripts\engineer-wsl.ps1 undo TASK_ID
+.\scripts\engineer-wsl.ps1 redo TASK_ID
+```
+
+Undo is allowed only when the current managed worktree still matches the captured patch and HEAD. Redo is allowed only from the clean post-undo state. Any worktree or HEAD drift is fail-closed. Runs created with `--commit` rely on Git commit history instead and do not create this working-tree snapshot.
+
 ### Continuous engineering
 
 Queue one bounded work item from PowerShell:
