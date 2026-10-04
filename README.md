@@ -198,6 +198,18 @@ Select a profile explicitly:
 
 `plan`, `review`, and `explore` are read-only. `general` may edit and validate but cannot create a commit. Permission enforcement happens inside `EngineeringRuntime`; it is not only prompt text. See [OpenCode-inspired engineering patterns](docs/OPENCODE-PATTERNS.md).
 
+### Durable subagent delegation
+
+Subagent profiles can be queued as child tasks with their own attempt budget, evidence and lineage:
+
+```powershell
+.\scripts\engineer-wsl.ps1 delegate PARENT_TASK_ID "Inspect provider routing" --agent explore --allow-path services/provider
+.\scripts\engineer-wsl.ps1 children PARENT_TASK_ID
+.\scripts\engineer-wsl.ps1 lineage CHILD_TASK_ID
+```
+
+Delegation is bounded to depth 4. Only profiles marked `subagent` can be delegated. Child tasks never inherit remote-push capability, and their selected agent policy is enforced by `EngineeringRuntime`. Parent task metadata records each child's latest status, attempt count, error summary and evidence path.
+
 ### Continuous engineering
 
 Queue one bounded work item from PowerShell:
