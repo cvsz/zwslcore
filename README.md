@@ -1,6 +1,6 @@
 # zwslcore
 
-WSL2-first local AI orchestration stack for Ubuntu 26.04. It integrates selected, reusable behavior from the existing ZEAZ AI repositories without vendoring whole projects.
+WSL2-first local AI orchestration stack for Ubuntu 26.04. It contains its own integrated provider gateway, local-model runtime, model catalog, installer, diagnostics, and UI orchestration. Runtime operation does not require cloning or importing any other ZEAZ repository.
 
 ## Runtime
 
@@ -13,10 +13,13 @@ Windows 11
         │   ├── qwen2.5-coder:7b
         │   └── qwen3:8b
         ├── LiteLLM
+        ├── zwslcore Provider Gateway
         │   ├── zeaz-fast
         │   ├── zeaz-coder
         │   ├── zeaz-reasoning
-        │   └── zeaz-free (optional cloud route)
+        │   ├── zeaz-local
+        │   ├── zeaz-free
+        │   └── zeaz-auto
         └── Open WebUI
 ```
 
@@ -55,6 +58,7 @@ Open:
 
 ```text
 Open WebUI  http://localhost:3000
+Provider    http://localhost:8080
 LiteLLM     http://localhost:4000
 Ollama      http://localhost:11434
 ```
@@ -99,19 +103,29 @@ Optionally export `OPENROUTER_API_KEY` before discovery or configure it only in 
 - Ollama is not intended to be exposed directly through Cloudflare or the public Internet.
 - Existing repository governance, CodeQL, dependency review, and branch-protection tooling remain in place.
 
-## Integrated source inventory
+## Self-contained implementation
 
-See [AI OSS stack sources](docs/STACK-SOURCES.md).
+The runtime implementation required by this stack is stored inside this repository:
 
-The current integration reuses design/behavior from:
+```text
+services/
+  provider/
+    Dockerfile
+    pyproject.toml
+    config/providers.yaml
+    zeaz_provider/
+  model_catalog/
+    catalog.py
+config/
+  litellm.yaml
+scripts/
+  install.sh
+  doctor.sh
+  create-local-models.sh
+  sync-free-models.py
+```
 
-- `cvsz/zeaz-platform` — Ollama/LiteLLM/Open WebUI bootstrap
-- `cvsz/qwen-gen` — RAM-aware model selection and free-model filtering
-- `cvsz/z-prov` — local-first provider gateway patterns and stable aliases
-- `cvsz/zai-coder` — CPU-friendly Qwen coding models
-- `cvsz/zaiman` — provider/free-tier registry patterns
-
-zwslcore is the orchestration layer; it does not duplicate the complete source trees of those projects.
+No other ZEAZ repository is required at runtime. Historical component provenance and refactoring notes are documented in [Integrated components](docs/STACK-SOURCES.md), but those repositories are not runtime dependencies.
 
 ## Repository engineering controls
 
