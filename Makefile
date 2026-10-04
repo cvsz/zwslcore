@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help validate-template install up down restart doctor smoke logs models free-models config provider-build ci
+.PHONY: help validate-template install up down restart doctor smoke logs models free-models engineer-tasks engineer-test config provider-build ci
 
 help:
 	@printf '%s\n' \
@@ -10,6 +10,8 @@ help:
 	  'smoke         verify authenticated model inference' \
 	  'models        list local Ollama models' \
 	  'free-models   discover current OpenRouter zero-price text models' \
+	  'engineer-tasks list durable engineering tasks' \
+	  'engineer-test run engineering control-plane tests' \
 	  'config        validate Compose configuration' \
 	  'provider-build build the in-repo provider gateway' \
 	  'ci            repository + stack static validation'
@@ -49,12 +51,18 @@ models:
 free-models:
 	python3 scripts/sync-free-models.py
 
+engineer-tasks:
+	python3 scripts/engineer.py list
+
+engineer-test:
+	python3 -m unittest tests.test_engineering_control_plane -v
+
 provider-build:
 	docker compose --env-file .env build provider
 
 ci: validate-template
 	python3 -m py_compile scripts/sync-free-models.py services/model_catalog/catalog.py
-	python3 -m compileall -q services/provider/zeaz_provider
-	python3 -m unittest tests.test_model_catalog -v
+	python3 -m compileall -q services/provider/zeaz_provider services/engineering scripts/engineer.py
+	python3 -m unittest tests.test_model_catalog tests.test_engineering_control_plane -v
 	bash -n scripts/install.sh
 	bash -n scripts/doctor.sh
