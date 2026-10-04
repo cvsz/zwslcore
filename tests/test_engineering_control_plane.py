@@ -77,10 +77,42 @@ class WorktreeTests(unittest.TestCase):
             subprocess.run(["git", "-C", str(repo), "commit", "-m", "base"], check=True, capture_output=True)
             manager = WorktreeManager(wt)
             target, branch = manager.create(repo, "task-1", "fix test")
-            self.assertTrue((target / ".zwslcore-managed").exists())
+            self.assertTrue(manager._marker(target).exists())
+            self.assertFalse((target / ".zwslcore-managed").exists())
+            status = subprocess.run(
+                ["git", "-C", str(target), "status", "--porcelain"],
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout
+            self.assertEqual(status, "")
             self.assertTrue(branch.startswith("agent/"))
             manager.remove(repo, target)
+            self.assertFalse(manager._marker(target).exists())
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NewFileReviewRegressionTests(unittest.TestCase):
+    def test_intent_to_add_exposes_new_file_in_diff(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.com"], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test"], check=True)
+            (repo / "README.md").write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+            subprocess.run(["git", "-C", str(repo), "commit", "-m", "base"], check=True, capture_output=True)
+            (repo / "new.py").write_text('api_key = "sk-abcdefghijklmnopqrstuvwxyz"\n', encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "-N", "--", "."], check=True)
+            diff = subprocess.run(
+                ["git", "-C", str(repo), "diff", "--no-ext-diff", "--binary"],
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout
+            findings = StaticReviewer().review(diff)
+            self.assertTrue(any(f.category == "secret" for f in findings))
