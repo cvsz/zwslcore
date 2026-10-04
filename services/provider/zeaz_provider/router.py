@@ -7,6 +7,7 @@ import httpx
 
 from .capabilities import CapabilityRegistry, ModelLifecycle
 from .config import ModelRoute, Settings
+from .cost import cost_allowed, cost_rank, parse_cost_class, parse_cost_policy
 from .providers import ProviderClient, ProviderError
 
 T = TypeVar("T")
@@ -32,17 +33,27 @@ class ProviderRouter:
         except KeyError as exc:
             raise ProviderError(f"Unknown model: {name}", 404) from exc
         candidates = (configured.primary, *configured.fallbacks)
+        policy = parse_cost_policy(self.settings.cost_policy)
         available = [
             target
             for target in candidates
             if (
-                (record := self.capabilities.get(target.provider, target.model)) is None
-                or record.lifecycle != ModelLifecycle.RETIRED
+                cost_allowed(parse_cost_class(self.settings.providers[target.provider].cost_class), policy)
+                and (
+                    (record := self.capabilities.get(target.provider, target.model)) is None
+                    or record.lifecycle != ModelLifecycle.RETIRED
+                )
             )
         ]
+        if policy.value == "PREFER_ZERO_COST":
+            available.sort(
+                key=lambda target: cost_rank(
+                    parse_cost_class(self.settings.providers[target.provider].cost_class)
+                )
+            )
         if not available:
             raise ProviderError(
-                f"All configured targets for {name} are retired",
+                f"No configured targets for {name} are permitted and active under cost policy {policy.value}",
                 410,
                 fallback_allowed=False,
                 circuit_failure=False,
