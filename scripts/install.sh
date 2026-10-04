@@ -174,14 +174,14 @@ docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" build --pull provi
 log "Starting LiteLLM, zwslcore Provider, and Open WebUI"
 docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" up -d --remove-orphans
 
-log "Waiting for the full AI stack to become healthy"
-deadline=$((SECONDS + 300))
-while (( SECONDS < deadline )); do
-  if bash "$ROOT/scripts/doctor.sh" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 5
-done
+log "Waiting for the full AI stack to become healthy and stable"
+if ! bash "$ROOT/scripts/wait-runtime.sh"; then
+  printf '\n[zwslcore] Runtime stability wait failed. Current container state:\n' >&2
+  docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" ps >&2 || true
+  printf '\n[zwslcore] Recent service logs:\n' >&2
+  docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" logs --tail=120 >&2 || true
+  die "AI stack did not become stable within the readiness timeout."
+fi
 
 log "Running health checks"
 if ! bash "$ROOT/scripts/doctor.sh"; then
