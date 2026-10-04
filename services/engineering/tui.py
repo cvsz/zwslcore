@@ -8,7 +8,11 @@ from typing import Any
 from .hardware import detect_hardware
 from .ledger import JsonContinuousLedger
 from .store import SQLiteEngineeringStore
-from services.model_catalog.selector import select_engineering_alias
+from services.model_catalog.selector import (
+    engineering_model_ladder,
+    select_engineering_alias,
+    snapshot_budget_for_context,
+)
 
 
 RESET = "\x1b[0m"
@@ -78,6 +82,7 @@ def build_dashboard(
     selected_alias = configured
     selected_model = ""
     selected_score = ""
+    ladder: tuple[str, ...] = (configured,)
     if configured.lower() == "auto":
         ranked = select_engineering_alias(
             env,
@@ -87,6 +92,11 @@ def build_dashboard(
         selected_alias = ranked.candidate.alias
         selected_model = ranked.candidate.id
         selected_score = str(ranked.score)
+        ladder = engineering_model_ladder(
+            env,
+            hardware_profile=profile.profile,
+            ram_available_gb=profile.ram_available_gb,
+        )
 
     records = ledger.records()
     tasks = {task.id: task for task in store.list_tasks()}
@@ -106,6 +116,8 @@ def build_dashboard(
     model_text = f" model     mode={configured} selected={selected_alias}"
     if selected_model:
         model_text += f" ({selected_model}) score={selected_score}"
+    if len(ladder) > 1:
+        model_text += f" fallback={'→'.join(ladder[1:])}"
     lines.append(model_text)
     lines.append(
         f" queue     total={len(records)} "
@@ -161,6 +173,18 @@ def build_dashboard(
         )
         lines.append(_paint(row, _state_color(task.status.value), color))
 
+    blocked_count = sum(
+        1 for record in records if str(record.get("state", "")).upper() == "BLOCKED"
+    )
+    if blocked_count:
+        lines.extend(_section("RECOVERY", width, color))
+        context_length = int(env.get("ZEAZ_OLLAMA_CONTEXT_LENGTH", "4096") or 4096)
+        lines.append(
+            f" blocked={blocked_count} command=engineer-wsl.ps1 recover --max-iterations 4 "
+            f"snapshot_budget={snapshot_budget_for_context(context_length)} "
+            f"ladder={'→'.join(ladder) if ladder else selected_alias}"
+        )
+
     lines.extend(_section("RUNTIME POLICY", width, color))
     runtime = profile.recommended_runtime()
     lines.append(
@@ -176,7 +200,7 @@ def build_dashboard(
     )
     lines.append(
         _paint(
-            " Ctrl+C exit · auto-refresh is read-only · run/resume/continuous stay separate commands ",
+            " Ctrl+C exit · auto-refresh is read-only · use recover for blocked queue items ",
             DIM,
             color,
         )
