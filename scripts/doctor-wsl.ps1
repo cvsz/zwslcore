@@ -33,7 +33,7 @@ if ($normalized -notcontains $Distro) {
   throw "WSL distribution '$Distro' is not installed."
 }
 
-$command = "cd $RepoPath && make doctor"
+$command = "cd $RepoPath && make wait-runtime && make doctor"
 if ($Smoke) {
   $command += " && make smoke"
 }
