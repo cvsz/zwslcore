@@ -2,7 +2,7 @@ param(
   [string]$Distro = "Ubuntu-26.04",
   [string]$LinuxUser = "cvsz",
   [string]$Repo = "https://github.com/cvsz/zwslcore.git",
-  [string]$Branch = "feat/integrate-ai-oss-stack",
+  [string]$Branch = "",
   [switch]$AllowFallback,
   [switch]$SkipStackInstall,
   [switch]$ValidateOnly
@@ -29,30 +29,111 @@ function Invoke-Native([string]$FilePath, [string[]]$Arguments) {
   }
 }
 
+function ConvertFrom-WslDistroOutput([object[]]$Lines) {
+  $names = [System.Collections.Generic.List[string]]::new()
+  $ignored = @("NAME", "The", "Install", "Default", "Windows", "Copyright")
+
+  foreach ($rawLine in $Lines) {
+    if ($null -eq $rawLine) { continue }
+
+    $line = ([string]$rawLine).Replace([string][char]0, "").Trim()
+    if (-not $line) { continue }
+
+    $line = $line.TrimStart("*").Trim()
+    if (-not $line) { continue }
+
+    $candidate = $null
+    if ($line -match "^([A-Za-z0-9][A-Za-z0-9._-]*)$") {
+      $candidate = $Matches[1]
+    } elseif ($line -match "^([A-Za-z0-9][A-Za-z0-9._-]*)[ ]{2,}.+$") {
+      $candidate = $Matches[1]
+    }
+
+    if ($candidate -and $ignored -notcontains $candidate -and -not $names.Contains($candidate)) {
+      $names.Add($candidate)
+    }
+  }
+
+  return @($names)
+}
+
 function Get-OnlineDistros {
   $items = & wsl.exe --list --online --quiet 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    $items = & wsl.exe --list --online 2>$null
+  }
   if ($LASTEXITCODE -ne 0) { return @() }
-  return @($items | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+
+  $parsed = ConvertFrom-WslDistroOutput -Lines $items
+  if ($parsed.Count -eq 0) {
+    $fallback = & wsl.exe --list --online 2>$null
+    if ($LASTEXITCODE -eq 0) {
+      $parsed = ConvertFrom-WslDistroOutput -Lines $fallback
+    }
+  }
+
+  return @($parsed)
 }
 
 function Get-InstalledDistros {
   $items = & wsl.exe --list --quiet 2>$null
   if ($LASTEXITCODE -ne 0) { return @() }
-  return @(
-    $items |
-      ForEach-Object { $_.Trim().TrimStart("*").Trim() } |
-      Where-Object { $_ }
-  )
+  return @(ConvertFrom-WslDistroOutput -Lines $items)
+}
+
+function Get-WslDistroVersion([string]$Name) {
+  $lines = & wsl.exe --list --verbose 2>$null
+  if ($LASTEXITCODE -ne 0) { return $null }
+
+  foreach ($rawLine in $lines) {
+    if ($null -eq $rawLine) { continue }
+    $line = ([string]$rawLine).Replace([string][char]0, "").Trim()
+    if (-not $line) { continue }
+
+    $line = $line.TrimStart("*").Trim()
+    if ($line -match "^$([regex]::Escape($Name))[ ]{2,}.*[ ]{2,}([12])$") {
+      return [int]$Matches[1]
+    }
+  }
+
+  return $null
 }
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptRoot
 $BootstrapPath = Join-Path $ScriptRoot "bootstrap-wsl.sh"
 
+if (-not $Branch) {
+  try {
+    $detectedBranch = (& git -C $RepoRoot branch --show-current 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0 -and $detectedBranch) {
+      $Branch = $detectedBranch
+    } else {
+      $Branch = "main"
+    }
+  } catch {
+    $Branch = "main"
+  }
+}
+
 if ($ValidateOnly) {
   if (-not (Test-Path $BootstrapPath)) {
     throw "Missing $BootstrapPath"
   }
+
+  $sample = @(
+    "The following is a list of valid distributions that can be installed.",
+    "",
+    "NAME                            FRIENDLY NAME",
+    "Ubuntu                          Ubuntu",
+    "Ubuntu-26.04                    Ubuntu 26.04 LTS",
+    "Ubuntu-24.04                    Ubuntu 24.04 LTS"
+  )
+  $parsed = ConvertFrom-WslDistroOutput -Lines $sample
+  if ($parsed -notcontains "Ubuntu-26.04" -or $parsed -notcontains "Ubuntu-24.04") {
+    throw "WSL distro parser self-test failed."
+  }
+
   Write-Host "PowerShell installer loaded successfully."
   exit 0
 }
@@ -109,7 +190,7 @@ if ($online -notcontains $Distro) {
     Write-Warning "$Distro is not currently listed by WSL; using Ubuntu-24.04 because -AllowFallback was supplied."
     $Distro = "Ubuntu-24.04"
   } else {
-    throw "$Distro is not available from 'wsl --list --online'. Available: $($online -join ', ')"
+    throw "$Distro is not available from 'wsl --list --online'. Parsed distros: $($online -join ', ')"
   }
 }
 
@@ -119,8 +200,15 @@ if ($installed -notcontains $Distro) {
   Invoke-Native wsl.exe @("--install", "--distribution", $Distro, "--no-launch", "--web-download")
 }
 
-Write-Step "Forcing WSL2 and selecting default distribution"
-Invoke-Native wsl.exe @("--set-version", $Distro, "2")
+Write-Step "Ensuring WSL2 and selecting default distribution"
+$currentVersion = Get-WslDistroVersion -Name $Distro
+if ($currentVersion -eq 2) {
+  Write-Host "[zwslcore-wsl] $Distro is already WSL2; skipping conversion."
+} else {
+  & wsl.exe --terminate $Distro *> $null
+  Start-Sleep -Seconds 1
+  Invoke-Native wsl.exe @("--set-version", $Distro, "2")
+}
 Invoke-Native wsl.exe @("--set-default", $Distro)
 
 Write-Step "Enabling systemd and interop"
@@ -191,7 +279,9 @@ fi
 git -C zwslcore checkout '$Branch'
 git -C zwslcore pull --ff-only origin '$Branch'
 cd zwslcore
-make install
+echo "[zwslcore-wsl] Installing repo branch: $Branch"
+set -o pipefail
+make install 2>&1 | tee ~/zwslcore-install.log
 "@
   $encodedInstall = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($linuxInstall))
   Invoke-Native wsl.exe @(
@@ -204,6 +294,8 @@ make install
 Write-Step "Installation complete"
 Write-Host "Distro      : $Distro"
 Write-Host "Linux user  : $LinuxUser"
+Write-Host "Repo branch : $Branch"
+Write-Host "Install log : ~/zwslcore-install.log"
 Write-Host "Open WebUI  : http://localhost:3000"
 Write-Host "Provider    : http://localhost:8080"
 Write-Host "LiteLLM     : http://localhost:4000"
