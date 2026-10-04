@@ -29,6 +29,7 @@ class RankedModel:
     structured_output: bool
     tool_call: bool
     reasoning: bool
+    execution_alias: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -182,7 +183,43 @@ def _candidate(
         structured_output=structured,
         tool_call=tool_call,
         reasoning=reasoning,
+        execution_alias=str(item.get("_execution_alias") or ""),
     )
+
+
+def configured_local_candidates(
+    alias_models: dict[str, str],
+    *,
+    context_length: int,
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for alias, raw_model in alias_models.items():
+        alias_name = str(alias).strip()
+        model_id = str(raw_model).strip()
+        if not alias_name or not model_id or (alias_name, model_id) in seen:
+            continue
+        seen.add((alias_name, model_id))
+        lower = model_id.lower()
+        reasoning = "qwen3" in lower or "reason" in lower
+        candidates.append({
+            "provider_id": "ollama",
+            "local": True,
+            "model": {
+                "id": model_id,
+                "_execution_alias": alias_name,
+                "name": model_id,
+                "structured_output": True,
+                "tool_call": True,
+                "reasoning": reasoning,
+                "modalities": {"input": ["text"], "output": ["text"]},
+                "limit": {"context": max(0, int(context_length)), "output": 4096},
+                "cost": {"input": 0, "output": 0},
+                "open_weights": True,
+            },
+            "canonical": None,
+        })
+    return candidates
 
 
 def local_candidates(
