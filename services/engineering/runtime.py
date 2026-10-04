@@ -130,6 +130,9 @@ class EngineeringRuntime:
 
             task.status = TaskStatus.REVIEWING
             self.store.save_task(task)
+            # Intent-to-add makes new files visible to the deterministic diff reviewer
+            # without staging their content for commit.
+            self._git(worktree, ["add", "-N", "--", "."])
             diff = self._git(worktree, ["diff", "--no-ext-diff", "--binary"], capture=True)
             findings = self.reviewer.review(diff, allowed_paths=allowed_paths)
             passed, blocking = self.gate.evaluate(findings)
@@ -148,6 +151,9 @@ class EngineeringRuntime:
                 self._git(worktree, ["add", "-A"])
                 self._git(worktree, ["commit", "-m", f"engineering: {task.title[:72]}"])
                 self._checkpoint(task, "COMMIT", {"branch": task.branch_name})
+            else:
+                # Clear intent-to-add entries while preserving working-tree edits.
+                self._git(worktree, ["reset"])
 
             task.status = TaskStatus.SUCCEEDED
             task.last_error = ""
