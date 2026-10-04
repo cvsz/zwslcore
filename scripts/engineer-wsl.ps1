@@ -1,18 +1,12 @@
 param(
   [string]$Distro = "Ubuntu-26.04",
   [string]$RepoPath = "~/zwslcore",
-  [switch]$Smoke
+  [Parameter(ValueFromRemainingArguments = $true)]
+  [string[]]$EngineerArgs
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
-
-function Invoke-Wsl([string]$Command) {
-  & wsl.exe -d $Distro -- bash -lc $Command
-  if ($LASTEXITCODE -ne 0) {
-    throw "WSL command failed with exit code $LASTEXITCODE"
-  }
-}
 
 if ($RepoPath -notmatch '^~?/[A-Za-z0-9._/-]+$') {
   throw "RepoPath contains unsupported characters."
@@ -33,10 +27,13 @@ if ($normalized -notcontains $Distro) {
   throw "WSL distribution '$Distro' is not installed."
 }
 
-$command = "cd $RepoPath && make wait-runtime && make doctor"
-if ($Smoke) {
-  $command += " && make smoke"
+$resolvedPath = (& wsl.exe -d $Distro -- bash -lc "cd $RepoPath && pwd" | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $resolvedPath) {
+  throw "Unable to resolve WSL repository path '$RepoPath'."
 }
 
-Write-Host "[zwslcore-wsl] Running runtime checks inside $Distro using $RepoPath"
-Invoke-Wsl $command
+Write-Host "[zwslcore-wsl] Running engineering CLI inside $Distro using $resolvedPath"
+& wsl.exe -d $Distro --cd $resolvedPath -- python3 scripts/engineer.py @EngineerArgs
+if ($LASTEXITCODE -ne 0) {
+  throw "Engineering CLI failed with exit code $LASTEXITCODE"
+}

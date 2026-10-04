@@ -93,6 +93,7 @@ services:
       OPENAI_API_BASE_URL: http://provider:8080/v1
       OPENAI_API_KEY: ${PROVIDER_CLIENT_KEY}
       ENABLE_OLLAMA_API: "false"
+      CORS_ALLOW_ORIGIN: ${OPENWEBUI_CORS_ALLOW_ORIGIN:-http://localhost:3000;http://127.0.0.1:3000}
     volumes:
       - open-webui-data:/app/backend/data
     ports:
