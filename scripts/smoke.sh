@@ -55,3 +55,30 @@ if not isinstance(content, str) or not content.strip():
     raise SystemExit("provider returned an empty completion")
 print("[PASS] provider inference")
 PY
+
+
+structured_payload='{"model":"zeaz-fast","messages":[{"role":"user","content":"Return a JSON object with status exactly OK."}],"temperature":0,"max_tokens":64,"response_format":{"type":"json_schema","json_schema":{"name":"status_response","strict":true,"schema":{"type":"object","additionalProperties":false,"required":["status"],"properties":{"status":{"type":"string","enum":["OK"]}}}}}}'
+structured_response="$(
+  curl -fsS --max-time 180 \
+    -H "Authorization: Bearer ${PROVIDER_CLIENT_KEY}" \
+    -H "Content-Type: application/json" \
+    -d "$structured_payload" \
+    "http://127.0.0.1:${PROVIDER_PORT:-8080}/v1/chat/completions"
+)"
+
+python3 - "$structured_response" <<'PY'
+import json
+import sys
+
+value = json.loads(sys.argv[1])
+choices = value.get("choices")
+if not isinstance(choices, list) or not choices:
+    raise SystemExit("provider structured output returned no choices")
+content = choices[0].get("message", {}).get("content")
+if not isinstance(content, str) or not content.strip():
+    raise SystemExit("provider structured output returned empty content")
+parsed = json.loads(content)
+if parsed != {"status": "OK"}:
+    raise SystemExit(f"provider structured output violated schema: {parsed!r}")
+print("[PASS] provider structured inference")
+PY
