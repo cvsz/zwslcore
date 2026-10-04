@@ -41,7 +41,7 @@ container_healthy() {
   local name="$1"
   local status
   status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$name" 2>/dev/null || true)"
-  [[ "$status" == "healthy" || "$status" == "none" ]]
+  [[ "$status" == "healthy" ]]
 }
 
 check "docker" docker info
