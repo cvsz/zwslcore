@@ -22,7 +22,11 @@ from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
 from services.engineering.store import SQLiteEngineeringStore
 from services.engineering.tui import run_tui
-from services.model_catalog.selector import select_engineering_alias
+from services.model_catalog.selector import (
+    engineering_model_ladder,
+    select_engineering_alias,
+    snapshot_budget_for_context,
+)
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -53,20 +57,37 @@ def build_runtime(
         raise RuntimeError("PROVIDER_CLIENT_KEY is missing; run make install first")
     provider_port = env.get("PROVIDER_PORT", os.environ.get("PROVIDER_PORT", "8080"))
     configured_model = env.get("ZEAZ_ENGINEERING_MODEL", "auto").strip() or "auto"
+    profile = detect_hardware()
+    context_length = int(env.get("ZEAZ_OLLAMA_CONTEXT_LENGTH", "4096") or 4096)
+    ladder: tuple[str, ...] = ()
     if configured_model.lower() == "auto":
-        profile = detect_hardware()
         ranked = select_engineering_alias(
             env,
             hardware_profile=profile.profile,
             ram_available_gb=profile.ram_available_gb,
         )
         configured_model = ranked.candidate.alias
+        ladder = engineering_model_ladder(
+            env,
+            hardware_profile=profile.profile,
+            ram_available_gb=profile.ram_available_gb,
+        )
         if progress:
             progress(
                 f"[engineering] MODEL_SELECT alias={configured_model} "
                 f"model={ranked.candidate.id} score={ranked.score} "
+                f"fallback={','.join(ladder[1:]) if len(ladder) > 1 else 'none'} "
                 f"reasons={','.join(ranked.reasons)}"
             )
+    else:
+        ladder = (configured_model,)
+
+    snapshot_budget = snapshot_budget_for_context(context_length)
+    if progress:
+        progress(
+            f"[engineering] CONTEXT_POLICY ctx={context_length} "
+            f"snapshot_budget={snapshot_budget}"
+        )
 
     return EngineeringRuntime(
         store,
@@ -76,6 +97,8 @@ def build_runtime(
             model=configured_model,
         ),
         progress=progress,
+        snapshot_max_bytes=snapshot_budget,
+        model_ladder=ladder,
     )
 
 
@@ -154,6 +177,9 @@ def parser() -> argparse.ArgumentParser:
     cont = sub.add_parser("continuous")
     cont.add_argument("--max-iterations", type=int, default=12)
     cont.add_argument("--retry-blocked", action="store_true")
+
+    recover = sub.add_parser("recover")
+    recover.add_argument("--max-iterations", type=int, default=4)
 
     return p
 
@@ -386,7 +412,7 @@ def main() -> int:
         print(json.dumps(output[0] if args.fingerprint else output, indent=2, default=str))
         return 0
 
-    if args.command == "continuous":
+    if args.command in {"continuous", "recover"}:
         try:
             runner = ContinuousEngineeringRunner(
                 store,
@@ -396,10 +422,11 @@ def main() -> int:
             )
             result = runner.run(
                 max_iterations=max(1, args.max_iterations),
-                retry_blocked=args.retry_blocked,
+                retry_blocked=True if args.command == "recover" else args.retry_blocked,
             )
         except Exception as exc:
-            print(f"continuous engineering failed: {exc}", file=sys.stderr)
+            label = "engineering recovery" if args.command == "recover" else "continuous engineering"
+            print(f"{label} failed: {exc}", file=sys.stderr)
             return 1
         print(json.dumps(dataclasses.asdict(result), indent=2))
         return 0 if not result.blocked else 1
