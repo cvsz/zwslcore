@@ -70,3 +70,24 @@ Continuous work persists the selected agent in the work item payload and task ru
 ## Provenance
 
 OpenCode is licensed under the MIT License. This zwslcore feature is a clean reimplementation of the reviewed architectural patterns rather than a vendored copy of OpenCode source files. zwslcore is not affiliated with or maintained by the OpenCode project.
+
+
+## Durable subagent lineage
+
+zwslcore maps the subagent concept onto durable EngineeringTask records rather than hidden background sessions.
+
+A delegated child records:
+
+- `parent_task_id`
+- `root_task_id`
+- `delegation_depth`
+- `delegated_agent`
+- independent attempt budget and evidence bundle
+
+Commands:
+
+    python3 scripts/engineer.py delegate PARENT_TASK_ID "Child task" --agent general
+    python3 scripts/engineer.py children PARENT_TASK_ID
+    python3 scripts/engineer.py lineage CHILD_TASK_ID
+
+Delegation depth is capped at 4. Only profiles with `mode=subagent` are accepted. Queue execution stays explicit through `continuous`/`recover`; the command does not start hidden processes or bypass the existing work ledger.
