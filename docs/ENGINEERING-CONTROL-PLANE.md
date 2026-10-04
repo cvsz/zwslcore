@@ -207,3 +207,33 @@ Before resume, the runtime:
 6. reuses a PLAN checkpoint only when its baseline HEAD matches the reconciled HEAD.
 
 This prevents long-lived blocked tasks from repeatedly planning against obsolete repository snapshots after main has advanced.
+
+
+## Terminal UI
+
+The engineering CLI includes a zero-dependency, read-only terminal dashboard:
+
+    python3 scripts/engineer.py tui
+
+From Windows PowerShell:
+
+    .\scripts\engineer-wsl.ps1 tui
+
+Options:
+
+    --interval SECONDS
+    --limit N
+    --once
+    --no-color
+
+The dashboard auto-refreshes and displays:
+
+- current hardware profile and accelerator backend;
+- configured/automatically selected engineering model alias;
+- queue counts and per-item state;
+- attempt budget progress;
+- current phase cursor;
+- recent task status and evidence availability;
+- current runtime quantization/context/Flash Attention policy.
+
+The TUI never executes or mutates tasks. Ctrl+C exits cleanly. Use `--once --no-color` for logs, CI captures or non-interactive terminals.
