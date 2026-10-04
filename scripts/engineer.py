@@ -156,7 +156,10 @@ def main() -> int:
     if args.command == "profile":
         profile = detect_hardware()
         print(json.dumps(
-            dataclasses.asdict(profile) | {"recommended_models": profile.recommended_models()},
+            dataclasses.asdict(profile) | {
+                "recommended_models": profile.recommended_models(),
+                "recommended_runtime": profile.recommended_runtime(),
+            },
             indent=2,
         ))
         return 0
