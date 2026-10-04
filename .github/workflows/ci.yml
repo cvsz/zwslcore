@@ -108,6 +108,22 @@ jobs:
             exit 1
           }
 
+      - name: Validate engineering WSL argument binding
+        shell: pwsh
+        run: |
+          $command = Get-Command ./scripts/engineer-wsl.ps1
+          $metadata = [System.Management.Automation.CommandMetadata]::new($command)
+          $engineer = $metadata.Parameters['EngineerArgs']
+          if ($null -eq $engineer) {
+            throw 'EngineerArgs parameter is missing.'
+          }
+          $position = $engineer.Attributes |
+            Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] } |
+            Select-Object -First 1
+          if ($position.Position -ne 0 -or -not $position.ValueFromRemainingArguments) {
+            throw 'EngineerArgs must bind position 0 and remaining positional arguments.'
+          }
+
       - name: Validate installer local assets
         shell: pwsh
         run: |
