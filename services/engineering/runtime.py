@@ -12,7 +12,9 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
+from .agents import AgentProfile, get_agent
 from .evidence import EvidenceExporter
+from .permissions import require_allowed
 from .models import Checkpoint, EngineeringTask, TaskStatus
 from .review import SecurityGate, StaticReviewer
 from .snapshot import RepositorySnapshotter
@@ -268,16 +270,21 @@ class EngineeringRuntime:
         commit: bool = False,
         resume: bool = False,
         validation_mode: str = "strict",
+        agent_name: str = "build",
     ) -> EngineeringTask:
         validators = validators or ["git diff --check"]
         validation_mode = validate_mode(validation_mode)
+        agent = get_agent(agent_name)
         self.select_model_for_task(task)
         task.metadata["run_config"] = {
             "validators": list(validators),
             "allowed_paths": sorted(allowed_paths or ()),
             "commit": bool(commit),
             "validation_mode": validation_mode,
+            "agent": agent.name,
         }
+        task.metadata["agent"] = agent.name
+        task.metadata["agent_mode"] = agent.mode
         task.metadata["model_current"] = self.provider.model
         task.metadata["model_ladder"] = list(self.model_ladder)
         task.metadata["snapshot_max_bytes"] = self.snapshot_max_bytes
@@ -327,7 +334,7 @@ class EngineeringRuntime:
             )
 
             baseline_validation = None
-            if validation_mode == "delta":
+            if validation_mode == "delta" and agent.decide("validate", "*") == "allow":
                 self.progress(
                     f"[engineering] {task.id} BASELINE_VALIDATING validators={len(validators)}"
                 )
@@ -343,6 +350,7 @@ class EngineeringRuntime:
             self.store.save_task(task)
             self.progress(f"[engineering] {task.id} PLANNING model={self.provider.model}")
             priority_terms = self._task_priority_terms(task)
+            self._require_agent(agent, "snapshot")
             snapshot = RepositorySnapshotter(
                 worktree,
                 include_paths=allowed_paths,
@@ -360,6 +368,7 @@ class EngineeringRuntime:
                 f"[engineering] candidate_files={len(candidates)} "
                 f"sample={','.join(candidates[:6]) if candidates else 'none'}"
             )
+            self._require_agent(agent, "plan")
             plan_checkpoint = self.store.latest_checkpoint(task.id, "PLAN") if resume else None
             reusable_plan = ""
             if plan_checkpoint is not None:
@@ -390,6 +399,23 @@ class EngineeringRuntime:
                     {"plan": plan[:12000], "baseline_head": baseline_head},
                 )
 
+            if agent.decide("edit", "*") != "allow":
+                task.status = TaskStatus.SUCCEEDED
+                task.metadata["read_only_result"] = True
+                task.metadata["read_only_phase"] = "PLAN"
+                self._checkpoint(
+                    task,
+                    "READ_ONLY_COMPLETE",
+                    {"agent": agent.name, "plan": plan[:12000]},
+                )
+                self.store.save_task(task)
+                self._export_evidence(task)
+                self.progress(
+                    f"[engineering] {task.id} READ_ONLY_COMPLETE agent={agent.name}"
+                )
+                return task
+
+            self._require_agent(agent, "edit")
             task.status = TaskStatus.EDITING
             self.store.save_task(task)
             self.progress(f"[engineering] {task.id} EDITING")
@@ -475,6 +501,7 @@ class EngineeringRuntime:
             self.progress(f"[engineering] proposed_files={len(changes)}")
             self._apply_changes(worktree, changes, allowed_paths=allowed_paths)
 
+            self._require_agent(agent, "validate")
             task.status = TaskStatus.VALIDATING
             self.store.save_task(task)
             self.progress(f"[engineering] {task.id} VALIDATING validators={len(validators)}")
@@ -499,6 +526,7 @@ class EngineeringRuntime:
                 f"improvements={len(validation.get('improvements') or [])}"
             )
 
+            self._require_agent(agent, "review")
             task.status = TaskStatus.REVIEWING
             self.store.save_task(task)
             self.progress(f"[engineering] {task.id} REVIEWING")
@@ -523,6 +551,7 @@ class EngineeringRuntime:
             self.progress(f"[engineering] {task.id} SECURITY_GATE_PASS findings={len(findings)}")
 
             if commit:
+                self._require_agent(agent, "commit")
                 self._git(worktree, ["add", "-A"])
                 self._git(worktree, ["commit", "-m", f"engineering: {task.title[:72]}"])
                 self._checkpoint(task, "COMMIT", {"branch": task.branch_name})
@@ -806,6 +835,10 @@ class EngineeringRuntime:
             if proc.returncode != 0:
                 failures.append(command)
         return {"passed": not failures, "failures": failures, "results": results}
+
+    @staticmethod
+    def _require_agent(agent: AgentProfile, permission: str, pattern: str = "*") -> None:
+        require_allowed(permission, pattern, agent.rules)
 
     def _checkpoint(self, task: EngineeringTask, phase: str, payload: dict[str, Any]) -> None:
         checkpoint = Checkpoint(task_id=task.id, phase=phase, payload=payload)

@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from services.engineering.agents import get_agent, list_agents
 from services.engineering.continuous import ContinuousEngineeringRunner
 from services.engineering.evidence import EvidenceExporter
 from services.engineering.hardware import detect_hardware
@@ -22,6 +23,7 @@ from services.engineering.reconcile import QueueReconciler
 from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
 from services.engineering.store import SQLiteEngineeringStore
+from services.engineering.tools import list_tools
 from services.engineering.tui import run_tui
 from services.model_catalog.selector import (
     engineering_model_ladder,
@@ -138,6 +140,13 @@ def parser() -> argparse.ArgumentParser:
     snap.add_argument("--repository", default=".")
 
     sub.add_parser("profile")
+    sub.add_parser("agents")
+    sub.add_parser("tools")
+
+    policy = sub.add_parser("policy-check")
+    policy.add_argument("agent")
+    policy.add_argument("permission")
+    policy.add_argument("pattern", nargs="?", default="*")
 
     tui = sub.add_parser("tui")
     tui.add_argument("--interval", type=float, default=2.0)
@@ -151,6 +160,7 @@ def parser() -> argparse.ArgumentParser:
     r.add_argument("--allow-path", action="append", default=[])
     r.add_argument("--commit", action="store_true")
     r.add_argument("--validation-mode", choices=["strict", "delta"], default="strict")
+    r.add_argument("--agent", choices=[a.name for a in list_agents()], default="build")
 
     resume = sub.add_parser("resume")
     resume.add_argument("task_id")
@@ -160,6 +170,7 @@ def parser() -> argparse.ArgumentParser:
     commit_group.add_argument("--commit", action="store_true")
     commit_group.add_argument("--no-commit", action="store_true")
     resume.add_argument("--validation-mode", choices=["strict", "delta"], default=None)
+    resume.add_argument("--agent", choices=[a.name for a in list_agents()], default=None)
 
     wa = sub.add_parser("work-add")
     wa.add_argument("title")
@@ -173,6 +184,7 @@ def parser() -> argparse.ArgumentParser:
     wa.add_argument("--allow-path", action="append", default=[])
     wa.add_argument("--commit", action="store_true")
     wa.add_argument("--validation-mode", choices=["strict", "delta"], default="strict")
+    wa.add_argument("--agent", choices=[a.name for a in list_agents()], default="build")
 
     sub.add_parser("work-list")
 
@@ -188,6 +200,7 @@ def parser() -> argparse.ArgumentParser:
     enqueue.add_argument("--allow-path", action="append", default=[])
     enqueue.add_argument("--commit", action="store_true")
     enqueue.add_argument("--validation-mode", choices=["strict", "delta"], default=None)
+    enqueue.add_argument("--agent", choices=[a.name for a in list_agents()], default=None)
 
     ws = sub.add_parser("work-status")
     ws.add_argument("fingerprint", nargs="?")
@@ -360,6 +373,41 @@ def main() -> int:
         ))
         return 0
 
+    if args.command == "agents":
+        print(json.dumps([
+            {
+                "name": agent.name,
+                "description": agent.description,
+                "mode": agent.mode,
+                "hidden": agent.hidden,
+                "permissions": [
+                    {
+                        "permission": rule.permission,
+                        "pattern": rule.pattern,
+                        "action": rule.action,
+                    }
+                    for rule in agent.rules
+                ],
+            }
+            for agent in list_agents()
+        ], indent=2))
+        return 0
+
+    if args.command == "tools":
+        print(json.dumps([dataclasses.asdict(item) for item in list_tools()], indent=2))
+        return 0
+
+    if args.command == "policy-check":
+        agent = get_agent(args.agent)
+        decision = agent.decide(args.permission, args.pattern)
+        print(json.dumps({
+            "agent": agent.name,
+            "permission": args.permission,
+            "pattern": args.pattern,
+            "action": decision,
+        }, indent=2))
+        return 0 if decision == "allow" else 1
+
     if args.command == "run":
         task = store.get_task(args.task_id)
         if not task:
@@ -372,6 +420,7 @@ def main() -> int:
                 allowed_paths=set(args.allow_path) if args.allow_path else None,
                 commit=args.commit,
                 validation_mode=args.validation_mode,
+                agent_name=args.agent,
             )
         except Exception as exc:
             print(f"engineering run failed: {exc}", file=sys.stderr)
@@ -398,6 +447,7 @@ def main() -> int:
         else:
             commit = bool(config.get("commit", False))
         validation_mode = args.validation_mode or str(config.get("validation_mode", "strict"))
+        agent_name = args.agent or str(config.get("agent", "build"))
 
         history = list(task.metadata.get("resume_history") or [])
         history.append({
@@ -421,6 +471,7 @@ def main() -> int:
                 commit=commit,
                 resume=True,
                 validation_mode=validation_mode,
+                agent_name=agent_name,
             )
         except Exception as exc:
             print(f"engineering resume failed: {exc}", file=sys.stderr)
@@ -454,6 +505,7 @@ def main() -> int:
                 "allowed_paths": args.allow_path,
                 "commit": args.commit,
                 "validation_mode": args.validation_mode,
+                "agent": args.agent,
             },
             priority=args.priority,
             max_attempts=max(1, args.max_attempts),
@@ -494,6 +546,7 @@ def main() -> int:
         allowed_paths = args.allow_path or list(config.get("allowed_paths") or [])
         commit = args.commit or bool(config.get("commit", False))
         validation_mode = args.validation_mode or str(config.get("validation_mode", "strict"))
+        agent_name = args.agent or str(config.get("agent", "build"))
         max_attempts = args.max_attempts or task.max_attempts or 2
         item = WorkItem(
             title=task.title,
@@ -506,6 +559,7 @@ def main() -> int:
                 "allowed_paths": allowed_paths,
                 "commit": commit,
                 "validation_mode": validation_mode,
+                "agent": agent_name,
             },
             priority=args.priority,
             max_attempts=max(1, int(max_attempts)),

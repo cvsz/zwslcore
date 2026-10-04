@@ -102,6 +102,7 @@ class ContinuousEngineeringRunner:
                     commit=bool(payload.get("commit", False)),
                     resume=self.store.latest_checkpoint(task.id, "PLAN") is not None,
                     validation_mode=str(payload.get("validation_mode", "strict")),
+                    agent_name=str(payload.get("agent", "build")),
                 )
                 consumed = completed.attempts > before_attempts
                 if consumed:

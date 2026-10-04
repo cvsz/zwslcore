@@ -20,7 +20,7 @@ help:
 	  'engineer-reconcile inspect queue/task state drift' \
 	  'engineer-recover recover blocked work with adaptive model fallback' \
 	  'engineer-tui   open read-only engineering terminal dashboard' \
-	  'engineer-test  run engineering selector/TUI/control-plane tests' \
+	  'engineer-test  run engineering agent/selector/TUI/control-plane tests' \
 	  'config        validate Compose configuration' \
 	  'provider-build build the in-repo provider gateway' \
 	  'ci            repository + stack static validation'
@@ -91,7 +91,7 @@ engineer-tui:
 	python3 scripts/engineer.py tui
 
 engineer-test:
-	python3 -m unittest tests.test_model_selector tests.test_engineering_tui tests.test_engineering_control_plane -v
+	python3 -m unittest tests.test_model_selector tests.test_engineering_agents tests.test_engineering_tui tests.test_engineering_control_plane -v
 
 provider-build:
 	docker compose --env-file .env build provider
@@ -99,6 +99,6 @@ provider-build:
 ci: validate-template
 	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
 	python3 -m compileall -q services/provider/zeaz_provider services/engineering scripts/engineer.py
-	python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selector tests.test_engineering_tui tests.test_engineering_reconcile tests.test_engineering_control_plane -v
+	python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selector tests.test_engineering_agents tests.test_engineering_tui tests.test_engineering_reconcile tests.test_engineering_control_plane -v
 	bash -n scripts/install.sh
 	bash -n scripts/doctor.sh
