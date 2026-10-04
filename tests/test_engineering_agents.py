@@ -26,7 +26,7 @@ class Provider:
         if "Produce a concise implementation plan" in prompt:
             return "Inspect the scoped code and describe the minimal safe change."
         return json.dumps({
-            "changes": [{"path": "services/example.py", "content": "value = 2\\n"}]
+            "changes": [{"path": "services/example.py", "content": "value = 2" + chr(10)}]
         })
 
 
