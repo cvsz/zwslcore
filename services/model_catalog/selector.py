@@ -46,14 +46,9 @@ FREE_CLASSES = {"FREE_LOCAL", "FREE_REMOTE"}
 
 
 def _is_zero_cost(candidate: ModelCandidate) -> bool:
-    if candidate.cost_class in FREE_CLASSES:
-        return True
-    return (
-        candidate.input_cost is not None
-        and candidate.output_cost is not None
-        and candidate.input_cost == 0
-        and candidate.output_cost == 0
-    )
+    if candidate.input_cost is not None or candidate.output_cost is not None:
+        return candidate.input_cost == 0 and candidate.output_cost == 0
+    return candidate.cost_class in FREE_CLASSES
 
 
 def rank_candidate(
@@ -184,7 +179,7 @@ def models_dev_candidates(
     cost_classes: dict[str, str] | None = None,
 ) -> list[ModelCandidate]:
     configured = configured_providers or set()
-    enabled = enabled_providers or set()
+    enabled = enabled_providers
     classes = cost_classes or {}
     providers = catalog.get("providers")
     if not isinstance(providers, dict):
@@ -210,7 +205,7 @@ def models_dev_candidates(
                 ModelCandidate(
                     id=model_id,
                     provider=provider_id,
-                    enabled=(not enabled) or provider_id in enabled,
+                    enabled=True if enabled is None else provider_id in enabled,
                     cost_class=classes.get(provider_id, "UNKNOWN"),
                     input_cost=_number(cost.get("input")),
                     output_cost=_number(cost.get("output")),
