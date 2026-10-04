@@ -246,6 +246,15 @@ Recovery keeps the existing safety gates but adapts inference to the local machi
 
 The TUI shows the active ladder and the recovery command whenever blocked queue items exist.
 
+Orphan tasks are never auto-cancelled. Reconciliation reports an explicit remediation choice:
+
+```powershell
+.\scripts\engineer-wsl.ps1 enqueue-task TASK_ID --kind REPAIR
+.\scripts\engineer-wsl.ps1 cancel TASK_ID --reason "no longer required"
+```
+
+Cancellation is audited: the task moves to `CANCELLED`, a cancellation checkpoint is written, linked queue records are reconciled, and an evidence bundle is generated. Cancelling a `SUCCEEDED` task is refused.
+
 Blocked/exhausted work does not silently reset its attempt budget across process restarts. To explicitly retry blocked work:
 
 ```powershell
