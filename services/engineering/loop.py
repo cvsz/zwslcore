@@ -111,7 +111,8 @@ class ContinuousEngineeringLoop:
                     blocked.append(fp)
                     self._checkpoint(iteration, item, "BLOCKED_REGRESSION", attempts[fp], regressions)
                     return LoopResult(tuple(completed), tuple(blocked), iteration, "regression")
-                if attempts[fp] >= item.max_attempts:
+                exhausted = attempts[fp] >= item.max_attempts
+                if exhausted:
                     blocked.append(fp)
                 if signature and signature == previous_signature:
                     no_progress += 1
@@ -126,7 +127,7 @@ class ContinuousEngineeringLoop:
             self._checkpoint(
                 iteration,
                 item,
-                "SUCCEEDED" if passed else "RETRY",
+                "SUCCEEDED" if passed else ("BLOCKED_ATTEMPTS" if exhausted else "RETRY"),
                 attempts[fp],
                 regressions,
             )
