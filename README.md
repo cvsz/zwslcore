@@ -95,6 +95,41 @@ make config
 make ci
 ```
 
+## Local engineering control plane
+
+zwslcore now includes a self-contained local engineering runtime refactored from proven patterns in `cvsz/zcoder`. There is no runtime dependency on zcoder.
+
+Capabilities:
+
+- durable SQLite WAL task/checkpoint state;
+- isolated Git worktrees under `~/.zwslcore/worktrees`;
+- bounded secret-aware repository snapshots;
+- planning/editing through the local zwslcore Provider;
+- path traversal and secret-bearing file protection;
+- operator-supplied validation commands;
+- deterministic static review and fail-closed security gate;
+- local commits only when explicitly requested;
+- bounded UPGRADE / UPDATE / IMPLEMENT_FEATURE / REPAIR orchestration.
+
+Example:
+
+```bash
+TASK_ID="$(python3 scripts/engineer.py create "Fix provider health" \
+  --description "Repair readiness behavior without weakening tests" \
+  --repository . \
+  --risk medium)"
+
+python3 scripts/engineer.py run "$TASK_ID" \
+  --allow-path services \
+  --validate "python3 -m unittest discover -s tests -v"
+
+python3 scripts/engineer.py show "$TASK_ID"
+```
+
+Add `--commit` only when you want a local commit in the isolated worktree. The engineering runtime never performs a remote push.
+
+See [Engineering Control Plane](docs/ENGINEERING-CONTROL-PLANE.md).
+
 ## Free model discovery
 
 Local Ollama models are the default and require no provider API key.
@@ -145,6 +180,14 @@ services/
     zeaz_provider/
   model_catalog/
     catalog.py
+  engineering/
+    models.py
+    store.py
+    snapshot.py
+    worktree.py
+    review.py
+    loop.py
+    runtime.py
 config/
   litellm.yaml
 scripts/
@@ -154,6 +197,7 @@ scripts/
   doctor.sh
   create-local-models.sh
   sync-free-models.py
+  engineer.py
 ```
 
 No other ZEAZ repository is required at runtime. Historical component provenance and refactoring notes are documented in [Integrated components](docs/STACK-SOURCES.md), but those repositories are not runtime dependencies.

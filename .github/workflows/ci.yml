@@ -33,9 +33,9 @@ jobs:
           bash -n scripts/doctor.sh
           bash -n scripts/smoke.sh
           bash -n scripts/bootstrap-wsl.sh
-          python3 -m py_compile scripts/sync-free-models.py services/model_catalog/catalog.py
-          python3 -m compileall -q services/provider/zeaz_provider
-          python3 -m unittest tests.test_model_catalog -v
+          python3 -m py_compile scripts/sync-free-models.py scripts/engineer.py services/model_catalog/catalog.py
+          python3 -m compileall -q services/provider/zeaz_provider services/engineering
+          python3 -m unittest tests.test_model_catalog tests.test_engineering_control_plane -v
           cp .env.example .env
           docker compose --env-file .env config --quiet
           if grep -Eq '(^|:)(latest|main)$' .env.example; then
