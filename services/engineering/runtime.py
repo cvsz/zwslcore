@@ -249,6 +249,9 @@ class EngineeringRuntime:
             "commit": bool(commit),
             "validation_mode": validation_mode,
         }
+        task.metadata["model_current"] = self.provider.model
+        task.metadata["model_ladder"] = list(self.model_ladder)
+        task.metadata["snapshot_max_bytes"] = self.snapshot_max_bytes
         self.store.save_task(task)
 
         try:
