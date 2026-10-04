@@ -14,6 +14,12 @@ sys.path.insert(0, str(ROOT))
 
 from services.engineering.agents import get_agent, list_agents
 from services.engineering.continuous import ContinuousEngineeringRunner
+from services.engineering.delegation import (
+    children_of,
+    descendants_of,
+    make_child_task,
+    task_lineage,
+)
 from services.engineering.evidence import EvidenceExporter
 from services.engineering.hardware import detect_hardware
 from services.engineering.ledger import JsonContinuousLedger
@@ -147,6 +153,29 @@ def parser() -> argparse.ArgumentParser:
     policy.add_argument("agent")
     policy.add_argument("permission")
     policy.add_argument("pattern", nargs="?", default="*")
+
+    delegate = sub.add_parser("delegate")
+    delegate.add_argument("parent_task_id")
+    delegate.add_argument("title")
+    delegate.add_argument("--description", default="")
+    delegate.add_argument(
+        "--agent",
+        choices=[a.name for a in list_agents() if a.mode == "subagent"],
+        default="general",
+    )
+    delegate.add_argument("--kind", choices=[kind.value for kind in WorkKind], default="IMPLEMENT_FEATURE")
+    delegate.add_argument("--risk", choices=[r.value for r in TaskRisk], default=None)
+    delegate.add_argument("--priority", type=int, default=50)
+    delegate.add_argument("--max-attempts", type=int, default=2)
+    delegate.add_argument("--validate", action="append", default=[])
+    delegate.add_argument("--allow-path", action="append", default=[])
+    delegate.add_argument("--validation-mode", choices=["strict", "delta"], default="strict")
+
+    children = sub.add_parser("children")
+    children.add_argument("task_id")
+
+    lineage = sub.add_parser("lineage")
+    lineage.add_argument("task_id")
 
     tui = sub.add_parser("tui")
     tui.add_argument("--interval", type=float, default=2.0)
@@ -407,6 +436,148 @@ def main() -> int:
             "action": decision,
         }, indent=2))
         return 0 if decision == "allow" else 1
+
+    if args.command == "delegate":
+        parent = store.get_task(args.parent_task_id)
+        if not parent:
+            print("parent task not found", file=sys.stderr)
+            return 2
+        if parent.status in {TaskStatus.SUCCEEDED, TaskStatus.CANCELLED}:
+            print(
+                f"refusing to delegate from terminal parent task: {parent.status.value}",
+                file=sys.stderr,
+            )
+            return 2
+
+        risk = TaskRisk(args.risk) if args.risk else parent.risk
+        try:
+            child = make_child_task(
+                parent,
+                title=args.title,
+                description=args.description,
+                agent_name=args.agent,
+                risk=risk,
+                max_attempts=max(1, args.max_attempts),
+            )
+        except ValueError as exc:
+            print(f"delegation refused: {exc}", file=sys.stderr)
+            return 2
+
+        validators = args.validate or ["git diff --check"]
+        child.metadata["run_config"] = {
+            "validators": list(validators),
+            "allowed_paths": list(args.allow_path),
+            "commit": False,
+            "validation_mode": args.validation_mode,
+            "agent": args.agent,
+        }
+        store.save_task(child)
+
+        item = WorkItem(
+            title=child.title,
+            kind=WorkKind(args.kind),
+            payload={
+                "description": child.description,
+                "repository": child.repository,
+                "risk": child.risk.value,
+                "validators": validators,
+                "allowed_paths": args.allow_path,
+                "commit": False,
+                "validation_mode": args.validation_mode,
+                "agent": args.agent,
+                "parent_task_id": parent.id,
+                "root_task_id": child.metadata["root_task_id"],
+                "delegation_depth": child.metadata["delegation_depth"],
+            },
+            priority=args.priority,
+            max_attempts=child.max_attempts,
+        )
+        ledger = JsonContinuousLedger(args.ledger)
+        record = ledger.register(item)
+        record = ledger.update(
+            item.fingerprint,
+            task_id=child.id,
+            state="PENDING",
+            attempts=0,
+            last_error="",
+        )
+
+        children_state = dict(parent.metadata.get("subagent_children") or {})
+        children_state[child.id] = {
+            "status": child.status.value,
+            "agent": args.agent,
+            "attempts": 0,
+            "last_error": "",
+            "evidence_path": "",
+        }
+        parent.metadata["subagent_children"] = children_state
+        store.save_task(parent)
+
+        print(json.dumps({
+            "parent_task_id": parent.id,
+            "child_task_id": child.id,
+            "fingerprint": record["fingerprint"],
+            "agent": args.agent,
+            "root_task_id": child.metadata["root_task_id"],
+            "delegation_depth": child.metadata["delegation_depth"],
+            "state": record["state"],
+        }, indent=2))
+        return 0
+
+    if args.command == "children":
+        parent = store.get_task(args.task_id)
+        if not parent:
+            print("task not found", file=sys.stderr)
+            return 2
+        output = [
+            {
+                "id": task.id,
+                "title": task.title,
+                "status": task.status.value,
+                "agent": task.metadata.get("delegated_agent", ""),
+                "depth": task.metadata.get("delegation_depth", 0),
+                "attempts": task.attempts,
+                "evidence_path": task.metadata.get("evidence_path", ""),
+            }
+            for task in children_of(store.list_tasks(), parent.id)
+        ]
+        print(json.dumps(output, indent=2))
+        return 0
+
+    if args.command == "lineage":
+        task = store.get_task(args.task_id)
+        if not task:
+            print("task not found", file=sys.stderr)
+            return 2
+        lineage_info = task_lineage(task)
+        root = store.get_task(lineage_info.root_task_id)
+        descendants = descendants_of(store.list_tasks(), lineage_info.root_task_id)
+        print(json.dumps({
+            "selected_task_id": task.id,
+            "root_task_id": lineage_info.root_task_id,
+            "parent_task_id": lineage_info.parent_task_id,
+            "depth": lineage_info.depth,
+            "root": (
+                {
+                    "id": root.id,
+                    "title": root.title,
+                    "status": root.status.value,
+                }
+                if root else None
+            ),
+            "descendants": [
+                {
+                    "id": item.id,
+                    "parent_task_id": item.metadata.get("parent_task_id"),
+                    "title": item.title,
+                    "status": item.status.value,
+                    "agent": item.metadata.get("delegated_agent", ""),
+                    "depth": item.metadata.get("delegation_depth", 0),
+                }
+                for item in descendants
+            ],
+        }, indent=2))
+        return 0
 
     if args.command == "run":
         task = store.get_task(args.task_id)
