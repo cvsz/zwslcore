@@ -98,6 +98,19 @@ class ContinuousEngineeringLoop:
             attempts[fp] = attempts.get(fp, 0) + 1
 
             result = self.implement(item)
+            consume_attempt = bool(getattr(result, "consume_attempt", True))
+            if not consume_attempt:
+                attempts[fp] = max(0, attempts[fp] - 1)
+                self._checkpoint(
+                    iteration,
+                    item,
+                    "RETRY_INFRA",
+                    attempts[fp],
+                    (),
+                )
+                previous_signature = None
+                continue
+
             passed, regressions = self.validate(item, result)
             signature = tuple(sorted(regressions))
 
