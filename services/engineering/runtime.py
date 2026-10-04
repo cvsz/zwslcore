@@ -56,6 +56,34 @@ class ProviderClient:
             raise RuntimeError(f"provider returned non-object JSON for {request.full_url}")
         return value
 
+    def _chat_body(
+        self,
+        prompt: str,
+        system: str,
+        *,
+        max_tokens: int,
+        response_schema: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0,
+            "max_tokens": max_tokens,
+        }
+        if response_schema is not None:
+            body["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "engineering_changes",
+                    "strict": True,
+                    "schema": response_schema,
+                },
+            }
+        return body
+
     def preflight(self) -> None:
         health_url = self.base_url.removesuffix("/v1") + "/health/ready"
         health = self._request_json(
@@ -88,17 +116,21 @@ class ProviderClient:
                 f"available={sorted(ids)}"
             )
 
-    def chat(self, prompt: str, system: str, *, max_tokens: int = 2048) -> str:
+    def chat(
+        self,
+        prompt: str,
+        system: str,
+        *,
+        max_tokens: int = 2048,
+        response_schema: dict[str, Any] | None = None,
+    ) -> str:
         payload = json.dumps(
-            {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0,
-                "max_tokens": max_tokens,
-            }
+            self._chat_body(
+                prompt,
+                system,
+                max_tokens=max_tokens,
+                response_schema=response_schema,
+            )
         ).encode()
         req = urllib.request.Request(
             f"{self.base_url}/chat/completions",
@@ -124,6 +156,26 @@ class EngineeringRuntime:
 
     MAX_CHANGED_FILES = 12
     MAX_FILE_BYTES = 256 * 1024
+    EDIT_RESPONSE_SCHEMA: dict[str, Any] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["changes"],
+        "properties": {
+            "changes": {
+                "type": "array",
+                "maxItems": MAX_CHANGED_FILES,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["path", "content"],
+                    "properties": {
+                        "path": {"type": "string", "minLength": 1},
+                        "content": {"type": "string"},
+                    },
+                },
+            }
+        },
+    }
 
     def __init__(
         self,
@@ -261,6 +313,7 @@ class EngineeringRuntime:
                 "Use the smallest safe diff. Never include secrets, .env files, private keys, "
                 "generated/vendor files, or files outside the repository.",
                 max_tokens=4096,
+                response_schema=self.EDIT_RESPONSE_SCHEMA,
             )
             try:
                 changes = self._parse_changes(response)
@@ -283,6 +336,7 @@ class EngineeringRuntime:
                     '{"changes":[{"path":"relative/path","content":"complete UTF-8 file content"}]}. '
                     "Do not add commentary, Markdown fences, explanations, or new changes.",
                     max_tokens=4096,
+                    response_schema=self.EDIT_RESPONSE_SCHEMA,
                 )
                 try:
                     changes = self._parse_changes(repaired)
@@ -316,6 +370,7 @@ class EngineeringRuntime:
                     "You MUST produce at least one concrete file change inside the allowed scope. "
                     "Do not include commentary or Markdown fences.",
                     max_tokens=4096,
+                    response_schema=self.EDIT_RESPONSE_SCHEMA,
                 )
                 changes = self._parse_changes(regenerated)
                 self._checkpoint(
