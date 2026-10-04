@@ -295,3 +295,19 @@ Explicitly enqueue an existing task:
 The command reuses persisted run_config when available and otherwise defaults to git diff --check, strict validation and no commit.
 
 The `recover` command applies safe reconciliation before processing blocked work. The TUI surfaces drift and orphan tasks with actionable commands.
+
+
+## Persistent recovery model cursor
+
+Adaptive model escalation is task-scoped and durable.
+
+When a model-quality failure promotes a task from one local alias to the next alias in the configured model ladder, the runtime records:
+
+- `model_escalated_to`;
+- `model_current`;
+- bounded `model_escalation_history`;
+- the model-selection source for the next run.
+
+A later process invocation restores that task to its persisted recovery alias when the alias is still present in the current hardware-safe ladder. Fresh tasks always start from the current default selector result and never inherit another task's promoted model.
+
+When a task succeeds, the runtime records `model_working` and `model_last_success_at`. The TUI displays the task-specific recovery/working model so the queue view distinguishes the global default model from the model actually being used to recover a blocked task.

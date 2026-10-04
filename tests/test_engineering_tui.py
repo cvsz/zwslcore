@@ -135,7 +135,11 @@ class EngineeringTuiTests(unittest.TestCase):
                 status=TaskStatus.FAILED,
                 attempts=2,
                 max_attempts=2,
-                metadata={"phase_cursor": "FAILED", "evidence_sha256": "abc123"},
+                metadata={
+                    "phase_cursor": "FAILED",
+                    "evidence_sha256": "abc123",
+                    "model_escalated_to": "zeaz-coder",
+                },
             )
             store.save_task(task)
             ledger.update(
@@ -176,6 +180,7 @@ class EngineeringTuiTests(unittest.TestCase):
             self.assertIn("recover --max-iterations 4", text)
             self.assertIn("ladder=zeaz-fast→zeaz-coder", text)
             self.assertIn("snapshot_budget=8192", text)
+            self.assertIn("zeaz-coder", text)
 
 
 if __name__ == "__main__":

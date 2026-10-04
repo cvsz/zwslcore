@@ -140,8 +140,23 @@ class ContinuousEngineeringRunner:
                     updates["attempts"] = int(record.get("attempts", 0)) + 1
                     promoted = self.runtime.promote_model(str(exc))
                     if promoted:
+                        previous_model = str(
+                            latest.metadata.get("model_selected_for_run")
+                            or latest.metadata.get("model_current")
+                            or ""
+                        )
                         latest.metadata["model_escalated_to"] = promoted
+                        latest.metadata["model_current"] = promoted
                         latest.metadata["model_escalation_error"] = str(exc)[:1000]
+                        history = list(
+                            latest.metadata.get("model_escalation_history") or []
+                        )
+                        history.append({
+                            "from": previous_model,
+                            "to": promoted,
+                            "error": str(exc)[:500],
+                        })
+                        latest.metadata["model_escalation_history"] = history[-20:]
                         self.store.save_task(latest)
                         updates["last_checkpoint"] = {
                             "state": "MODEL_ESCALATE",

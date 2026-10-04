@@ -220,6 +220,7 @@ class EngineeringRuntime:
     ) -> None:
         self.store = store
         self.provider = provider
+        self.default_model = provider.model
         self.worktrees = worktrees or WorktreeManager()
         self.reviewer = StaticReviewer()
         self.gate = SecurityGate()
@@ -230,6 +231,33 @@ class EngineeringRuntime:
         if provider.model not in ladder:
             ladder = (provider.model, *ladder)
         self.model_ladder = tuple(dict.fromkeys(ladder))
+
+    def select_model_for_task(self, task: EngineeringTask) -> str:
+        preferred = str(
+            task.metadata.get("model_working")
+            or task.metadata.get("model_escalated_to")
+            or ""
+        ).strip()
+        selected = self.default_model
+        if preferred and preferred in self.model_ladder:
+            selected = preferred
+        elif selected not in self.model_ladder and self.model_ladder:
+            selected = self.model_ladder[0]
+
+        previous = self.provider.model
+        self.provider.model = selected
+        task.metadata["model_selected_for_run"] = selected
+        task.metadata["model_selection_source"] = (
+            "persisted-task-cursor" if preferred and selected == preferred
+            else "default-selector"
+        )
+        self.store.save_task(task)
+        if previous != selected:
+            self.progress(
+                f"[engineering] TASK_MODEL old={previous} new={selected} "
+                f"source={task.metadata['model_selection_source']}"
+            )
+        return selected
 
     def run(
         self,
@@ -243,6 +271,7 @@ class EngineeringRuntime:
     ) -> EngineeringTask:
         validators = validators or ["git diff --check"]
         validation_mode = validate_mode(validation_mode)
+        self.select_model_for_task(task)
         task.metadata["run_config"] = {
             "validators": list(validators),
             "allowed_paths": sorted(allowed_paths or ()),
@@ -504,7 +533,12 @@ class EngineeringRuntime:
 
             task.status = TaskStatus.SUCCEEDED
             task.last_error = ""
-            self.progress(f"[engineering] {task.id} SUCCEEDED")
+            task.metadata["model_working"] = self.provider.model
+            task.metadata["model_current"] = self.provider.model
+            task.metadata["model_last_success_at"] = time.time()
+            self.progress(
+                f"[engineering] {task.id} SUCCEEDED model={self.provider.model}"
+            )
             self.store.save_task(task)
             self._export_evidence(task)
             return task
