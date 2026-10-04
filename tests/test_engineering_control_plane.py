@@ -257,7 +257,7 @@ class ContinuousRetryResetTests(unittest.TestCase):
             def chat(self, prompt, system):
                 if "Produce a concise implementation plan" in prompt:
                     return "plan"
-                return '{"changes":[{"path":"services/example.py","content":"print(\"ok\")\n"}]}'
+                return '{"changes":[{"path":"services/example.py","content":"print(\"ok\")"}]}'
 
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
