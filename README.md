@@ -198,6 +198,19 @@ Select a profile explicitly:
 
 `plan`, `review`, and `explore` are read-only. `general` may edit and validate but cannot create a commit. Permission enforcement happens inside `EngineeringRuntime`; it is not only prompt text. See [OpenCode-inspired engineering patterns](docs/OPENCODE-PATTERNS.md).
 
+### Custom agent profiles
+
+Operator-defined profiles can be loaded from `~/.zwslcore/agents.json`. Custom profiles inherit from a built-in profile; omitting `extends` defaults to the read-only `plan` profile.
+
+```powershell
+Copy-Item .\config\agents.example.json $HOME\.zwslcore\agents.json
+.\scripts\engineer-wsl.ps1 agents
+.\scripts\engineer-wsl.ps1 policy-check architect edit services/provider/main.py
+.\scripts\engineer-wsl.ps1 run TASK_ID --agent architect
+```
+
+Permission overrides retain ordered last-match semantics and are still subordinate to path scope, validators, static review and the security gate. Custom prompts are bounded and cannot bypass runtime permissions. See [Custom agent profiles](docs/CUSTOM-AGENTS.md).
+
 ### Durable subagent delegation
 
 Subagent profiles can be queued as child tasks with their own attempt budget, evidence and lineage:

@@ -1,6 +1,13 @@
 """Self-contained zwslcore engineering control plane."""
 
-from .agents import AgentProfile, get_agent, list_agents
+from .agents import (
+    DEFAULT_AGENT_CONFIG,
+    AgentConfigError,
+    AgentProfile,
+    AgentRegistry,
+    get_agent,
+    list_agents,
+)
 from .change_snapshot import ChangeSnapshotStore, SnapshotError
 from .continuous import ContinuousEngineeringRunner
 from .delegation import (
@@ -37,7 +44,10 @@ from .validation import evaluate_validation, validate_mode
 from .worktree import WorktreeManager
 
 __all__ = [
+    "AgentConfigError",
     "AgentProfile",
+    "AgentRegistry",
+    "DEFAULT_AGENT_CONFIG",
     "ChangeSnapshotStore",
     "Checkpoint",
     "ContinuousEngineeringRunner",

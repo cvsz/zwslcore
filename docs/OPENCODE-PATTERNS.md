@@ -112,3 +112,12 @@ Remote OAuth/HTTP transports and autonomous model invocation are intentionally d
 OpenCode's snapshot/revert architecture informed zwslcore's reversible engineering changes. zwslcore uses its own patch-based implementation bound to managed worktrees, with HEAD/diff drift checks and SHA-256 verification.
 
 See [Engineering undo and redo](UNDO-REDO.md).
+
+
+## Custom agent configuration
+
+OpenCode's configurable agent concept informed zwslcore's local profile registry. zwslcore keeps custom configuration outside the repository and requires each custom profile to inherit from a built-in security baseline.
+
+The default inheritance is the read-only `plan` agent. Permission overrides are explicit ordered rules and runtime gates remain authoritative.
+
+See [Custom agent profiles](CUSTOM-AGENTS.md).

@@ -12,7 +12,7 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
-from .agents import AgentProfile, get_agent
+from .agents import AgentProfile, AgentRegistry
 from .change_snapshot import ChangeSnapshotStore, SnapshotError
 from .evidence import EvidenceExporter
 from .permissions import require_allowed
@@ -220,6 +220,7 @@ class EngineeringRuntime:
         evidence: EvidenceExporter | None = None,
         snapshot_max_bytes: int = 32 * 1024,
         model_ladder: tuple[str, ...] | None = None,
+        agent_registry: AgentRegistry | None = None,
     ) -> None:
         self.store = store
         self.provider = provider
@@ -230,6 +231,7 @@ class EngineeringRuntime:
         self.progress = progress or (lambda message: None)
         self.evidence = evidence or EvidenceExporter(store)
         self.change_snapshots = ChangeSnapshotStore(worktrees=self.worktrees)
+        self.agent_registry = agent_registry or AgentRegistry(path=None)
         self.snapshot_max_bytes = max(4 * 1024, int(snapshot_max_bytes))
         ladder = tuple(alias for alias in (model_ladder or ()) if alias)
         if provider.model not in ladder:
@@ -276,7 +278,7 @@ class EngineeringRuntime:
     ) -> EngineeringTask:
         validators = validators or ["git diff --check"]
         validation_mode = validate_mode(validation_mode)
-        agent = get_agent(agent_name)
+        agent = self.agent_registry.get(agent_name)
         self.select_model_for_task(task)
         task.metadata["run_config"] = {
             "validators": list(validators),
@@ -287,6 +289,8 @@ class EngineeringRuntime:
         }
         task.metadata["agent"] = agent.name
         task.metadata["agent_mode"] = agent.mode
+        task.metadata["agent_source"] = agent.source
+        task.metadata["agent_custom_prompt"] = bool(agent.prompt)
         task.metadata["model_current"] = self.provider.model
         task.metadata["model_ladder"] = list(self.model_ladder)
         task.metadata["snapshot_max_bytes"] = self.snapshot_max_bytes
@@ -391,8 +395,11 @@ class EngineeringRuntime:
             else:
                 plan = self.provider.chat(
                     self._plan_prompt(task, snapshot),
-                    "You are a careful senior software engineer. Plan a minimal, testable change. "
-                    "Never request secret files, credential access, remote pushes, or test weakening.",
+                    self._agent_system(
+                        agent,
+                        "You are a careful senior software engineer. Plan a minimal, testable change. "
+                        "Never request secret files, credential access, remote pushes, or test weakening.",
+                    ),
                     max_tokens=1200,
                 )
                 self._checkpoint(
@@ -423,10 +430,13 @@ class EngineeringRuntime:
             self.progress(f"[engineering] {task.id} EDITING")
             response = self.provider.chat(
                 self._edit_prompt(task, snapshot, plan, allowed_paths, candidates),
-                "Return ONLY valid JSON with schema "
-                '{"changes":[{"path":"relative/path","content":"complete UTF-8 file content"}]}. '
-                "Use the smallest safe diff. Never include secrets, .env files, private keys, "
-                "generated/vendor files, or files outside the repository.",
+                self._agent_system(
+                    agent,
+                    "Return ONLY valid JSON with schema "
+                    '{"changes":[{"path":"relative/path","content":"complete UTF-8 file content"}]}. '
+                    "Use the smallest safe diff. Never include secrets, .env files, private keys, "
+                    "generated/vendor files, or files outside the repository.",
+                ),
                 max_tokens=4096,
                 response_schema=self.EDIT_RESPONSE_SCHEMA,
             )
@@ -860,6 +870,13 @@ class EngineeringRuntime:
     @staticmethod
     def _require_agent(agent: AgentProfile, permission: str, pattern: str = "*") -> None:
         require_allowed(permission, pattern, agent.rules)
+
+    @staticmethod
+    def _agent_system(agent: AgentProfile, base: str) -> str:
+        prompt = agent.prompt.strip()
+        if not prompt:
+            return base
+        return base + "\n\nAgent profile instructions:\n" + prompt
 
     def _checkpoint(self, task: EngineeringTask, phase: str, payload: dict[str, Any]) -> None:
         checkpoint = Checkpoint(task_id=task.id, phase=phase, payload=payload)

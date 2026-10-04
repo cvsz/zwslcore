@@ -12,7 +12,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.engineering.agents import get_agent, list_agents
+from services.engineering.agents import (
+    DEFAULT_AGENT_CONFIG,
+    AgentConfigError,
+    AgentRegistry,
+)
 from services.engineering.change_snapshot import ChangeSnapshotStore, SnapshotError
 from services.engineering.continuous import ContinuousEngineeringRunner
 from services.engineering.delegation import (
@@ -68,6 +72,7 @@ def build_runtime(
     store: SQLiteEngineeringStore,
     *,
     progress=None,
+    agent_config: str | Path = DEFAULT_AGENT_CONFIG,
 ) -> EngineeringRuntime:
     env = load_env(ROOT / ".env")
     key = env.get("PROVIDER_CLIENT_KEY", os.environ.get("PROVIDER_CLIENT_KEY", ""))
@@ -117,6 +122,7 @@ def build_runtime(
         progress=progress,
         snapshot_max_bytes=snapshot_budget,
         model_ladder=ladder,
+        agent_registry=AgentRegistry(agent_config),
     )
 
 
@@ -124,6 +130,7 @@ def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="zwslcore engineering control plane")
     p.add_argument("--db", default=str(Path.home() / ".zwslcore/state/engineering.db"))
     p.add_argument("--ledger", default=str(Path.home() / ".zwslcore/state/continuous.json"))
+    p.add_argument("--agent-config", default=str(DEFAULT_AGENT_CONFIG))
     sub = p.add_subparsers(dest="command", required=True)
 
     c = sub.add_parser("create")
@@ -190,7 +197,6 @@ def parser() -> argparse.ArgumentParser:
     delegate.add_argument("--description", default="")
     delegate.add_argument(
         "--agent",
-        choices=[a.name for a in list_agents() if a.mode == "subagent"],
         default="general",
     )
     delegate.add_argument("--kind", choices=[kind.value for kind in WorkKind], default="IMPLEMENT_FEATURE")
@@ -219,7 +225,7 @@ def parser() -> argparse.ArgumentParser:
     r.add_argument("--allow-path", action="append", default=[])
     r.add_argument("--commit", action="store_true")
     r.add_argument("--validation-mode", choices=["strict", "delta"], default="strict")
-    r.add_argument("--agent", choices=[a.name for a in list_agents()], default="build")
+    r.add_argument("--agent", default="build")
 
     resume = sub.add_parser("resume")
     resume.add_argument("task_id")
@@ -229,7 +235,7 @@ def parser() -> argparse.ArgumentParser:
     commit_group.add_argument("--commit", action="store_true")
     commit_group.add_argument("--no-commit", action="store_true")
     resume.add_argument("--validation-mode", choices=["strict", "delta"], default=None)
-    resume.add_argument("--agent", choices=[a.name for a in list_agents()], default=None)
+    resume.add_argument("--agent", default=None)
 
     wa = sub.add_parser("work-add")
     wa.add_argument("title")
@@ -243,7 +249,7 @@ def parser() -> argparse.ArgumentParser:
     wa.add_argument("--allow-path", action="append", default=[])
     wa.add_argument("--commit", action="store_true")
     wa.add_argument("--validation-mode", choices=["strict", "delta"], default="strict")
-    wa.add_argument("--agent", choices=[a.name for a in list_agents()], default="build")
+    wa.add_argument("--agent", default="build")
 
     sub.add_parser("work-list")
 
@@ -259,7 +265,7 @@ def parser() -> argparse.ArgumentParser:
     enqueue.add_argument("--allow-path", action="append", default=[])
     enqueue.add_argument("--commit", action="store_true")
     enqueue.add_argument("--validation-mode", choices=["strict", "delta"], default=None)
-    enqueue.add_argument("--agent", choices=[a.name for a in list_agents()], default=None)
+    enqueue.add_argument("--agent", default=None)
 
     ws = sub.add_parser("work-status")
     ws.add_argument("fingerprint", nargs="?")
@@ -478,12 +484,19 @@ def main() -> int:
         return 0
 
     if args.command == "agents":
+        try:
+            registry = AgentRegistry(args.agent_config)
+        except AgentConfigError as exc:
+            print(f"agent config: {exc}", file=sys.stderr)
+            return 1
         print(json.dumps([
             {
                 "name": agent.name,
                 "description": agent.description,
                 "mode": agent.mode,
                 "hidden": agent.hidden,
+                "source": agent.source,
+                "custom_prompt": bool(agent.prompt),
                 "permissions": [
                     {
                         "permission": rule.permission,
@@ -493,7 +506,7 @@ def main() -> int:
                     for rule in agent.rules
                 ],
             }
-            for agent in list_agents()
+            for agent in registry.list()
         ], indent=2))
         return 0
 
@@ -502,7 +515,11 @@ def main() -> int:
         return 0
 
     if args.command == "policy-check":
-        agent = get_agent(args.agent)
+        try:
+            agent = AgentRegistry(args.agent_config).get(args.agent)
+        except (AgentConfigError, ValueError) as exc:
+            print(f"agent config: {exc}", file=sys.stderr)
+            return 1
         decision = agent.decide(args.permission, args.pattern)
         print(json.dumps({
             "agent": agent.name,
@@ -610,6 +627,7 @@ def main() -> int:
 
         risk = TaskRisk(args.risk) if args.risk else parent.risk
         try:
+            registry = AgentRegistry(args.agent_config)
             child = make_child_task(
                 parent,
                 title=args.title,
@@ -617,6 +635,7 @@ def main() -> int:
                 agent_name=args.agent,
                 risk=risk,
                 max_attempts=max(1, args.max_attempts),
+                agent_registry=registry,
             )
         except ValueError as exc:
             print(f"delegation refused: {exc}", file=sys.stderr)
@@ -744,7 +763,7 @@ def main() -> int:
             print("task not found", file=sys.stderr)
             return 2
         try:
-            result = build_runtime(store, progress=emit_progress).run(
+            result = build_runtime(store, progress=emit_progress, agent_config=args.agent_config).run(
                 task,
                 validators=args.validate or ["git diff --check"],
                 allowed_paths=set(args.allow_path) if args.allow_path else None,
@@ -794,7 +813,7 @@ def main() -> int:
         store.save_task(task)
 
         try:
-            result = build_runtime(store, progress=emit_progress).run(
+            result = build_runtime(store, progress=emit_progress, agent_config=args.agent_config).run(
                 task,
                 validators=validators,
                 allowed_paths=set(allowed) if allowed else None,
@@ -824,6 +843,11 @@ def main() -> int:
         )
 
     if args.command == "work-add":
+        try:
+            AgentRegistry(args.agent_config).get(args.agent)
+        except (AgentConfigError, ValueError) as exc:
+            print(f"agent config: {exc}", file=sys.stderr)
+            return 2
         item = WorkItem(
             title=args.title,
             kind=WorkKind(args.kind),
@@ -877,6 +901,11 @@ def main() -> int:
         commit = args.commit or bool(config.get("commit", False))
         validation_mode = args.validation_mode or str(config.get("validation_mode", "strict"))
         agent_name = args.agent or str(config.get("agent", "build"))
+        try:
+            AgentRegistry(args.agent_config).get(agent_name)
+        except (AgentConfigError, ValueError) as exc:
+            print(f"agent config: {exc}", file=sys.stderr)
+            return 2
         max_attempts = args.max_attempts or task.max_attempts or 2
         item = WorkItem(
             title=task.title,
@@ -958,7 +987,7 @@ def main() -> int:
             runner = ContinuousEngineeringRunner(
                 store,
                 ledger,
-                build_runtime(store, progress=emit_progress),
+                build_runtime(store, progress=emit_progress, agent_config=args.agent_config),
                 progress=emit_progress,
             )
             result = runner.run(
