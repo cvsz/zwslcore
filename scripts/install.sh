@@ -131,6 +131,7 @@ import sys
 
 path = Path(sys.argv[1])
 fast, coder, reasoning, local = sys.argv[2:6]
+engineering = "zeaz-fast"
 updates = {
     "ZEAZ_FAST_MODEL": fast,
     "ZEAZ_CODER_MODEL": coder,
@@ -146,7 +147,13 @@ seen = set()
 out = []
 for line in lines:
     if "=" in line and not line.lstrip().startswith("#"):
-        key, _ = line.split("=", 1)
+        key, value = line.split("=", 1)
+        if key == "ZEAZ_ENGINEERING_MODEL":
+            if value in {"", "zeaz-local"}:
+                value = engineering
+            out.append(f"{key}={value}")
+            seen.add(key)
+            continue
         if key in updates:
             out.append(f"{key}={updates[key]}")
             seen.add(key)
@@ -155,6 +162,8 @@ for line in lines:
 for key, value in updates.items():
     if key not in seen:
         out.append(f"{key}={value}")
+if "ZEAZ_ENGINEERING_MODEL" not in seen:
+    out.append(f"ZEAZ_ENGINEERING_MODEL={engineering}")
 path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
 PY
 chmod 600 "$ENV_FILE"

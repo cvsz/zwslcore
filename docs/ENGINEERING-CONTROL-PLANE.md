@@ -50,7 +50,7 @@ Managed worktrees:
 
 ## Model
 
-By default the control plane uses the local provider alias zeaz-local. Override by setting ZEAZ_ENGINEERING_MODEL in .env.
+By default the control plane uses the CPU-friendly local provider alias zeaz-fast. Override by setting ZEAZ_ENGINEERING_MODEL in .env. The larger zeaz-coder and zeaz-local aliases remain available when quality is preferred over latency.
 
 
 ## Hardware profile
@@ -114,6 +114,6 @@ The local engineering snapshot defaults to:
 
 - 120 files maximum
 - 64 KiB per file
-- 96 KiB total text context
+- 32 KiB total text context
 
 When --allow-path is supplied, the snapshot is restricted to those declared paths. This keeps local CPU inference bounded and prevents unrelated repository content from dominating the prompt.

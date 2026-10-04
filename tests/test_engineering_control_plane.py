@@ -136,6 +136,7 @@ class HardwareProfileTests(unittest.TestCase):
         self.assertEqual(models["coder"], "qwen2.5-coder:7b")
         self.assertEqual(models["reasoning"], "qwen2.5-coder:7b")
         self.assertEqual(models["default"], "qwen2.5-coder:7b")
+        self.assertEqual(models["engineering"], "qwen2.5-coder:3b")
 
 
 class CostPolicyTests(unittest.TestCase):
@@ -207,7 +208,7 @@ class SnapshotScopeTests(unittest.TestCase):
             for index in range(20):
                 (root / f"file-{index}.txt").write_text("x" * 20000, encoding="utf-8")
             text = RepositorySnapshotter(root).snapshot()
-            self.assertLessEqual(len(text.encode("utf-8")), 96 * 1024)
+            self.assertLessEqual(len(text.encode("utf-8")), 32 * 1024)
 
 
 class ProviderPreflightTests(unittest.TestCase):
@@ -254,7 +255,7 @@ class ContinuousRetryResetTests(unittest.TestCase):
             def preflight(self):
                 return None
 
-            def chat(self, prompt, system):
+            def chat(self, prompt, system, **kwargs):
                 if "Produce a concise implementation plan" in prompt:
                     return "plan"
                 return '{"changes":[{"path":"services/example.py","content":"x = 1"}]}'

@@ -23,7 +23,7 @@ class ProviderClient:
         self,
         base_url: str = "http://127.0.0.1:8080/v1",
         api_key: str = "",
-        model: str = "zeaz-local",
+        model: str = "zeaz-fast",
         timeout: int = 300,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -86,7 +86,7 @@ class ProviderClient:
                 f"available={sorted(ids)}"
             )
 
-    def chat(self, prompt: str, system: str) -> str:
+    def chat(self, prompt: str, system: str, *, max_tokens: int = 2048) -> str:
         payload = json.dumps(
             {
                 "model": self.model,
@@ -95,6 +95,7 @@ class ProviderClient:
                     {"role": "user", "content": prompt},
                 ],
                 "temperature": 0,
+                "max_tokens": max_tokens,
             }
         ).encode()
         req = urllib.request.Request(
@@ -180,6 +181,7 @@ class EngineeringRuntime:
                 self._plan_prompt(task, snapshot),
                 "You are a careful senior software engineer. Plan a minimal, testable change. "
                 "Never request secret files, credential access, remote pushes, or test weakening.",
+                max_tokens=1200,
             )
             self._checkpoint(task, "PLAN", {"plan": plan[:12000]})
 
@@ -192,6 +194,7 @@ class EngineeringRuntime:
                 '{"changes":[{"path":"relative/path","content":"complete UTF-8 file content"}]}. '
                 "Use the smallest safe diff. Never include secrets, .env files, private keys, "
                 "generated/vendor files, or files outside the repository.",
+                max_tokens=4096,
             )
             changes = self._parse_changes(response)
             self.progress(f"[engineering] proposed_files={len(changes)}")

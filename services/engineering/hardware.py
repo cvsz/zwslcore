@@ -35,6 +35,7 @@ class HardwareProfile:
             "coder": coder,
             "reasoning": reasoning,
             "default": default,
+            "engineering": fast,
         }
 
 
