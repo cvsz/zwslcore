@@ -48,3 +48,31 @@ Models.dev metadata is advisory:
 - local Ollama inventory and zwslcore Provider routes remain the execution authority.
 
 This separation lets zwslcore use current model context, capability, pricing and provider metadata while preserving local-first/offline-safe behavior.
+
+
+## Explainable recommendation engine
+
+Rank candidates:
+
+    python3 scripts/models-dev.py recommend --structured-output --min-context 4096
+
+Optional filters:
+
+    --tool-call
+    --reasoning
+    --min-context N
+    --include-remote
+    --permit-paid
+    --top N
+
+Ranking is deterministic and returns score, eligibility, reasons and blockers.
+
+Hard eligibility rules are evaluated before score:
+
+- disabled providers are ineligible;
+- `ZERO_COST_ONLY` rejects offerings with non-zero published input/output price;
+- required structured output, tool calling, reasoning and context must be satisfied.
+
+Local Provider aliases receive the strongest preference. Remote Models.dev offerings are considered only when `--include-remote` is supplied; if `FREE_CLOUD_FALLBACK_ENABLED=false`, those candidates remain disabled and therefore ineligible.
+
+For autonomous engineering, `ZEAZ_ENGINEERING_MODEL=auto` ranks only configured local Provider aliases. It does not dynamically enable or call cloud models. An explicit alias in `.env` overrides automatic selection.
