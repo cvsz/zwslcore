@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs models free-models engineer-tasks engineer-test config provider-build ci
+.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs models free-models engineer-tasks engineer-profile engineer-work engineer-test config provider-build ci
 
 help:
 	@printf '%s\n' \
@@ -12,6 +12,8 @@ help:
 	  'models        list local Ollama models' \
 	  'free-models   discover current OpenRouter zero-price text models' \
 	  'engineer-tasks list durable engineering tasks' \
+	  'engineer-profile show detected hardware/model profile' \
+	  'engineer-work  list durable continuous work items' \
 	  'engineer-test run engineering control-plane tests' \
 	  'config        validate Compose configuration' \
 	  'provider-build build the in-repo provider gateway' \
@@ -57,6 +59,12 @@ free-models:
 
 engineer-tasks:
 	python3 scripts/engineer.py list
+
+engineer-profile:
+	python3 scripts/engineer.py profile
+
+engineer-work:
+	python3 scripts/engineer.py work-list
 
 engineer-test:
 	python3 -m unittest tests.test_engineering_control_plane -v
