@@ -119,9 +119,14 @@ class EvidenceExporter:
             "payload_sha256": _sha256_bytes(_stable_json(payload)),
         }
 
-        if checkpoint.phase == "VALIDATION":
+        if checkpoint.phase in {"BASELINE_VALIDATION", "VALIDATION"}:
+            summary["mode"] = str(payload.get("mode", ""))
             summary["passed"] = bool(payload.get("passed"))
             summary["failures"] = list(payload.get("failures") or [])
+            summary["baseline_failures"] = list(payload.get("baseline_failures") or [])
+            summary["regressions"] = list(payload.get("regressions") or [])
+            summary["improvements"] = list(payload.get("improvements") or [])
+            summary["residual_failures"] = list(payload.get("residual_failures") or [])
             summary["results"] = [
                 {
                     "command": item.get("command", ""),
