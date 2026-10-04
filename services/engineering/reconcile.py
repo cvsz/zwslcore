@@ -19,6 +19,7 @@ class ReconcileFinding:
     task_id: str = ""
     detail: str = ""
     safe_fix: bool = False
+    remediation: str = ""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -79,6 +80,16 @@ class QueueReconciler:
                         safe_fix=True,
                     )
                 )
+            elif task.status == TaskStatus.CANCELLED and state != "CANCELLED":
+                findings.append(
+                    ReconcileFinding(
+                        "cancelled_task_ledger_drift",
+                        fingerprint=fp,
+                        task_id=task.id,
+                        detail=f"task=CANCELLED ledger={state}",
+                        safe_fix=True,
+                    )
+                )
             elif task.status in TERMINAL_BLOCKED and state == "RUNNING":
                 findings.append(
                     ReconcileFinding(
@@ -127,6 +138,10 @@ class QueueReconciler:
                     task_id=task_id,
                     detail=f"status={task.status.value} title={task.title}",
                     safe_fix=False,
+                    remediation=(
+                        f"enqueue-task {task_id} --kind REPAIR "
+                        f"or cancel {task_id} --reason <reason>"
+                    ),
                 )
             )
 
@@ -167,6 +182,13 @@ class QueueReconciler:
                     state="SUCCEEDED",
                     attempts=task.attempts,
                     last_error="",
+                )
+            elif finding.kind == "cancelled_task_ledger_drift" and task is not None:
+                self.ledger.update(
+                    finding.fingerprint,
+                    state="CANCELLED",
+                    attempts=task.attempts,
+                    last_error=task.last_error,
                 )
             elif finding.kind == "terminal_task_running_ledger" and task is not None:
                 self.ledger.update(
