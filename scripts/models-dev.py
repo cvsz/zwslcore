@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from services.engineering.hardware import detect_hardware  # noqa: E402
 from services.model_catalog.models_dev import (  # noqa: E402
     DEFAULT_CACHE,
     DEFAULT_URL,
@@ -40,6 +41,18 @@ def parser() -> argparse.ArgumentParser:
     providers = sub.add_parser("providers")
     providers.add_argument("--refresh", action="store_true")
     providers.add_argument("--max-age", type=int, default=24 * 60 * 60)
+
+    rank = sub.add_parser("rank")
+    rank.add_argument("--refresh", action="store_true")
+    rank.add_argument("--max-age", type=int, default=24 * 60 * 60)
+    rank.add_argument("--limit", type=int, default=20)
+    rank.add_argument("--include-ineligible", action="store_true")
+    _selection_args(rank)
+
+    select = sub.add_parser("select")
+    select.add_argument("--refresh", action="store_true")
+    select.add_argument("--max-age", type=int, default=24 * 60 * 60)
+    _selection_args(select)
     return p
 
 
@@ -92,6 +105,61 @@ def main() -> int:
             print("model not found", file=sys.stderr)
             return 2
         print(json.dumps({"source": source, "id": args.model_id, **result}, indent=2))
+        return 0
+
+    if args.command in {"rank", "select"}:
+        profile = detect_hardware()
+        runtime = profile.recommended_runtime()
+        recommended = profile.recommended_models()
+        candidates = catalog_candidates(catalog)
+        if not args.no_local:
+            candidates = local_candidates(
+                recommended,
+                context_length=int(runtime["context_length"]),
+            ) + candidates
+
+        requirements = SelectionRequirements(
+            structured_output=args.structured_output,
+            tool_call=args.tool_call,
+            reasoning=args.reasoning,
+            min_context=max(0, args.min_context),
+            cost_policy=args.cost_policy,
+        )
+
+        if args.command == "rank":
+            ranked = rank_models(
+                candidates,
+                requirements,
+                hardware_models=recommended.values(),
+                include_ineligible=args.include_ineligible,
+            )
+            print(json.dumps({
+                "source": source,
+                "hardware_profile": profile.profile,
+                "requirements": {
+                    "structured_output": requirements.structured_output,
+                    "tool_call": requirements.tool_call,
+                    "reasoning": requirements.reasoning,
+                    "min_context": requirements.min_context,
+                    "cost_policy": requirements.cost_policy,
+                },
+                "models": [item.as_dict() for item in ranked[:max(1, args.limit)]],
+            }, indent=2))
+            return 0
+
+        selected = select_model(
+            candidates,
+            requirements,
+            hardware_models=recommended.values(),
+        )
+        if selected is None:
+            print("no eligible model found", file=sys.stderr)
+            return 2
+        print(json.dumps({
+            "source": source,
+            "hardware_profile": profile.profile,
+            "selected": selected.as_dict(),
+        }, indent=2))
         return 0
 
     return 2
