@@ -1,31 +1,43 @@
-# AI OSS stack sources
+# Integrated components
 
-zwslcore integrates selected behavior from existing `cvsz/*` repositories instead of copying whole repositories.
+zwslcore is self-contained. The code and configuration required for runtime are stored in this repository and no external ZEAZ repository is cloned, imported, mounted, or required by the installer.
 
-| Source | Reused concept |
-|---|---|
-| `cvsz/zeaz-platform` | local Ollama + LiteLLM + Open WebUI bootstrap and health-check flow |
-| `cvsz/qwen-gen` | RAM-aware local model selection and zero-price provider catalog filtering |
-| `cvsz/z-prov` | stable provider aliases, local-first routing, provider isolation, loopback-only exposure |
-| `cvsz/zai-coder` | small Qwen coder models for CPU-friendly local coding |
-| `cvsz/zaiman` | provider registry/free-tier metadata patterns |
+## In-repository components
 
-## Refactoring decisions
+| Component | Location | Responsibility |
+|---|---|---|
+| Provider gateway | `services/provider/` | OpenAI/Anthropic-compatible API, model aliases, fallback routing, auth, limits and metrics |
+| Model catalog | `services/model_catalog/` | zero-price/chat-capable model filtering and route generation |
+| Ollama model pack | `scripts/create-local-models.sh` | local coder aliases and Modelfiles |
+| LiteLLM routing | `config/litellm.yaml` | local and optional provider routing |
+| Open WebUI orchestration | `compose.yaml` | browser UI wired through the in-repo provider gateway |
+| Installer/doctor | `scripts/install.sh`, `scripts/doctor.sh` | bootstrap, secret generation and health validation |
 
-- Do not vendor entire upstream repositories.
-- Keep zwslcore as the orchestration and host-integration layer.
-- Keep all public service bindings on loopback by default.
-- Open WebUI talks to one LiteLLM endpoint.
-- Ollama remains local and is never intended for direct Internet exposure.
-- Cloud free tiers are opt-in because model availability, quotas, terms, and zero-price status can change.
-- Secrets live only in `.env`, which is ignored by Git.
-- Model pulling is based on available memory, not only installed memory.
+## Refactoring provenance
 
-## Runtime aliases
+The implementation was consolidated from patterns and code previously maintained across ZEAZ projects including provider gateway, model discovery, Ollama tuning, and Open WebUI/LiteLLM bootstrap work. Those repositories are historical provenance only; they are not runtime dependencies.
 
-- `zeaz-fast` -> `qwen2.5-coder:3b`
-- `zeaz-coder` -> `qwen2.5-coder:7b`
-- `zeaz-reasoning` -> `qwen3:8b`
-- `zeaz-free` -> OpenRouter free router when explicitly configured
+The consolidated implementation is intentionally owned by zwslcore now:
 
-The aliases are intentionally stable so clients do not need to change when backend models are replaced.
+- configuration paths are zwslcore-local;
+- provider package and Docker build context live under `services/provider/`;
+- model catalog logic lives under `services/model_catalog/`;
+- stable public aliases are controlled here;
+- health checks, credentials and lifecycle commands are controlled here.
+
+## Runtime flow
+
+```text
+Open WebUI
+    |
+    v
+zwslcore Provider Gateway
+    |------------------|
+    v                  v
+ Ollama             LiteLLM
+ local models       optional routes
+    |
+    +--> optional cloud fallback only when explicitly enabled
+```
+
+All host-published ports remain loopback-only by default.
