@@ -77,6 +77,98 @@ class QueueReconcileTests(unittest.TestCase):
             finding = next(item for item in report.findings if item.kind == "orphan_task")
             self.assertFalse(finding.safe_fix)
             self.assertIn("Fix provider health", finding.detail)
+            self.assertIn("enqueue-task", finding.remediation)
+            self.assertIn("cancel", finding.remediation)
+
+    def test_cancel_cli_closes_orphan_and_writes_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            db = root / "state.db"
+            ledger_path = root / "continuous.json"
+            store = SQLiteEngineeringStore(db)
+            task = EngineeringTask(
+                title="Fix provider health",
+                repository=str(root),
+                status=TaskStatus.CREATED,
+            )
+            store.save_task(task)
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/engineer.py",
+                    "--db",
+                    str(db),
+                    "--ledger",
+                    str(ledger_path),
+                    "cancel",
+                    task.id,
+                    "--reason",
+                    "provider health is already verified",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            payload = json.loads(proc.stdout)
+            self.assertEqual(payload["status"], "CANCELLED")
+            self.assertTrue(Path(payload["evidence_path"]).exists())
+
+            loaded = store.get_task(task.id)
+            self.assertEqual(loaded.status, TaskStatus.CANCELLED)
+            self.assertIn("provider health is already verified", loaded.last_error)
+            checkpoint = store.latest_checkpoint(task.id)
+            self.assertEqual(checkpoint.phase, "CANCELLED")
+
+            report = QueueReconciler(store, JsonContinuousLedger(ledger_path)).inspect()
+            self.assertNotIn(task.id, report.orphan_tasks)
+
+            second = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/engineer.py",
+                    "--db",
+                    str(db),
+                    "--ledger",
+                    str(ledger_path),
+                    "cancel",
+                    task.id,
+                    "--reason",
+                    "duplicate request",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertTrue(json.loads(second.stdout)["idempotent"])
+
+    def test_cancelled_task_repairs_linked_ledger_state(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            store = SQLiteEngineeringStore(root / "state.db")
+            ledger = JsonContinuousLedger(root / "continuous.json")
+            item = WorkItem("cancelled", WorkKind.REPAIR)
+            ledger.register(item)
+            task = EngineeringTask(
+                id=f"work_{item.fingerprint[:20]}",
+                title=item.title,
+                status=TaskStatus.CANCELLED,
+            )
+            store.save_task(task)
+            ledger.update(
+                item.fingerprint,
+                task_id=task.id,
+                state="PENDING",
+            )
+
+            report = QueueReconciler(store, ledger).apply_safe()
+            record = ledger.records()[0]
+            self.assertEqual(record["state"], "CANCELLED")
+            self.assertTrue(
+                any(item.kind == "cancelled_task_ledger_drift" for item in report.applied)
+            )
 
     def test_enqueue_task_cli_links_existing_task(self):
         with tempfile.TemporaryDirectory() as td:
