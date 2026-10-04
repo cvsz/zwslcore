@@ -43,7 +43,45 @@ function ConvertFrom-WslDistroOutput([object[]]$Lines) {
     if (-not $line) { continue }
 
     $candidate = $null
-    if ($line -match '^([A-Za-z0-9][A-Za-z0-9._-]*)
+
+    if ($line -match "^([A-Za-z0-9][A-Za-z0-9._-]*)$") {
+      $candidate = $Matches[1]
+    } elseif ($line -match "^([A-Za-z0-9][A-Za-z0-9._-]*)[ ]{2,}.+$") {
+      $candidate = $Matches[1]
+    }
+
+    if ($candidate -and $ignored -notcontains $candidate -and -not $names.Contains($candidate)) {
+      $names.Add($candidate)
+    }
+  }
+
+  return @($names)
+}
+
+function Get-OnlineDistros {
+  $items = & wsl.exe --list --online --quiet 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    $items = & wsl.exe --list --online 2>$null
+  }
+  if ($LASTEXITCODE -ne 0) { return @() }
+
+  $parsed = ConvertFrom-WslDistroOutput @($items)
+  if ($parsed.Count -eq 0) {
+    $fallback = & wsl.exe --list --online 2>$null
+    if ($LASTEXITCODE -eq 0) {
+      $parsed = ConvertFrom-WslDistroOutput @($fallback)
+    }
+  }
+
+  return @($parsed)
+}
+
+function Get-InstalledDistros {
+  $items = & wsl.exe --list --quiet 2>$null
+  if ($LASTEXITCODE -ne 0) { return @() }
+  return @(ConvertFrom-WslDistroOutput @($items))
+}
+
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptRoot
 $BootstrapPath = Join-Path $ScriptRoot "bootstrap-wsl.sh"
