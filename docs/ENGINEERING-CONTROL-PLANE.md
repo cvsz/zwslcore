@@ -264,3 +264,34 @@ The first model remains the low-latency path. A consumed attempt promotes to the
 CPU_SMALL filters out local aliases with a negative hardware-fit score, so recovery does not force a model that is too large for the detected machine.
 
 The active model, model ladder, snapshot budget and any model escalation are persisted in task metadata and therefore appear in durable evidence.
+
+
+## Queue reconciliation
+
+The continuous ledger and SQLite task store are reconciled before recovery.
+
+Inspect drift:
+
+    python3 scripts/engineer.py reconcile
+
+Apply only deterministic safe fixes:
+
+    python3 scripts/engineer.py reconcile --apply
+
+Safe fixes include:
+
+- ledger references to missing tasks -> clear link and return work to PENDING;
+- SUCCEEDED task with stale non-succeeded ledger state -> mark ledger SUCCEEDED;
+- terminal failed/blocked task left as RUNNING -> mark ledger BLOCKED;
+- CREATED task left as RUNNING -> return ledger to PENDING;
+- terminal task/ledger attempt-count drift -> synchronize ledger attempts.
+
+Non-terminal tasks that are not linked from any work item are reported as orphan tasks and are not auto-enqueued because their validator/scope intent cannot be inferred safely.
+
+Explicitly enqueue an existing task:
+
+    python3 scripts/engineer.py enqueue-task TASK_ID --kind REPAIR --priority 90 --allow-path services
+
+The command reuses persisted run_config when available and otherwise defaults to git diff --check, strict validation and no commit.
+
+The `recover` command applies safe reconciliation before processing blocked work. The TUI surfaces drift and orphan tasks with actionable commands.

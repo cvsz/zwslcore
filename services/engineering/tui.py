@@ -7,6 +7,7 @@ from typing import Any
 
 from .hardware import detect_hardware
 from .ledger import JsonContinuousLedger
+from .reconcile import QueueReconciler
 from .store import SQLiteEngineeringStore
 from services.model_catalog.selector import (
     engineering_model_ladder,
@@ -100,6 +101,7 @@ def build_dashboard(
 
     records = ledger.records()
     tasks = {task.id: task for task in store.list_tasks()}
+    reconcile = QueueReconciler(store, ledger).inspect()
     states: dict[str, int] = {}
     for record in records:
         state = str(record.get("state", "UNKNOWN"))
@@ -122,6 +124,7 @@ def build_dashboard(
     lines.append(
         f" queue     total={len(records)} "
         + " ".join(f"{key.lower()}={value}" for key, value in sorted(states.items()))
+        + (f" orphans={len(reconcile.orphan_tasks)}" if reconcile.orphan_tasks else "")
     )
 
     lines.extend(_section("WORK QUEUE", width, color))
@@ -176,14 +179,27 @@ def build_dashboard(
     blocked_count = sum(
         1 for record in records if str(record.get("state", "")).upper() == "BLOCKED"
     )
-    if blocked_count:
+    if blocked_count or reconcile.orphan_tasks or any(item.safe_fix for item in reconcile.findings):
         lines.extend(_section("RECOVERY", width, color))
         context_length = int(env.get("ZEAZ_OLLAMA_CONTEXT_LENGTH", "4096") or 4096)
-        lines.append(
-            f" blocked={blocked_count} command=engineer-wsl.ps1 recover --max-iterations 4 "
-            f"snapshot_budget={snapshot_budget_for_context(context_length)} "
-            f"ladder={'→'.join(ladder) if ladder else selected_alias}"
-        )
+        if blocked_count:
+            lines.append(
+                f" blocked={blocked_count} command=engineer-wsl.ps1 recover --max-iterations 4 "
+                f"snapshot_budget={snapshot_budget_for_context(context_length)} "
+                f"ladder={'→'.join(ladder) if ladder else selected_alias}"
+            )
+        safe_fix_count = sum(1 for item in reconcile.findings if item.safe_fix)
+        if safe_fix_count:
+            lines.append(
+                f" drift={safe_fix_count} command=engineer-wsl.ps1 reconcile --apply"
+            )
+        for task_id in reconcile.orphan_tasks[:3]:
+            task = tasks.get(task_id)
+            title = task.title if task is not None else ""
+            lines.append(
+                f" orphan={task_id} title={_clip(title, max(8, width - 72))} "
+                f"command=engineer-wsl.ps1 enqueue-task {task_id} --kind REPAIR"
+            )
 
     lines.extend(_section("RUNTIME POLICY", width, color))
     runtime = profile.recommended_runtime()
