@@ -9,6 +9,7 @@ providers:
     timeout_seconds: 600
     total_timeout_seconds: 900
     max_attempts: 2
+    native_structured_outputs: true
 
   litellm:
     cost_class: FREE_LOCAL
