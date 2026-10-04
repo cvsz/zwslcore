@@ -6,6 +6,9 @@ providers:
     api: openai
     base_url: http://ollama:11434/v1
     api_key: ollama
+    timeout_seconds: 600
+    total_timeout_seconds: 900
+    max_attempts: 2
 
   litellm:
     cost_class: FREE_LOCAL
