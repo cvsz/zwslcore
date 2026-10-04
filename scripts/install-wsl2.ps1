@@ -232,7 +232,7 @@ Invoke-Native wsl.exe @(
 )
 
 Write-Step "Restarting WSL to activate systemd"
-Invoke-Native wsl.exe @("--shutdown")
+Invoke-Native wsl.exe @("--terminate", $Distro)
 Start-Sleep -Seconds 2
 Invoke-Native wsl.exe @(
   "-d", $Distro, "-u", "root", "--",
@@ -265,7 +265,7 @@ $userCommand = "if grep -q '^\[user\]' /etc/wsl.conf; then " +
 Invoke-Native wsl.exe @("-d", $Distro, "-u", "root", "--", "bash", "-lc", $userCommand)
 
 Write-Step "Restarting WSL to apply default-user settings"
-Invoke-Native wsl.exe @("--shutdown")
+Invoke-Native wsl.exe @("--terminate", $Distro)
 Start-Sleep -Seconds 2
 
 Write-Step "Validating WSL, systemd, Docker and development tools"
