@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from .cost import CostClass, CostPolicy, parse_cost_class, parse_cost_policy
 from .security import client_key_digest
 
 ENV_PATTERN = re.compile(r"\$\{([A-Z][A-Z0-9_]*)(?::-([^}]*))?\}")
@@ -54,6 +55,7 @@ class ProviderConfig:
     retry_max_seconds: float = 5.0
     circuit_failure_threshold: int = 5
     circuit_reset_seconds: float = 30.0
+    cost_class: str = CostClass.UNKNOWN.value
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not 1 <= len(self.name) <= 128:
@@ -66,6 +68,7 @@ class ProviderConfig:
         }:
             raise ValueError("provider API must be anthropic, azure, openai, or responses")
         _validate_origin(self.base_url, "provider base_url")
+        parse_cost_class(self.cost_class)
         if not isinstance(self.api_key, str) or "\x00" in self.api_key:
             raise ValueError("provider api_key is invalid")
         if not isinstance(self.account, str) or not 1 <= len(self.account) <= 128:
@@ -173,6 +176,7 @@ class Settings:
     trusted_proxy_cidrs: tuple[str, ...] = ()
     max_concurrent_requests: int = 100
     max_response_bytes: int = 16 * 1024 * 1024
+    cost_policy: str = CostPolicy.ZERO_COST_ONLY.value
 
 
 def load_settings(path: str | Path | None = None) -> Settings:
@@ -307,6 +311,10 @@ def load_settings(path: str | Path | None = None) -> Settings:
         or any(character in rate_limit_key_prefix for character in "\r\n\x00")
     ):
         raise RuntimeError("ZEAZ_RATE_LIMIT_KEY_PREFIX is invalid")
+    try:
+        cost_policy = parse_cost_policy(os.getenv("ZEAZ_COST_POLICY", CostPolicy.ZERO_COST_ONLY.value))
+    except ValueError as exc:
+        raise RuntimeError("ZEAZ_COST_POLICY is invalid") from exc
     return Settings(
         providers=providers,
         models=models,
@@ -323,6 +331,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
         trusted_proxy_cidrs=trusted_proxy_cidrs,
         max_concurrent_requests=max_concurrent_requests,
         max_response_bytes=max_response_bytes,
+        cost_policy=cost_policy.value,
     )
 
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import sys
@@ -10,6 +11,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from services.engineering.continuous import ContinuousEngineeringRunner
+from services.engineering.hardware import detect_hardware
+from services.engineering.ledger import JsonContinuousLedger
+from services.engineering.loop import WorkItem, WorkKind
 from services.engineering.models import EngineeringTask, TaskRisk
 from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
@@ -29,9 +34,26 @@ def load_env(path: Path) -> dict[str, str]:
     return values
 
 
+def build_runtime(store: SQLiteEngineeringStore) -> EngineeringRuntime:
+    env = load_env(ROOT / ".env")
+    key = env.get("PROVIDER_CLIENT_KEY", os.environ.get("PROVIDER_CLIENT_KEY", ""))
+    if not key:
+        raise RuntimeError("PROVIDER_CLIENT_KEY is missing; run make install first")
+    provider_port = env.get("PROVIDER_PORT", os.environ.get("PROVIDER_PORT", "8080"))
+    return EngineeringRuntime(
+        store,
+        ProviderClient(
+            base_url=f"http://127.0.0.1:{provider_port}/v1",
+            api_key=key,
+            model=env.get("ZEAZ_ENGINEERING_MODEL", "zeaz-local"),
+        ),
+    )
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="zwslcore engineering control plane")
     p.add_argument("--db", default=str(Path.home() / ".zwslcore/state/engineering.db"))
+    p.add_argument("--ledger", default=str(Path.home() / ".zwslcore/state/continuous.json"))
     sub = p.add_subparsers(dest="command", required=True)
 
     c = sub.add_parser("create")
@@ -49,11 +71,32 @@ def parser() -> argparse.ArgumentParser:
     snap = sub.add_parser("snapshot")
     snap.add_argument("--repository", default=".")
 
+    sub.add_parser("profile")
+
     r = sub.add_parser("run")
     r.add_argument("task_id")
     r.add_argument("--validate", action="append", default=[])
     r.add_argument("--allow-path", action="append", default=[])
     r.add_argument("--commit", action="store_true")
+
+    wa = sub.add_parser("work-add")
+    wa.add_argument("title")
+    wa.add_argument("--kind", choices=[kind.value for kind in WorkKind], default="IMPLEMENT_FEATURE")
+    wa.add_argument("--description", default="")
+    wa.add_argument("--repository", default=".")
+    wa.add_argument("--risk", choices=[r.value for r in TaskRisk], default="medium")
+    wa.add_argument("--priority", type=int, default=50)
+    wa.add_argument("--max-attempts", type=int, default=2)
+    wa.add_argument("--validate", action="append", default=[])
+    wa.add_argument("--allow-path", action="append", default=[])
+    wa.add_argument("--commit", action="store_true")
+
+    sub.add_parser("work-list")
+
+    cont = sub.add_parser("continuous")
+    cont.add_argument("--max-iterations", type=int, default=12)
+    cont.add_argument("--retry-blocked", action="store_true")
+
     return p
 
 
@@ -98,27 +141,21 @@ def main() -> int:
         print(RepositorySnapshotter(args.repository).snapshot())
         return 0
 
+    if args.command == "profile":
+        profile = detect_hardware()
+        print(json.dumps(
+            dataclasses.asdict(profile) | {"recommended_models": profile.recommended_models()},
+            indent=2,
+        ))
+        return 0
+
     if args.command == "run":
         task = store.get_task(args.task_id)
         if not task:
             print("task not found", file=sys.stderr)
             return 2
-        env = load_env(ROOT / ".env")
-        key = env.get("PROVIDER_CLIENT_KEY", os.environ.get("PROVIDER_CLIENT_KEY", ""))
-        if not key:
-            print("PROVIDER_CLIENT_KEY is missing; run make install first", file=sys.stderr)
-            return 2
-        provider_port = env.get("PROVIDER_PORT", os.environ.get("PROVIDER_PORT", "8080"))
-        runtime = EngineeringRuntime(
-            store,
-            ProviderClient(
-                base_url=f"http://127.0.0.1:{provider_port}/v1",
-                api_key=key,
-                model=env.get("ZEAZ_ENGINEERING_MODEL", "zeaz-local"),
-            ),
-        )
         try:
-            result = runtime.run(
+            result = build_runtime(store).run(
                 task,
                 validators=args.validate or ["git diff --check"],
                 allowed_paths=set(args.allow_path) if args.allow_path else None,
@@ -129,6 +166,48 @@ def main() -> int:
             return 1
         print(f"{result.id}\t{result.status.value}\t{result.branch_name}\t{result.worktree_path}")
         return 0
+
+    ledger = JsonContinuousLedger(args.ledger)
+
+    if args.command == "work-add":
+        item = WorkItem(
+            title=args.title,
+            kind=WorkKind(args.kind),
+            payload={
+                "description": args.description,
+                "repository": str(Path(args.repository).resolve()),
+                "risk": args.risk,
+                "validators": args.validate or ["git diff --check"],
+                "allowed_paths": args.allow_path,
+                "commit": args.commit,
+            },
+            priority=args.priority,
+            max_attempts=max(1, args.max_attempts),
+        )
+        record = ledger.register(item)
+        print(record["fingerprint"])
+        return 0
+
+    if args.command == "work-list":
+        for record in ledger.records():
+            print(
+                f"{record['fingerprint'][:12]}\t{record['state']}\t"
+                f"{record['kind']}\t{record['priority']}\t{record['title']}"
+            )
+        return 0
+
+    if args.command == "continuous":
+        try:
+            runner = ContinuousEngineeringRunner(store, ledger, build_runtime(store))
+            result = runner.run(
+                max_iterations=max(1, args.max_iterations),
+                retry_blocked=args.retry_blocked,
+            )
+        except Exception as exc:
+            print(f"continuous engineering failed: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(dataclasses.asdict(result), indent=2))
+        return 0 if not result.blocked else 1
 
     return 2
 

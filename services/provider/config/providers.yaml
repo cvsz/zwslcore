@@ -2,28 +2,33 @@ default_model: zeaz-free
 
 providers:
   ollama:
+    cost_class: FREE_LOCAL
     api: openai
     base_url: http://ollama:11434/v1
     api_key: ollama
 
   litellm:
+    cost_class: FREE_LOCAL
     api: openai
     base_url: http://litellm:4000/v1
     api_key: ${LITELLM_MASTER_KEY}
 
   openrouter:
+    cost_class: FREE_REMOTE
     enabled: ${FREE_CLOUD_FALLBACK_ENABLED:-false}
     api: openai
     base_url: https://openrouter.ai/api/v1
     api_key: ${OPENROUTER_API_KEY:-}
 
   gemini:
+    cost_class: FREE_REMOTE
     enabled: ${FREE_CLOUD_FALLBACK_ENABLED:-false}
     api: openai
     base_url: https://generativelanguage.googleapis.com/v1beta/openai
     api_key: ${GEMINI_API_KEY:-}
 
   groq:
+    cost_class: FREE_REMOTE
     enabled: ${FREE_CLOUD_FALLBACK_ENABLED:-false}
     api: openai
     base_url: https://api.groq.com/openai/v1
