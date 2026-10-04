@@ -167,3 +167,27 @@ The resume path is deliberately conservative:
 6. if HEAD changed, the runtime performs a fresh planning call.
 
 Resume history is retained in task metadata before the attempt budget is reset. A succeeded task cannot be resumed through this command.
+
+
+## Validation profiles
+
+The default validation mode is strict:
+
+    python3 scripts/engineer.py run TASK_ID --validation-mode strict --validate "python3 -m unittest discover -s tests -v"
+
+Strict mode blocks when any final validator returns non-zero.
+
+For repositories with known pre-existing failures, delta mode is explicit opt-in:
+
+    python3 scripts/engineer.py run TASK_ID --validation-mode delta --validate "python3 -m unittest discover -s tests -v"
+
+Delta mode:
+
+1. runs the same validator list on the clean managed worktree before planning/editing;
+2. stores a BASELINE_VALIDATION checkpoint;
+3. runs the validators again after model edits;
+4. blocks any command that changed from exit code 0 to non-zero;
+5. records pre-existing failures that remain failing as residual_failures;
+6. records pre-existing failures that become green as improvements.
+
+Delta mode never changes path validation, static review, secret checks or the security gate. Resume and continuous-work records persist the selected validation mode in run_config.
