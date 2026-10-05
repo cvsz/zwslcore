@@ -84,7 +84,7 @@ class JsonContinuousLedger:
         items: list[WorkItem] = []
         for record in data["records"].values():
             state = record.get("state")
-            if state == "SUCCEEDED":
+            if state in {"SUCCEEDED", "CANCELLED"}:
                 continue
             max_attempts = int(record.get("max_attempts", 2))
             attempts = int(record.get("attempts", 0))
