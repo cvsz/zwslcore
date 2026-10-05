@@ -445,6 +445,8 @@ The repository retains its ZEAZ engineering baseline including:
 
 A green repository CI run validates only the checks that ran. Production readiness still requires runtime, recovery, security, observability, and deployment evidence for the target environment.
 
+See the [production-readiness matrix](docs/PRODUCTION-READINESS.md) for current gate states and evidence.
+
 ## License
 
 MIT. See `LICENSE`.
