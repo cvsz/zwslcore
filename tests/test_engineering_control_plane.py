@@ -388,11 +388,15 @@ class CandidateFileTests(unittest.TestCase):
 
 class ProviderPreflightTests(unittest.TestCase):
     def test_preflight_failure_does_not_consume_attempt_or_create_worktree(self):
+        private_value = "sk-ENGINEERING-LOG-SECRET-CANARY-0123456789"
+
         class FailingProvider:
             model = "zeaz-local"
 
             def preflight(self):
-                raise RuntimeError("provider HTTP 502 for /health/ready: upstream unavailable")
+                raise RuntimeError(
+                    "provider HTTP 502 for /health/ready: " + private_value
+                )
 
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
@@ -413,13 +417,24 @@ class ProviderPreflightTests(unittest.TestCase):
                 worktrees=manager,
             )
 
-            with self.assertRaisesRegex(RuntimeError, "provider HTTP 502"):
-                runtime.run(task)
+            with self.assertLogs("zeaz.engineering", level="INFO") as captured:
+                with self.assertRaisesRegex(RuntimeError, "provider HTTP 502"):
+                    runtime.run(task)
 
             loaded = store.get_task(task.id)
             self.assertEqual(loaded.attempts, 0)
             self.assertEqual(loaded.worktree_path, "")
             self.assertEqual(list(manager.base_dir.glob("*")), [])
+            log_text = "\n".join(record.getMessage() for record in captured.records)
+            self.assertNotIn(private_value, log_text)
+            events = [json.loads(record.getMessage()) for record in captured.records]
+            blocked = next(event for event in events if event["outcome"] == "blocked")
+            self.assertEqual(blocked["component"], "engineering")
+            self.assertEqual(blocked["phase"], "preflight")
+            self.assertEqual(blocked["error_class"], "RuntimeError")
+            self.assertEqual(blocked["model"], "zeaz-local")
+            self.assertEqual(blocked["attempt"], 1)
+            self.assertEqual(len(blocked["work_fingerprint"]), 64)
 
 
 class ContinuousRetryResetTests(unittest.TestCase):

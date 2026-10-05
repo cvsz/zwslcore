@@ -69,6 +69,28 @@ def make_runtime_repo(root: Path) -> Path:
 
 
 class ProviderTransportRetryTests(unittest.TestCase):
+    def test_request_id_is_forwarded_only_when_it_has_the_generated_format(self):
+        client = ProviderClient()
+        request_id = "a" * 32
+        request = urllib.request.Request("http://127.0.0.1:8080/health/ready")
+
+        with patch(
+            "urllib.request.urlopen",
+            return_value=FakeResponse({"status": "ready"}),
+        ):
+            client._request_json(request, attempts=1, request_id=request_id)
+
+        self.assertEqual(request.get_header("X-request-id"), request_id)
+
+        unsafe_request = urllib.request.Request("http://127.0.0.1:8080/health/ready")
+        with patch(
+            "urllib.request.urlopen",
+            return_value=FakeResponse({"status": "ready"}),
+        ):
+            client._request_json(unsafe_request, attempts=1, request_id="api_key=private")
+
+        self.assertIsNone(unsafe_request.get_header("X-request-id"))
+
     def test_request_json_retries_connection_reset_then_succeeds(self):
         client = ProviderClient()
         request = urllib.request.Request("http://127.0.0.1:8080/health/ready")

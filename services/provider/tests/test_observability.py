@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 import httpx
 
+from zeaz_provider.audit import emit_request_audit
 from zeaz_provider.config import ModelRoute, ProviderConfig, RouteTarget, Settings
 from zeaz_provider.errors import ErrorKind, ProviderError
 from zeaz_provider.observability import Observability
@@ -28,6 +30,39 @@ def _settings(*providers: ProviderConfig) -> Settings:
         client_key_hashes=frozenset(),
         default_model="example-model",
     )
+
+
+class ProviderAuditTests(unittest.TestCase):
+    def test_request_audit_uses_common_fields_and_rejects_unbounded_values(self):
+        private_value = "api_key=sk-PRIVATE-PROVIDER-CANARY-012345"
+
+        with self.assertLogs("uvicorn.error", level="INFO") as captured:
+            emit_request_audit(
+                request_id=private_value,
+                method="TRACE",
+                path=f"/v1/chat/completions?{private_value}",
+                status_code=502,
+                duration_ms=float("nan"),
+                client_id=private_value,
+                rate_limited=False,
+            )
+
+        message = captured.records[0].getMessage()
+        self.assertNotIn(private_value, message)
+        event = json.loads(message)
+        self.assertEqual(event["component"], "provider")
+        self.assertEqual(event["phase"], "request")
+        self.assertEqual(event["provider"], "gateway")
+        self.assertIsNone(event["task_id"])
+        self.assertIsNone(event["work_fingerprint"])
+        self.assertIsNone(event["model"])
+        self.assertIsNone(event["attempt"])
+        self.assertEqual(event["outcome"], "error")
+        self.assertEqual(event["error_class"], "http_server_error")
+        self.assertEqual(event["method"], "OTHER")
+        self.assertEqual(event["path"], "unmatched")
+        self.assertEqual(event["client_id"], "unknown")
+        self.assertEqual(event["latency_ms"], 0.0)
 
 
 class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):

@@ -10,6 +10,7 @@ from .ledger import JsonContinuousLedger
 from .lease import RunnerLeaseError, SQLiteRunnerLease
 from .loop import ContinuousEngineeringLoop, LoopPolicy, LoopResult, WorkItem
 from .models import EngineeringTask, TaskRisk, TaskStatus
+from .observability import safe_error_class
 from .runtime import EngineeringRuntime, ProviderTransportError
 from .store import SQLiteEngineeringStore
 
@@ -98,7 +99,7 @@ class ContinuousEngineeringRunner:
             self.progress(
                 f"[continuous] START kind={item.kind.value} priority={item.priority} "
                 f"attempt={int(record.get('attempts', 0)) + 1}/{int(record.get('max_attempts', item.max_attempts))} "
-                f"title={item.title}"
+                f"work_fingerprint={item.fingerprint[:16]}"
             )
             task_id = record.get("task_id") or f"work_{item.fingerprint[:20]}"
             task = self.store.get_task(task_id)
@@ -181,7 +182,8 @@ class ContinuousEngineeringRunner:
             except ProviderTransportError as exc:
                 latest = self.store.get_task(task.id) or task
                 self.progress(
-                    f"[continuous] INFRA_RETRY task={task.id} error={str(exc)[:500]}"
+                    f"[continuous] INFRA_RETRY task={task.id} "
+                    f"error_class={safe_error_class(exc)}"
                 )
                 self.ledger.record_infrastructure_failure(
                     item.fingerprint,
@@ -227,7 +229,9 @@ class ContinuousEngineeringRunner:
                             "task_id": latest.id,
                             "model": promoted,
                         }
-                self.progress(f"[continuous] task={task.id} error={str(exc)[:500]}")
+                self.progress(
+                    f"[continuous] task={task.id} error_class={safe_error_class(exc)}"
+                )
                 if consumed:
                     self.ledger.record_attempt(
                         item.fingerprint,

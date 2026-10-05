@@ -45,6 +45,10 @@ from services.engineering.mcp import (
 )
 from services.engineering.loop import WorkItem, WorkKind
 from services.engineering.models import Checkpoint, EngineeringTask, TaskRisk, TaskStatus
+from services.engineering.observability import (
+    engineering_logging,
+    safe_error_summary,
+)
 from services.engineering.reconcile import QueueReconciler
 from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
@@ -347,6 +351,11 @@ def queue_runner_lease(
 
 
 def main() -> int:
+    with engineering_logging():
+        return _run_command()
+
+
+def _run_command() -> int:
     args = parser().parse_args()
     store = SQLiteEngineeringStore(args.db)
 
@@ -691,7 +700,10 @@ def main() -> int:
                 raise MCPError("--json must decode to an object")
             result = call_server_tool(server, tool_name, arguments)
         except (MCPError, json.JSONDecodeError) as exc:
-            print(f"mcp call failed: {exc}", file=sys.stderr)
+            print(
+                f"mcp call failed: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
             return 1
         print(json.dumps(result, indent=2, default=str))
         return 0
@@ -857,10 +869,16 @@ def main() -> int:
                     agent_name=args.agent,
                 )
         except RunnerLeaseError as exc:
-            print(f"engineering run refused: {exc}", file=sys.stderr)
+            print(
+                f"engineering run refused: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
             return 1
         except Exception as exc:
-            print(f"engineering run failed: {exc}", file=sys.stderr)
+            print(
+                f"engineering run failed: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
             return 1
         print(f"{result.id}\t{result.status.value}\t{result.branch_name}\t{result.worktree_path}")
         return 0
@@ -912,10 +930,16 @@ def main() -> int:
                     agent_name=agent_name,
                 )
         except RunnerLeaseError as exc:
-            print(f"engineering resume refused: {exc}", file=sys.stderr)
+            print(
+                f"engineering resume refused: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
             return 1
         except Exception as exc:
-            print(f"engineering resume failed: {exc}", file=sys.stderr)
+            print(
+                f"engineering resume failed: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
             return 1
         print(f"{result.id}\t{result.status.value}\t{result.branch_name}\t{result.worktree_path}")
         return 0
@@ -1067,10 +1091,16 @@ def main() -> int:
             else:
                 result = ledger.archive(fingerprint, args.reason)
         except (ContinuousLedgerError, ValueError) as exc:
-            print(f"queue lifecycle failed: {exc}", file=sys.stderr)
+            print(
+                f"queue lifecycle failed: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
             return 2
         except RunnerLeaseError as exc:
-            print(f"queue lifecycle failed: {exc}", file=sys.stderr)
+            print(
+                f"queue lifecycle failed: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
             return 2
         finally:
             if lifecycle_lease.fencing_token is not None:
@@ -1144,7 +1174,10 @@ def main() -> int:
                 },
             )
         except ContinuousLedgerError as exc:
-            print(f"refusing to enqueue task: {exc}", file=sys.stderr)
+            print(
+                f"refusing to enqueue task: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
             return 2
         print(json.dumps(record, indent=2))
         return 0
@@ -1215,7 +1248,7 @@ def main() -> int:
             )
         except Exception as exc:
             label = "engineering recovery" if args.command == "recover" else "continuous engineering"
-            print(f"{label} failed: {exc}", file=sys.stderr)
+            print(f"{label} failed: {safe_error_summary(exc)}", file=sys.stderr)
             return 1
         print(json.dumps(dataclasses.asdict(result), indent=2))
         return 0 if not result.blocked else 1

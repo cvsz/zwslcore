@@ -6,6 +6,7 @@ import shlex
 import socket
 import subprocess
 import time
+import uuid
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -17,6 +18,12 @@ from .change_snapshot import ChangeSnapshotStore, SnapshotError
 from .evidence import EvidenceExporter
 from .permissions import require_allowed
 from .models import Checkpoint, EngineeringTask, TaskStatus
+from .observability import (
+    emit_engineering_event,
+    safe_error_class,
+    task_work_fingerprint,
+    valid_request_id,
+)
 from .review import SecurityGate, StaticReviewer
 from .snapshot import RepositorySnapshotter
 from .store import SQLiteEngineeringStore
@@ -49,10 +56,14 @@ class ProviderClient:
         *,
         timeout: int | None = None,
         attempts: int = 1,
+        request_id: str | None = None,
     ) -> dict[str, Any]:
         timeout_value = timeout or self.timeout
         attempts = max(1, attempts)
         last_transport: BaseException | None = None
+        correlation_id = valid_request_id(request_id)
+        if correlation_id is not None:
+            request.add_header("X-Request-ID", correlation_id)
 
         for attempt in range(1, attempts + 1):
             try:
@@ -128,7 +139,7 @@ class ProviderClient:
             }
         return body
 
-    def preflight(self) -> None:
+    def preflight(self, *, request_id: str | None = None) -> None:
         health_url = self.base_url.removesuffix("/v1") + "/health/ready"
         health = self._request_json(
             urllib.request.Request(
@@ -138,6 +149,7 @@ class ProviderClient:
             ),
             timeout=min(self.timeout, 15),
             attempts=3,
+            request_id=request_id,
         )
         if health.get("status") not in {None, "ok", "ready", "healthy"}:
             raise RuntimeError(f"provider readiness failed: {health}")
@@ -150,6 +162,7 @@ class ProviderClient:
             ),
             timeout=min(self.timeout, 15),
             attempts=3,
+            request_id=request_id,
         )
         ids = {
             item.get("id")
@@ -169,6 +182,7 @@ class ProviderClient:
         *,
         max_tokens: int = 2048,
         response_schema: dict[str, Any] | None = None,
+        request_id: str | None = None,
     ) -> str:
         payload = json.dumps(
             self._chat_body(
@@ -187,7 +201,7 @@ class ProviderClient:
             },
             method="POST",
         )
-        value = self._request_json(req)
+        value = self._request_json(req, request_id=request_id)
         choices = value.get("choices") or []
         if not choices:
             raise RuntimeError("provider returned no choices")
@@ -310,14 +324,47 @@ class EngineeringRuntime:
         task.metadata["snapshot_max_bytes"] = self.snapshot_max_bytes
         self.store.save_task(task)
 
+        request_id = uuid.uuid4().hex
+        work_fingerprint = task_work_fingerprint(task.title, task.description)
+        attempt_number = max(1, task.attempts + 1)
+        phase = "preflight"
+        phase_started_at = time.monotonic()
+
+        def log_phase(outcome: str, error_class: str | None = None) -> None:
+            emit_engineering_event(
+                request_id=request_id,
+                task_id=task.id,
+                work_fingerprint=work_fingerprint,
+                phase=phase,
+                provider="zeaz-provider",
+                model=str(getattr(self.provider, "model", "unknown")),
+                attempt=attempt_number,
+                latency_ms=(time.monotonic() - phase_started_at) * 1000
+                if outcome != "started"
+                else 0.0,
+                outcome=outcome,
+                error_class=error_class,
+            )
+
+        def enter_phase(next_phase: str) -> None:
+            nonlocal phase, phase_started_at
+            log_phase("success")
+            phase = next_phase
+            phase_started_at = time.monotonic()
+
+        log_phase("started")
         attempt_started = False
         try:
             task.status = TaskStatus.BASELINING
             self.store.save_task(task)
             self.progress(f"[engineering] {task.id} BASELINING")
             self.progress(f"[engineering] {task.id} PROVIDER_PREFLIGHT model={self.provider.model}")
-            self.provider.preflight()
+            if isinstance(self.provider, ProviderClient):
+                self.provider.preflight(request_id=request_id)
+            else:
+                self.provider.preflight()
             self.progress(f"[engineering] {task.id} PROVIDER_PREFLIGHT_PASS")
+            enter_phase("baseline")
 
             if resume and task.worktree_path and Path(task.worktree_path).exists():
                 previous_head, source_head = self.worktrees.sync_to_source(
@@ -370,6 +417,7 @@ class EngineeringRuntime:
 
             task.status = TaskStatus.PLANNING
             self.store.save_task(task)
+            enter_phase("planning")
             self.progress(f"[engineering] {task.id} PLANNING model={self.provider.model}")
             priority_terms = self._task_priority_terms(task)
             self._require_agent(agent, "snapshot")
@@ -417,6 +465,7 @@ class EngineeringRuntime:
                         "Never request secret files, credential access, remote pushes, or test weakening.",
                     ),
                     max_tokens=self.PLAN_MAX_TOKENS,
+                    request_id=request_id,
                 )
                 self._checkpoint(
                     task,
@@ -434,7 +483,13 @@ class EngineeringRuntime:
                     {"agent": agent.name, "plan": plan[:12000]},
                 )
                 self.store.save_task(task)
+                enter_phase("evidence")
                 self._export_evidence(task)
+                evidence_written = not bool(task.metadata.get("evidence_error"))
+                log_phase(
+                    "read_only" if evidence_written else "failure",
+                    None if evidence_written else "EvidenceWriteError",
+                )
                 self.progress(
                     f"[engineering] {task.id} READ_ONLY_COMPLETE agent={agent.name}"
                 )
@@ -443,6 +498,7 @@ class EngineeringRuntime:
             self._require_agent(agent, "edit")
             task.status = TaskStatus.EDITING
             self.store.save_task(task)
+            enter_phase("editing")
             self.progress(f"[engineering] {task.id} EDITING")
             response = self.provider.chat(
                 self._edit_prompt(task, snapshot, plan, allowed_paths, candidates),
@@ -455,13 +511,14 @@ class EngineeringRuntime:
                 ),
                 max_tokens=4096,
                 response_schema=self.EDIT_RESPONSE_SCHEMA,
+                request_id=request_id,
             )
             try:
                 changes = self._parse_changes(response)
             except (json.JSONDecodeError, ValueError) as exc:
                 self.progress(
-                    f"[engineering] edit_response_invalid error={str(exc)[:300]} "
-                    f"raw={self._safe_snippet(response)}"
+                    f"[engineering] edit_response_invalid error_class={safe_error_class(exc)} "
+                    f"response_bytes={len(response.encode('utf-8'))}"
                 )
                 self._checkpoint(
                     task,
@@ -478,6 +535,7 @@ class EngineeringRuntime:
                     "Do not add commentary, Markdown fences, explanations, or new changes.",
                     max_tokens=4096,
                     response_schema=self.EDIT_RESPONSE_SCHEMA,
+                    request_id=request_id,
                 )
                 try:
                     changes = self._parse_changes(repaired)
@@ -512,6 +570,7 @@ class EngineeringRuntime:
                     "Do not include commentary or Markdown fences.",
                     max_tokens=4096,
                     response_schema=self.EDIT_RESPONSE_SCHEMA,
+                    request_id=request_id,
                 )
                 changes = self._parse_changes(regenerated)
                 self._checkpoint(
@@ -532,6 +591,7 @@ class EngineeringRuntime:
             self._require_agent(agent, "validate")
             task.status = TaskStatus.VALIDATING
             self.store.save_task(task)
+            enter_phase("validating")
             self.progress(f"[engineering] {task.id} VALIDATING validators={len(validators)}")
             final_validation = self._run_validators(worktree, validators)
             validation = evaluate_validation(
@@ -557,6 +617,7 @@ class EngineeringRuntime:
             self._require_agent(agent, "review")
             task.status = TaskStatus.REVIEWING
             self.store.save_task(task)
+            enter_phase("reviewing")
             self.progress(f"[engineering] {task.id} REVIEWING")
             # Intent-to-add makes new files visible to the deterministic diff reviewer
             # without staging their content for commit.
@@ -604,7 +665,8 @@ class EngineeringRuntime:
                 except SnapshotError as exc:
                     task.metadata["change_snapshot_error"] = str(exc)[:500]
                     self.progress(
-                        f"[engineering] {task.id} SNAPSHOT_SKIPPED error={str(exc)[:300]}"
+                        f"[engineering] {task.id} SNAPSHOT_SKIPPED "
+                        f"error_class={safe_error_class(exc)}"
                     )
 
             task.status = TaskStatus.SUCCEEDED
@@ -616,7 +678,13 @@ class EngineeringRuntime:
                 f"[engineering] {task.id} SUCCEEDED model={self.provider.model}"
             )
             self.store.save_task(task)
+            enter_phase("evidence")
             self._export_evidence(task)
+            evidence_written = not bool(task.metadata.get("evidence_error"))
+            log_phase(
+                "success" if evidence_written else "failure",
+                None if evidence_written else "EvidenceWriteError",
+            )
             return task
         except Exception as exc:
             if isinstance(exc, ProviderTransportError):
@@ -629,11 +697,18 @@ class EngineeringRuntime:
                     if task.attempts < task.max_attempts
                     else TaskStatus.FAILED
                 )
-            self.progress(f"[engineering] {task.id} {task.status.value} error={str(exc)[:500]}")
+            self.progress(
+                f"[engineering] {task.id} {task.status.value} "
+                f"error_class={safe_error_class(exc)}"
+            )
             task.last_error = str(exc)[:2000]
             self.store.save_task(task)
             self._checkpoint(task, "FAILED", {"error": task.last_error})
             self._export_evidence(task)
+            log_phase(
+                "blocked" if task.status == TaskStatus.BLOCKED else "failed",
+                safe_error_class(exc),
+            )
             raise
 
     @staticmethod
@@ -917,7 +992,9 @@ class EngineeringRuntime:
         except Exception as exc:
             task.metadata["evidence_error"] = str(exc)[:500]
             self.store.save_task(task)
-            self.progress(f"[engineering] EVIDENCE_WRITE_FAILED error={str(exc)[:300]}")
+            self.progress(
+                f"[engineering] EVIDENCE_WRITE_FAILED error_class={safe_error_class(exc)}"
+            )
             return
         task.metadata["evidence_path"] = str(path)
         task.metadata["evidence_sha256"] = digest
