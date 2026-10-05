@@ -98,7 +98,7 @@ make config
 make ci
 ```
 
-`make capacity` reports filesystem pressure, Docker storage totals, service log limits, and byte counts for zwslcore data directories. It is read-only by default. To plan a BuildKit cache trim, pass `--prune-build-cache-max-used-bytes N`; adding `--apply` runs that trim only when a monitored filesystem reaches the warning threshold. The command never targets images, volumes, logs, backups, evidence, models, or worktrees.
+`make capacity` reports filesystem pressure, Docker storage totals, service log limits, and byte counts for zwslcore data directories. It is read-only by default. To plan a BuildKit cache trim, run `python3 scripts/capacity.py --prune-build-cache-max-used-bytes 2147483648`; adding `--apply` runs that trim only when a monitored filesystem reaches the warning threshold. The command never targets images, volumes, logs, backups, evidence, models, or worktrees.
 
 ## Local engineering control plane
 
