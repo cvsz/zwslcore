@@ -30,6 +30,7 @@ The format follows Keep a Changelog conventions; generated projects should adopt
 
 ### Fixed
 
+- Preserve the engineering task attempt budget and blocked evidence when Provider transport fails.
 - Corrected generated README link validation so template links are resolved from their generated root location.
 - Removed stale wording that could imply green CI or configuration files alone establish production readiness.
 
