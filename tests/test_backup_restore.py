@@ -111,6 +111,46 @@ class BackupRestoreTests(unittest.TestCase):
                         include_webui_volume=True,
                     )
 
+    def test_recreate_policy_is_explicit_and_completes_declared_restore_scope(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source, _, _, _ = self._source(root)
+            backup_path = root / "backup"
+            restored = root / "isolated-restore"
+            with patch("scripts.backup._runtime_metadata", return_value={"python": "test", "containers": {}}):
+                create_backup(
+                    source_root=source,
+                    repository_root=REPOSITORY,
+                    output=backup_path,
+                    recreate_webui_data=True,
+                )
+
+            manifest = json.loads((backup_path / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["policy"]["open_webui_user_data"], "recreate")
+            self.assertIsNone(manifest["docker_user_data"])
+            self.assertTrue(any("user-authorized recreate policy" in item for item in manifest["excluded"]))
+
+            restore_path = restore_backup(backup_path, restored)
+            report = json.loads((restore_path / "restore-report.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "PASS")
+            self.assertEqual(report["checks"]["open_webui_user_data"]["policy"], "recreate")
+            self.assertTrue(report["checks"]["open_webui_user_data"]["complete_for_declared_policy"])
+
+    def test_webui_data_policies_are_mutually_exclusive(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source, _, _, _ = self._source(root)
+            with patch("scripts.backup._runtime_metadata", return_value={"python": "test", "containers": {}}):
+                with self.assertRaisesRegex(BackupError, "choose either"):
+                    create_backup(
+                        source_root=source,
+                        repository_root=REPOSITORY,
+                        output=root / "must-not-exist",
+                        include_webui_volume=True,
+                        recreate_webui_data=True,
+                    )
+            self.assertFalse((root / "must-not-exist").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
