@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs models free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config provider-build ci
+.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs models free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config provider-build cloudflare-up ci
 
 help:
 	@printf '%s\n' \
@@ -23,6 +23,7 @@ help:
 	  'engineer-test  run engineering agent/selector/TUI/control-plane tests' \
 	  'config        validate Compose configuration' \
 	  'provider-build build the in-repo provider gateway' \
+	  'cloudflare-up start zwslcore on the Cloudflare loopback ports' \
 	  'ci            repository + stack static validation'
 
 validate-template:
@@ -95,6 +96,9 @@ engineer-test:
 
 provider-build:
 	docker compose --env-file .env build provider
+
+cloudflare-up:
+	bash scripts/cloudflare-up.sh
 
 ci: validate-template
 	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
