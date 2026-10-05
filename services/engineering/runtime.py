@@ -187,6 +187,7 @@ class ProviderClient:
 class EngineeringRuntime:
     """Bounded local engineering execution over isolated Git worktrees."""
 
+    PLAN_MAX_TOKENS = 512
     MAX_CHANGED_FILES = 12
     MAX_FILE_BYTES = 256 * 1024
     EDIT_RESPONSE_SCHEMA: dict[str, Any] = {
@@ -402,7 +403,7 @@ class EngineeringRuntime:
                         "You are a careful senior software engineer. Plan a minimal, testable change. "
                         "Never request secret files, credential access, remote pushes, or test weakening.",
                     ),
-                    max_tokens=1200,
+                    max_tokens=self.PLAN_MAX_TOKENS,
                 )
                 self._checkpoint(
                     task,
@@ -626,7 +627,8 @@ class EngineeringRuntime:
     def _plan_prompt(task: EngineeringTask, snapshot: str) -> str:
         return (
             f"Task: {task.title}\nDescription: {task.description}\nRisk: {task.risk.value}\n"
-            "Produce a concise implementation plan with validation steps.\n\n"
+            "Produce a concise implementation plan with validation steps. Limit it to five short "
+            "bullet points and do not restate the repository snapshot.\n\n"
             f"Repository snapshot:\n{snapshot}"
         )
 
