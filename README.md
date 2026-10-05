@@ -85,6 +85,7 @@ make doctor
 make smoke
 make models
 make logs
+make capacity
 make restart
 make down
 make up
@@ -96,6 +97,8 @@ Validate configuration and repository checks:
 make config
 make ci
 ```
+
+`make capacity` reports filesystem pressure, Docker storage totals, service log limits, and byte counts for zwslcore data directories. It is read-only by default. To plan a BuildKit cache trim, pass `--prune-build-cache-max-used-bytes N`; adding `--apply` runs that trim only when a monitored filesystem reaches the warning threshold. The command never targets images, volumes, logs, backups, evidence, models, or worktrees.
 
 ## Local engineering control plane
 
