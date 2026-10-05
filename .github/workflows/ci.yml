@@ -59,7 +59,7 @@ jobs:
             -v "$PWD/services/provider:/src" \
             -w /src \
             python:3.14.7-slim-bookworm \
-            sh -lc 'python -m pip install --no-cache-dir . && python -c "import zeaz_provider; from zeaz_provider.main import app; print(app.title)"'
+            sh -lc 'python -m pip install --disable-pip-version-check --require-hashes -r requirements.lock && python -m pip install --no-cache-dir --no-build-isolation --no-deps . && python -m unittest discover -s tests -v && python -c "import zeaz_provider; from zeaz_provider.main import app; print(app.title)"'
           rm -f .env
 
       - name: Check for common secret file names
