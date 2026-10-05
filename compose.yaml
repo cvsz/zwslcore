@@ -1,10 +1,17 @@
 name: zwslcore
 
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   ollama:
     image: ${OLLAMA_IMAGE:-ollama/ollama:0.35.1}
     container_name: zwslcore-ollama
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
     environment:
@@ -24,6 +31,7 @@ services:
     image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.104.0}
     container_name: zwslcore-litellm
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       ollama:
         condition: service_healthy
@@ -51,6 +59,7 @@ services:
       context: ./services/provider
     container_name: zwslcore-provider
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       ollama:
         condition: service_healthy
@@ -87,6 +96,7 @@ services:
     image: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.11.4}
     container_name: zwslcore-open-webui
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       provider:
         condition: service_healthy
