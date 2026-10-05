@@ -1,0 +1,92 @@
+{
+  "gate": "P0.2 Runtime cold-start acceptance",
+  "result": "PASS",
+  "source_head": "cfc0832e06944fa5ab837b8f3ba9c3d87406bac6",
+  "environment": {
+    "os": "Windows 11 / WSL2 Ubuntu-26.04",
+    "cpu": "AMD Ryzen 5 3400G",
+    "logical_cpus": 8,
+    "ram_gib": 14.6,
+    "gpu": "none detected",
+    "hardware_profile_before_test": "CPU_MEDIUM"
+  },
+  "cold_start": {
+    "start_utc": "2026-10-05T03:59:59.879578+00:00",
+    "end_utc": "2026-10-05T04:03:06.966278+00:00",
+    "duration_seconds": 187.1,
+    "commands": [
+      {
+        "command": "docker compose --env-file .env down",
+        "exit_code": 0,
+        "elapsed_seconds": 23.9,
+        "volumes_removed": false
+      },
+      {
+        "command": "make up",
+        "exit_code": 0,
+        "elapsed_seconds": 38.9
+      },
+      {
+        "command": "make wait-runtime",
+        "exit_code": 0,
+        "elapsed_seconds": 51.1,
+        "stable_passes": 3
+      },
+      {
+        "command": "make doctor",
+        "exit_code": 0,
+        "elapsed_seconds": 1.4,
+        "checks_passed": 15
+      },
+      {
+        "command": "make smoke",
+        "exit_code": 0,
+        "elapsed_seconds": 71.8,
+        "checks": {
+          "litellm_inference": "PASS",
+          "provider_inference": "PASS",
+          "provider_structured_inference": "PASS"
+        }
+      }
+    ]
+  },
+  "powershell_wrapper": {
+    "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/doctor-wsl.ps1 -RepoPath <WSL_REPO_PATH> -Smoke",
+    "result": "PASS",
+    "exit_code": 0,
+    "checks": {
+      "runtime_readiness": "PASS",
+      "doctor": "PASS",
+      "litellm_inference": "PASS",
+      "provider_inference": "PASS",
+      "provider_structured_inference": "PASS"
+    }
+  },
+  "limitations": [
+    "This validates the current local WSL2 host and exact source head only; it is not cross-host or release-artifact evidence."
+  ],
+  "post_smoke_observation": {
+    "observed_after_cold_start_and_PowerShell_smoke": {
+      "available_ram_gib": 5.32,
+      "profile": "CPU_SMALL",
+      "loaded_models": [
+        "qwen2.5-coder:3b",
+        "qwen2.5-coder:7b"
+      ]
+    },
+    "after_ollama_restart_and_stable_readiness_check": {
+      "available_ram_gib": 12.28,
+      "profile": "CPU_MEDIUM",
+      "loaded_models": [],
+      "ollama_health": "healthy"
+    },
+    "interpretation": "Runtime profile and available memory changed with loaded models; the restart released model allocations without removing model files or named volumes."
+  },
+  "redacted_derivative_of": {
+    "local_archive": "~/.zwslcore/evidence/archive/P0-2-cold-start-2026-10-05.json",
+    "sha256": "2730a721055381471a1674b841ecec7f5e0c2b3d4918b5c208e234a48eb3fd80",
+    "redactions": [
+      "Replaced the local absolute WSL repository path in the PowerShell command with <WSL_REPO_PATH>."
+    ]
+  }
+}
