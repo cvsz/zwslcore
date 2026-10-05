@@ -86,6 +86,69 @@ class ProviderTransportRetryTests(unittest.TestCase):
         self.assertEqual(value, {"status": "ready"})
         self.assertEqual(calls["count"], 3)
 
+    def test_malformed_and_non_object_responses_are_infrastructure_failures(self):
+        client = ProviderClient()
+        request = urllib.request.Request("http://127.0.0.1:8080/health/ready")
+        for body in (b"{invalid", b"[]"):
+            with self.subTest(body=body), patch(
+                "urllib.request.urlopen", return_value=io.BytesIO(body)
+            ):
+                with self.assertRaises(ProviderTransportError):
+                    client._request_json(request, attempts=1, timeout=1)
+
+    def test_transient_provider_http_error_retries_within_budget(self):
+        client = ProviderClient()
+        request = urllib.request.Request("http://127.0.0.1:8080/health/ready")
+        calls = {"count": 0}
+
+        def fake_urlopen(req, timeout=None):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise urllib.error.HTTPError(req.full_url, 503, "unavailable", {}, io.BytesIO(b"busy"))
+            return FakeResponse({"status": "ready"})
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen), patch("time.sleep"):
+            value = client._request_json(request, attempts=2, timeout=1)
+
+        self.assertEqual(value, {"status": "ready"})
+        self.assertEqual(calls["count"], 2)
+
+    def test_exhausted_provider_http_error_omits_untrusted_response_body(self):
+        client = ProviderClient()
+        request = urllib.request.Request("http://127.0.0.1:8080/health/ready")
+        with patch(
+            "urllib.request.urlopen",
+            side_effect=urllib.error.HTTPError(
+                request.full_url, 503, "unavailable", {}, io.BytesIO(b"api_key=private-value")
+            ),
+        ), patch("time.sleep"):
+            with self.assertRaises(ProviderTransportError) as raised:
+                client._request_json(request, attempts=1, timeout=1)
+        self.assertIn("HTTP 503", str(raised.exception))
+        self.assertNotIn("private-value", str(raised.exception))
+
+    def test_structured_edit_violation_is_rejected_at_the_edit_gate(self):
+        with self.assertRaisesRegex(ValueError, r"changes\[\]"):
+            EngineeringRuntime._parse_changes('{"changes":{}}')
+        parsed = EngineeringRuntime._parse_changes(
+            '{"changes":[{"path":"../escape.py","content":"bad"}]}'
+        )
+        self.assertFalse(EngineeringRuntime._changes_within_scope(parsed, {"services"}))
+
+    def test_real_engineering_failure_consumes_the_bounded_loop_attempt(self):
+        item = WorkItem("real validation failure", WorkKind.REPAIR, max_attempts=1)
+        checkpoints = []
+        result = ContinuousEngineeringLoop(
+            lambda _: ExecutionResult(False, EngineeringTask(title="failed"), "validation failed"),
+            lambda _item, _result: (False, ()),
+            checkpoint=checkpoints.append,
+            policy=LoopPolicy(max_iterations=3),
+        ).run([item])
+        self.assertEqual(result.blocked, (item.fingerprint,))
+        self.assertEqual(len(checkpoints), 1)
+        self.assertEqual(checkpoints[0]["state"], "BLOCKED_ATTEMPTS")
+        self.assertEqual(checkpoints[0]["attempt"], 1)
+
     def test_request_json_raises_transport_error_after_budget(self):
         client = ProviderClient()
         request = urllib.request.Request("http://127.0.0.1:8080/health/ready")

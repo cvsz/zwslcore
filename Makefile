@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs models free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config provider-build ci
+.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs models free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config provider-build provider-lock provider-lock-check ci
 
 help:
 	@printf '%s\n' \
@@ -23,6 +23,8 @@ help:
 	  'engineer-test  run engineering agent/selector/TUI/control-plane tests' \
 	  'config        validate Compose configuration' \
 	  'provider-build build the in-repo provider gateway' \
+	  'provider-lock update the hashed Provider dependency lock' \
+	  'provider-lock-check verify Provider dependency lock drift' \
 	  'ci            repository + stack static validation'
 
 validate-template:
@@ -96,9 +98,15 @@ engineer-test:
 provider-build:
 	docker compose --env-file .env build provider
 
+provider-lock:
+	bash scripts/provider-lock.sh update
+
+provider-lock-check:
+	bash scripts/provider-lock.sh check
+
 ci: validate-template
 	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
 	python3 -m compileall -q services/provider/zeaz_provider services/engineering scripts/engineer.py
-	python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selector tests.test_engineering_agents tests.test_engineering_custom_agents tests.test_engineering_delegation tests.test_engineering_mcp tests.test_engineering_change_snapshot tests.test_engineering_tui tests.test_engineering_reconcile tests.test_engineering_control_plane -v
+	python3 -m unittest discover -s tests -v
 	bash -n scripts/install.sh
 	bash -n scripts/doctor.sh

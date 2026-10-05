@@ -30,11 +30,14 @@ def _stable_json(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
 
 
-def _redact_text(value: str, limit: int = 1000) -> str:
+def redact_sensitive_text(value: str, limit: int = 1000) -> str:
     text = value[:limit]
     for pattern in _SECRET_PATTERNS:
         text = pattern.sub("[REDACTED]", text)
     return text
+
+
+_redact_text = redact_sensitive_text
 
 
 class EvidenceExporter:

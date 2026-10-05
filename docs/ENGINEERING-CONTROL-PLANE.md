@@ -77,7 +77,24 @@ Run bounded work:
 
 The durable JSON ledger lives at ~/.zwslcore/state/continuous.json. Completed fingerprints are not repeated. Consumed attempts survive process restarts. Blocked work requires explicit --retry-blocked to reset its budget.
 
+Only one task executor may use the same engineering database or queue ledger at a time, including direct `run`, `resume`, continuous, and recovery commands. The executor takes non-blocking OS locks for both state paths and stores its owner ID, fencing generation, acquisition time, heartbeat, expiry, and release/reclaim state in SQLite. A second process exits with the current lease owner details. If a process crashes, the OS releases its locks; the next process can reclaim the persisted lease and advances the fencing generation. Lock files are coordination files; do not delete them to cancel a running job.
+
 Continuous retries reset only zwslcore-managed worktrees before the next attempt. Remote push is never performed by the engineering runtime.
+
+### Queue lifecycle
+
+The queue lifecycle commands operate on a full fingerprint or an unambiguous fingerprint prefix:
+
+    python3 scripts/engineer.py work-cancel FINGERPRINT --reason "no longer needed"
+    python3 scripts/engineer.py work-retry FINGERPRINT --reason "corrected the reported failure"
+    python3 scripts/engineer.py work-quarantine FINGERPRINT --reason "needs manual review"
+    python3 scripts/engineer.py work-dead-letter FINGERPRINT --reason "automatic recovery is exhausted"
+    python3 scripts/engineer.py work-requeue FINGERPRINT --reason "approved another bounded attempt round"
+    python3 scripts/engineer.py work-archive FINGERPRINT
+
+`work-retry` accepts only blocked or exhausted work. It starts a new attempt round, preserves earlier attempt history and resets a linked failed task immediately before execution. `work-requeue` accepts quarantined or dead-letter work and also preserves the previous failure record. A dead-letter record retains the fingerprint, task ID, failure reason, attempts, model history, evidence path and timestamps. It cannot be archived until that record is complete. `work-list --include-archived` and `work-status FINGERPRINT` can inspect archived records. The read-only TUI displays active `QUARANTINED` and `DEAD_LETTER` entries without scheduling them.
+
+Queue lifecycle mutations, reconciliation apply, and task cancellation use the same exclusive runner locks as continuous execution. They fail closed while a queue runner owns either the engineering database or the queue ledger. Use `work-add` to append work while a run is active; the new item will be picked up by the next bounded run.
 
 ## Provider cost policy
 

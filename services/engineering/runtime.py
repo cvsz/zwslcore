@@ -59,15 +59,28 @@ class ProviderClient:
                 with urllib.request.urlopen(request, timeout=timeout_value) as response:
                     value = json.load(response)
                 if not isinstance(value, dict):
-                    raise RuntimeError(
-                        f"provider returned non-object JSON for {request.full_url}"
+                    raise ProviderTransportError(
+                        f"provider returned a non-object JSON response for {request.full_url}"
                     )
                 return value
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                raise ProviderTransportError(
+                    f"provider returned malformed JSON for {request.full_url}"
+                ) from exc
             except urllib.error.HTTPError as exc:
-                body = exc.read(8192).decode("utf-8", errors="replace").strip()
-                detail = body or exc.reason or "no response body"
+                exc.read(8192)
+                if exc.code in {408, 429} or 500 <= exc.code <= 599:
+                    last_transport = exc
+                    reason = f"HTTP {exc.code}"
+                    if attempt < attempts:
+                        time.sleep(min(0.5 * attempt, 1.5))
+                        continue
+                    raise ProviderTransportError(
+                        f"provider transport failed after {attempts} attempt(s) for "
+                        f"{request.full_url}: {reason}"
+                    ) from exc
                 raise RuntimeError(
-                    f"provider HTTP {exc.code} for {request.full_url}: {detail[:4000]}"
+                    f"provider HTTP {exc.code} for {request.full_url}"
                 ) from exc
             except urllib.error.URLError as exc:
                 last_transport = exc
