@@ -19,6 +19,9 @@ REQUIRED_CHECKS = (
     "repository-baseline",
     "Analyze GitHub Actions",
     "dependency-review",
+    "CodeQL",
+    "build-scan-sbom",
+    "windows-installer",
 )
 
 

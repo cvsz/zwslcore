@@ -44,6 +44,9 @@ The helper configures `main` to require:
 - `repository-baseline`;
 - `Analyze GitHub Actions`;
 - `dependency-review`;
+- `CodeQL`;
+- `build-scan-sbom`;
+- `windows-installer`;
 - administrator enforcement;
 - no force pushes;
 - no branch deletion.
