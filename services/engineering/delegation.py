@@ -2,12 +2,77 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from pathlib import PurePosixPath
+from typing import Iterable
 
 from .agents import AgentRegistry
 from .models import EngineeringTask, TaskRisk
 
 
 MAX_DELEGATION_DEPTH = 4
+
+
+def delegated_allowed_paths(
+    parent: EngineeringTask,
+    requested_paths: Iterable[str],
+) -> list[str]:
+    """Inherit the parent's scope and reject delegated scope expansion."""
+    run_config = parent.metadata.get("run_config")
+    parent_paths = _normalize_allowed_paths(
+        run_config.get("allowed_paths", ())
+        if isinstance(run_config, dict)
+        else ()
+    )
+    child_paths = _normalize_allowed_paths(requested_paths)
+
+    if not parent_paths:
+        return sorted(child_paths)
+    if not child_paths:
+        return sorted(parent_paths)
+
+    outside = sorted(
+        path
+        for path in child_paths
+        if not any(_is_within(path, allowed) for allowed in parent_paths)
+    )
+    if outside:
+        raise ValueError(
+            "delegated allowed paths exceed parent scope: " + ", ".join(outside)
+        )
+    return sorted(child_paths)
+
+
+def _normalize_allowed_paths(paths: Iterable[str] | None) -> set[str]:
+    if paths is None:
+        return set()
+    if isinstance(paths, str):
+        values = [paths]
+    else:
+        values = list(paths)
+
+    normalized: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            raise ValueError("allowed paths must be strings")
+        raw = value.strip()
+        path = PurePosixPath(raw)
+        if (
+            not raw
+            or path.is_absolute()
+            or path == PurePosixPath(".")
+            or ".." in path.parts
+        ):
+            raise ValueError(
+                f"allowed path must be a safe repository-relative path: {raw!r}"
+            )
+        normalized.add(path.as_posix())
+    return normalized
+
+
+def _is_within(path: str, allowed: str) -> bool:
+    path_parts = PurePosixPath(path).parts
+    allowed_parts = PurePosixPath(allowed).parts
+    return path_parts[: len(allowed_parts)] == allowed_parts
 
 
 @dataclass(frozen=True)

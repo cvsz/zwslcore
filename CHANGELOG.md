@@ -34,6 +34,7 @@ The format follows Keep a Changelog conventions; generated projects should adopt
 
 ### Security
 
+- Prevented delegated engineering tasks from expanding a parent's allowed path scope.
 - Added fail-closed repository-administration verification.
 - Added protected-branch controls for required reviews/checks, conversation resolution, force-push prevention, and deletion prevention.
 - Added documented verification for Dependabot, private vulnerability reporting, secret scanning/push protection, and least-privilege Actions permissions where supported.

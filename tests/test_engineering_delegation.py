@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
+from scripts.engineer import main as engineer_main
 from services.engineering.continuous import ContinuousEngineeringRunner
 from services.engineering.delegation import (
     MAX_DELEGATION_DEPTH,
     children_of,
+    delegated_allowed_paths,
     descendants_of,
     make_child_task,
     task_lineage,
@@ -18,6 +23,84 @@ from services.engineering.store import SQLiteEngineeringStore
 
 
 class DelegationTests(unittest.TestCase):
+    def test_child_inherits_parent_scope_when_no_scope_is_supplied(self):
+        parent = EngineeringTask(title="parent")
+        parent.metadata["run_config"] = {"allowed_paths": ["services"]}
+
+        self.assertEqual(delegated_allowed_paths(parent, []), ["services"])
+
+    def test_child_can_narrow_parent_scope(self):
+        parent = EngineeringTask(title="parent")
+        parent.metadata["run_config"] = {"allowed_paths": ["services"]}
+
+        self.assertEqual(
+            delegated_allowed_paths(parent, ["services/engineering"]),
+            ["services/engineering"],
+        )
+
+    def test_child_cannot_expand_parent_scope(self):
+        parent = EngineeringTask(title="parent")
+        parent.metadata["run_config"] = {"allowed_paths": ["services"]}
+
+        with self.assertRaisesRegex(ValueError, "exceed parent scope"):
+            delegated_allowed_paths(parent, ["services", "README.md"])
+
+    def test_child_scope_rejects_parent_traversal(self):
+        parent = EngineeringTask(title="parent")
+        parent.metadata["run_config"] = {"allowed_paths": ["services"]}
+
+        with self.assertRaisesRegex(ValueError, "safe repository-relative"):
+            delegated_allowed_paths(parent, ["services/../README.md"])
+
+    def test_unrestricted_parent_can_be_narrowed(self):
+        parent = EngineeringTask(title="parent")
+
+        self.assertEqual(delegated_allowed_paths(parent, []), [])
+        self.assertEqual(delegated_allowed_paths(parent, ["services"]), ["services"])
+
+    def test_delegate_command_persists_inherited_scope_to_queue(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            db_path = root / "state.db"
+            ledger_path = root / "ledger.json"
+            store = SQLiteEngineeringStore(db_path)
+            parent = EngineeringTask(title="parent", repository=str(root))
+            parent.metadata["run_config"] = {"allowed_paths": ["services"]}
+            store.save_task(parent)
+
+            output = StringIO()
+            with patch("sys.argv", [
+                "engineer.py", "--db", str(db_path), "--ledger", str(ledger_path),
+                "delegate", parent.id, "child", "--agent", "general",
+            ]), redirect_stdout(output):
+                result = engineer_main()
+
+            self.assertEqual(result, 0)
+            child = next(task for task in store.list_tasks() if task.id != parent.id)
+            self.assertEqual(child.metadata["run_config"]["allowed_paths"], ["services"])
+            record = JsonContinuousLedger(ledger_path).records()[0]
+            self.assertEqual(record["payload"]["allowed_paths"], ["services"])
+
+    def test_delegate_command_rejects_scope_expansion(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            db_path = root / "state.db"
+            ledger_path = root / "ledger.json"
+            store = SQLiteEngineeringStore(db_path)
+            parent = EngineeringTask(title="parent", repository=str(root))
+            parent.metadata["run_config"] = {"allowed_paths": ["services"]}
+            store.save_task(parent)
+
+            with patch("sys.argv", [
+                "engineer.py", "--db", str(db_path), "--ledger", str(ledger_path),
+                "delegate", parent.id, "child", "--agent", "general",
+                "--allow-path", "README.md",
+            ]), redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                result = engineer_main()
+
+            self.assertEqual(result, 2)
+            self.assertEqual([task.id for task in store.list_tasks()], [parent.id])
+
     def test_child_records_parent_root_depth_and_agent(self):
         parent = EngineeringTask(title="parent", repository="/tmp/repo")
         child = make_child_task(

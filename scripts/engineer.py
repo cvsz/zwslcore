@@ -21,6 +21,7 @@ from services.engineering.change_snapshot import ChangeSnapshotStore, SnapshotEr
 from services.engineering.continuous import ContinuousEngineeringRunner
 from services.engineering.delegation import (
     children_of,
+    delegated_allowed_paths,
     descendants_of,
     make_child_task,
     task_lineage,
@@ -628,6 +629,7 @@ def main() -> int:
         risk = TaskRisk(args.risk) if args.risk else parent.risk
         try:
             registry = AgentRegistry(args.agent_config)
+            allowed_paths = delegated_allowed_paths(parent, args.allow_path)
             child = make_child_task(
                 parent,
                 title=args.title,
@@ -644,7 +646,7 @@ def main() -> int:
         validators = args.validate or ["git diff --check"]
         child.metadata["run_config"] = {
             "validators": list(validators),
-            "allowed_paths": list(args.allow_path),
+            "allowed_paths": allowed_paths,
             "commit": False,
             "validation_mode": args.validation_mode,
             "agent": args.agent,
@@ -659,7 +661,7 @@ def main() -> int:
                 "repository": child.repository,
                 "risk": child.risk.value,
                 "validators": validators,
-                "allowed_paths": args.allow_path,
+                "allowed_paths": allowed_paths,
                 "commit": False,
                 "validation_mode": args.validation_mode,
                 "agent": args.agent,

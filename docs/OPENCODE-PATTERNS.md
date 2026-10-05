@@ -84,6 +84,9 @@ A delegated child records:
 - `delegated_agent`
 - independent attempt budget and evidence bundle
 
+The child inherits its parent's `--allow-path` boundary when no child scope is supplied. A child
+may narrow that boundary, but delegation refuses any requested path outside the parent's scope.
+
 Commands:
 
     python3 scripts/engineer.py delegate PARENT_TASK_ID "Child task" --agent general
