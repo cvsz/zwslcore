@@ -1,15 +1,10 @@
-FROM python:3.14.8-alpine3.24@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72
+FROM cgr.dev/chainguard/python:latest-dev@sha256:48431f8d4bc6837b375af28570a4b0245410360b56d5633768de5490bbc283e4 AS build
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    ZEAZ_CONFIG=/app/config/providers.yaml \
-    ZEAZ_HOST=0.0.0.0 \
-    ZEAZ_PORT=8080
-
+USER 0:0
 WORKDIR /app
-
-RUN addgroup -S -g 10001 zwslcore \
-    && adduser -S -u 10001 -G zwslcore -H -s /sbin/nologin zwslcore
+ENV VIRTUAL_ENV=/opt/venv
+RUN python -m venv "$VIRTUAL_ENV"
+ENV PATH="/opt/venv/bin:$PATH"
 
 COPY pyproject.toml requirements.lock ./
 COPY zeaz_provider ./zeaz_provider
@@ -18,11 +13,24 @@ RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r requireme
 
 COPY config ./config
 
-USER 10001:10001
+FROM cgr.dev/chainguard/python:latest@sha256:1961420e5f93bd056d4b0b40eca12cdf01b3ed09177aa4d6ec71fab38cbf158f
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    ZEAZ_CONFIG=/app/config/providers.yaml \
+    ZEAZ_HOST=0.0.0.0 \
+    ZEAZ_PORT=8080 \
+    PATH=/opt/venv/bin:$PATH
+
+WORKDIR /app
+COPY --from=build /opt/venv /opt/venv
+COPY --from=build /app/config ./config
+
+USER 65532:65532
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live', timeout=3)"]
+  CMD ["/opt/venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live', timeout=3)"]
 
 ENTRYPOINT ["zwslcore-provider"]
