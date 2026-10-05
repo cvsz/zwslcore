@@ -19,10 +19,14 @@ from services.engineering.worktree import WorktreeManager
 class Provider:
     model = "zeaz-fast"
 
+    def __init__(self):
+        self.calls = []
+
     def preflight(self) -> None:
         return None
 
     def chat(self, prompt, system, **kwargs):
+        self.calls.append({"prompt": prompt, **kwargs})
         if "Produce a concise implementation plan" in prompt:
             return "Inspect the scoped code and describe the minimal safe change."
         return json.dumps({
@@ -71,6 +75,30 @@ class PermissionTests(unittest.TestCase):
 
 
 class RuntimeAgentTests(unittest.TestCase):
+    def test_plan_call_uses_bounded_output_budget(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            repo = make_repo(root)
+            store = SQLiteEngineeringStore(root / "state.db")
+            provider = Provider()
+            runtime = EngineeringRuntime(
+                store,
+                provider,
+                worktrees=WorktreeManager(root / "worktrees"),
+                evidence=EvidenceExporter(store, root / "evidence"),
+            )
+            task = EngineeringTask(title="bounded plan", repository=str(repo))
+
+            result = runtime.run(
+                task,
+                allowed_paths={"services"},
+                agent_name="plan",
+            )
+
+            self.assertEqual(result.status, TaskStatus.SUCCEEDED)
+            self.assertEqual(provider.calls[0]["max_tokens"], EngineeringRuntime.PLAN_MAX_TOKENS)
+            self.assertIn("five short bullet points", provider.calls[0]["prompt"])
+
     def test_plan_agent_stops_before_editing(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
