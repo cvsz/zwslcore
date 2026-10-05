@@ -33,12 +33,19 @@ jobs:
           bash -n scripts/doctor.sh
           bash -n scripts/smoke.sh
           bash -n scripts/wait-runtime.sh
+          bash -n scripts/backup.sh scripts/restore.sh scripts/chaos.sh
           bash -n scripts/bootstrap-wsl.sh
           bash -n scripts/lib/env.sh
           bash tests/test_env_loader.sh
           python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py scripts/engineer.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
           python3 -m compileall -q services/provider/zeaz_provider services/engineering
-          python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selector tests.test_engineering_agents tests.test_engineering_custom_agents tests.test_engineering_delegation tests.test_engineering_mcp tests.test_engineering_change_snapshot tests.test_engineering_tui tests.test_engineering_reconcile tests.test_engineering_control_plane -v
+          python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selector tests.test_engineering_agents tests.test_engineering_custom_agents tests.test_engineering_delegation tests.test_engineering_mcp tests.test_engineering_change_snapshot tests.test_engineering_tui tests.test_engineering_reconcile tests.test_engineering_control_plane tests.test_engineering_transport_retry tests.test_engineering_observability -v
+          python3 scripts/chaos.py
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            python:3.14.7-slim-bookworm@sha256:82bc3c539b8813ada9d68c63b40158fa002f7f33de9bf3312a3dfdc0620dff56 \
+            sh -lc 'python -m pip install --disable-pip-version-check "pip-tools==7.6.1" && bash scripts/provider-lock.sh check'
           cp .env.example .env
           docker compose --env-file .env config --quiet
           if grep -Eq '(^|:)(latest|main)$' .env.example; then
@@ -52,7 +59,7 @@ jobs:
             -v "$PWD/services/provider:/src" \
             -w /src \
             python:3.14.7-slim-bookworm \
-            sh -lc 'python -m pip install --no-cache-dir . && python -c "import zeaz_provider; from zeaz_provider.main import app; print(app.title)"'
+            sh -lc 'python -m pip install --disable-pip-version-check --require-hashes -r requirements.lock && python -m pip install --no-cache-dir --no-build-isolation --no-deps . && python -m unittest discover -s tests -v && python -c "import zeaz_provider; from zeaz_provider.main import app; print(app.title)"'
           rm -f .env
 
       - name: Check for common secret file names

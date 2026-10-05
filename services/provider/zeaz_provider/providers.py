@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import httpx
@@ -25,6 +25,7 @@ class ProviderClient:
         client: httpx.AsyncClient,
         *,
         max_response_bytes: int = 16 * 1024 * 1024,
+        on_retry: Callable[[ProviderError], None] | None = None,
     ):
         self.config = config
         self.client = client
@@ -36,7 +37,7 @@ class ProviderClient:
             failure_threshold=config.circuit_failure_threshold,
             reset_timeout_seconds=config.circuit_reset_seconds,
             total_timeout_seconds=config.total_timeout_seconds,
-        ))
+        ), on_retry=on_retry)
 
     def headers(self) -> dict[str, str]:
         headers = dict(self.config.headers)

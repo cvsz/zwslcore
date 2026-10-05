@@ -119,6 +119,17 @@ class ModelsDevCatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ModelsDevError, "providers"):
             normalize_catalog({"models": {}})
 
+    def test_cache_rejects_unsupported_schema_version(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "catalog.json"
+            for schema in (2, True, 1.0):
+                path.write_text(
+                    json.dumps({"schema": schema, "source": "models.dev"}),
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(ModelsDevError, "cache envelope"):
+                    read_cache(path)
+
 
 if __name__ == "__main__":
     unittest.main()

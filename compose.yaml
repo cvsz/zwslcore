@@ -8,7 +8,7 @@ x-default-logging: &default-logging
 
 services:
   ollama:
-    image: ${OLLAMA_IMAGE:-ollama/ollama:0.35.1}
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c}
     container_name: zwslcore-ollama
     restart: unless-stopped
     logging: *default-logging
@@ -28,7 +28,7 @@ services:
     networks: [ai]
 
   litellm:
-    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.104.0}
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.104.0@sha256:625981c83410a3ea68eb0697590a57ec1d764d634514d54fa5db0591077ee839}
     container_name: zwslcore-litellm
     restart: unless-stopped
     logging: *default-logging
@@ -93,7 +93,7 @@ services:
     networks: [ai]
 
   open-webui:
-    image: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.11.4}
+    image: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.11.4@sha256:9591b13f13843c7721c2b8eaf7382846c81b3ffe126526d1888d1fed50c6a33f}
     container_name: zwslcore-open-webui
     restart: unless-stopped
     logging: *default-logging

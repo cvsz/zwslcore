@@ -182,6 +182,41 @@ class EngineeringTuiTests(unittest.TestCase):
             self.assertIn("snapshot_budget=8192", text)
             self.assertIn("zeaz-coder", text)
 
+    def test_dead_letter_and_quarantine_states_are_visible_without_actions(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            store = SQLiteEngineeringStore(root / "engineering.db")
+            ledger = JsonContinuousLedger(root / "continuous.json")
+            dead = WorkItem("dead-letter item", WorkKind.REPAIR)
+            quarantined = WorkItem("quarantined item", WorkKind.UPDATE)
+            ledger.register(dead)
+            ledger.dead_letter(dead.fingerprint, "repeated validation failure")
+            ledger.register(quarantined)
+            ledger.quarantine(quarantined.fingerprint, "manual review required")
+            profile = HardwareProfile(
+                os="linux",
+                architecture="x86_64",
+                cpu="cpu",
+                logical_cpus=4,
+                ram_total_gb=8,
+                ram_available_gb=7,
+                gpu="none-detected",
+                profile="CPU_SMALL",
+            )
+            with patch("services.engineering.tui.detect_hardware", return_value=profile):
+                text = build_dashboard(
+                    store,
+                    ledger,
+                    env={"ZEAZ_ENGINEERING_MODEL": "zeaz-fast"},
+                    color=False,
+                    width=110,
+                )
+            self.assertIn("DEAD_LETTER", text)
+            self.assertIn("QUARANTINED", text)
+            self.assertIn("dead-letter item", text)
+            self.assertIn("quarantined item", text)
+            self.assertNotIn("recover --max-iterations", text)
+
 
 if __name__ == "__main__":
     unittest.main()

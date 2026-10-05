@@ -8,6 +8,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -26,9 +27,14 @@ from services.engineering.delegation import (
     make_child_task,
     task_lineage,
 )
-from services.engineering.evidence import EvidenceExporter
+from services.engineering.evidence import (
+    EvidenceExporter,
+    EvidenceSchemaError,
+    redact_sensitive_text,
+)
 from services.engineering.hardware import detect_hardware
-from services.engineering.ledger import JsonContinuousLedger
+from services.engineering.ledger import ContinuousLedgerError, JsonContinuousLedger
+from services.engineering.lease import RunnerLeaseError, SQLiteRunnerLease
 from services.engineering.mcp import (
     DEFAULT_CONFIG as DEFAULT_MCP_CONFIG,
     MCPError,
@@ -39,6 +45,10 @@ from services.engineering.mcp import (
 )
 from services.engineering.loop import WorkItem, WorkKind
 from services.engineering.models import Checkpoint, EngineeringTask, TaskRisk, TaskStatus
+from services.engineering.observability import (
+    engineering_logging,
+    safe_error_summary,
+)
 from services.engineering.reconcile import QueueReconciler
 from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
@@ -252,7 +262,32 @@ def parser() -> argparse.ArgumentParser:
     wa.add_argument("--validation-mode", choices=["strict", "delta"], default="strict")
     wa.add_argument("--agent", default="build")
 
-    sub.add_parser("work-list")
+    work_list = sub.add_parser("work-list")
+    work_list.add_argument("--include-archived", action="store_true")
+
+    work_cancel = sub.add_parser("work-cancel")
+    work_cancel.add_argument("fingerprint")
+    work_cancel.add_argument("--reason", required=True)
+
+    work_retry = sub.add_parser("work-retry")
+    work_retry.add_argument("fingerprint")
+    work_retry.add_argument("--reason", default="operator requested retry")
+
+    work_quarantine = sub.add_parser("work-quarantine")
+    work_quarantine.add_argument("fingerprint")
+    work_quarantine.add_argument("--reason", required=True)
+
+    work_dead_letter = sub.add_parser("work-dead-letter")
+    work_dead_letter.add_argument("fingerprint")
+    work_dead_letter.add_argument("--reason", required=True)
+
+    work_requeue = sub.add_parser("work-requeue")
+    work_requeue.add_argument("fingerprint")
+    work_requeue.add_argument("--reason", required=True)
+
+    work_archive = sub.add_parser("work-archive")
+    work_archive.add_argument("fingerprint")
+    work_archive.add_argument("--reason", default="operator archived terminal work")
 
     reconcile = sub.add_parser("reconcile")
     reconcile.add_argument("--apply", action="store_true")
@@ -281,7 +316,46 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
+def resolve_work_record(
+    ledger: JsonContinuousLedger,
+    prefix: str,
+) -> tuple[dict[str, Any], bool] | None:
+    if not prefix:
+        raise ValueError("fingerprint prefix must not be empty")
+    archived_records = ledger.archived_records()
+    candidates = [*ledger.records(), *archived_records]
+    matches = [
+        record for record in candidates
+        if str(record.get("fingerprint", "")).startswith(prefix)
+    ]
+    if len(matches) > 1:
+        raise ValueError("fingerprint prefix is ambiguous")
+    if not matches:
+        return None
+    record = matches[0]
+    archived = any(
+        item.get("fingerprint") == record.get("fingerprint")
+        for item in archived_records
+    )
+    return record, archived
+
+
+def queue_runner_lease(
+    store: SQLiteEngineeringStore,
+    ledger: JsonContinuousLedger,
+) -> SQLiteRunnerLease:
+    return SQLiteRunnerLease(
+        store,
+        lock_paths=SQLiteRunnerLease.queue_lock_paths(store, ledger.path),
+    )
+
+
 def main() -> int:
+    with engineering_logging():
+        return _run_command()
+
+
+def _run_command() -> int:
     args = parser().parse_args()
     store = SQLiteEngineeringStore(args.db)
 
@@ -303,69 +377,82 @@ def main() -> int:
         return 0
 
     if args.command == "cancel":
-        task = store.get_task(args.task_id)
-        if not task:
-            print("task not found", file=sys.stderr)
-            return 2
-        if task.status == TaskStatus.SUCCEEDED:
-            print("refusing to cancel a succeeded task", file=sys.stderr)
-            return 2
-        if task.status == TaskStatus.CANCELLED:
-            print(json.dumps({
-                "task_id": task.id,
-                "status": task.status.value,
-                "idempotent": True,
-            }, indent=2))
-            return 0
+        ledger = JsonContinuousLedger(args.ledger)
+        try:
+            with queue_runner_lease(store, ledger):
+                task = store.get_task(args.task_id)
+                if not task:
+                    print("task not found", file=sys.stderr)
+                    return 2
+                if task.status == TaskStatus.SUCCEEDED:
+                    print("refusing to cancel a succeeded task", file=sys.stderr)
+                    return 2
+                if task.status in {
+                    TaskStatus.BASELINING,
+                    TaskStatus.PLANNING,
+                    TaskStatus.EDITING,
+                    TaskStatus.VALIDATING,
+                    TaskStatus.REVIEWING,
+                }:
+                    print("refusing to cancel an active task", file=sys.stderr)
+                    return 2
+                if task.status == TaskStatus.CANCELLED:
+                    print(json.dumps({
+                        "task_id": task.id,
+                        "status": task.status.value,
+                        "idempotent": True,
+                    }, indent=2))
+                    return 0
 
-        previous_status = task.status.value
-        previous_attempts = task.attempts
-        reason = args.reason.strip()
-        if not reason:
-            print("cancellation reason must not be empty", file=sys.stderr)
-            return 2
+                previous_status = task.status.value
+                previous_attempts = task.attempts
+                reason = args.reason.strip()
+                if not reason:
+                    print("cancellation reason must not be empty", file=sys.stderr)
+                    return 2
 
-        task.status = TaskStatus.CANCELLED
-        task.last_error = f"cancelled: {reason}"[:2000]
-        history = list(task.metadata.get("cancellation_history") or [])
-        history.append({
-            "at": time.time(),
-            "reason": reason,
-            "previous_status": previous_status,
-            "previous_attempts": previous_attempts,
-        })
-        task.metadata["cancellation_history"] = history[-20:]
-        store.save_task(task)
-        store.save_checkpoint(
-            Checkpoint(
-                task_id=task.id,
-                phase="CANCELLED",
-                payload={
+                task.status = TaskStatus.CANCELLED
+                task.last_error = f"cancelled: {reason}"[:2000]
+                history = list(task.metadata.get("cancellation_history") or [])
+                history.append({
+                    "at": time.time(),
                     "reason": reason,
                     "previous_status": previous_status,
                     "previous_attempts": previous_attempts,
-                },
-            )
-        )
+                })
+                task.metadata["cancellation_history"] = history[-20:]
+                store.save_task(task)
+                store.save_checkpoint(
+                    Checkpoint(
+                        task_id=task.id,
+                        phase="CANCELLED",
+                        payload={
+                            "reason": reason,
+                            "previous_status": previous_status,
+                            "previous_attempts": previous_attempts,
+                        },
+                    )
+                )
 
-        ledger = JsonContinuousLedger(args.ledger)
-        linked = []
-        for record in ledger.records():
-            if record.get("task_id") != task.id:
-                continue
-            ledger.update(
-                record["fingerprint"],
-                state="CANCELLED",
-                attempts=task.attempts,
-                last_error=task.last_error,
-            )
-            linked.append(record["fingerprint"])
+                linked = []
+                for record in ledger.records():
+                    if record.get("task_id") != task.id:
+                        continue
+                    ledger.cancel(record["fingerprint"], reason)
+                    ledger.update(
+                        record["fingerprint"],
+                        attempts=task.attempts,
+                        last_error=task.last_error,
+                    )
+                    linked.append(record["fingerprint"])
 
-        exporter = EvidenceExporter(store)
-        path, digest = exporter.export(task)
-        task.metadata["evidence_path"] = str(path)
-        task.metadata["evidence_sha256"] = digest
-        store.save_task(task)
+                path, digest = EvidenceExporter(store).export(task)
+                task.metadata["evidence_path"] = str(path)
+                task.metadata["evidence_sha256"] = digest
+                store.save_task(task)
+        except RunnerLeaseError as exc:
+            print(f"unable to cancel task while queue runner is active: {exc}", file=sys.stderr)
+            return 2
 
         print(json.dumps({
             "task_id": task.id,
@@ -411,7 +498,11 @@ def main() -> int:
 
     if args.command == "evidence-show":
         exporter = EvidenceExporter(store)
-        bundle = exporter.read(args.task_id)
+        try:
+            bundle = exporter.read(args.task_id)
+        except EvidenceSchemaError as exc:
+            print(f"evidence is incompatible: {exc}", file=sys.stderr)
+            return 2
         if bundle is None:
             print("evidence not found", file=sys.stderr)
             return 2
@@ -609,7 +700,10 @@ def main() -> int:
                 raise MCPError("--json must decode to an object")
             result = call_server_tool(server, tool_name, arguments)
         except (MCPError, json.JSONDecodeError) as exc:
-            print(f"mcp call failed: {exc}", file=sys.stderr)
+            print(
+                f"mcp call failed: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
             return 1
         print(json.dumps(result, indent=2, default=str))
         return 0
@@ -765,21 +859,32 @@ def main() -> int:
             print("task not found", file=sys.stderr)
             return 2
         try:
-            result = build_runtime(store, progress=emit_progress, agent_config=args.agent_config).run(
-                task,
-                validators=args.validate or ["git diff --check"],
-                allowed_paths=set(args.allow_path) if args.allow_path else None,
-                commit=args.commit,
-                validation_mode=args.validation_mode,
-                agent_name=args.agent,
+            with queue_runner_lease(store, JsonContinuousLedger(args.ledger)):
+                result = build_runtime(store, progress=emit_progress, agent_config=args.agent_config).run(
+                    task,
+                    validators=args.validate or ["git diff --check"],
+                    allowed_paths=set(args.allow_path) if args.allow_path else None,
+                    commit=args.commit,
+                    validation_mode=args.validation_mode,
+                    agent_name=args.agent,
+                )
+        except RunnerLeaseError as exc:
+            print(
+                f"engineering run refused: {safe_error_summary(exc)}",
+                file=sys.stderr,
             )
+            return 1
         except Exception as exc:
-            print(f"engineering run failed: {exc}", file=sys.stderr)
+            print(
+                f"engineering run failed: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
             return 1
         print(f"{result.id}\t{result.status.value}\t{result.branch_name}\t{result.worktree_path}")
         return 0
 
     if args.command == "resume":
+        ledger = JsonContinuousLedger(args.ledger)
         task = store.get_task(args.task_id)
         if not task:
             print("task not found", file=sys.stderr)
@@ -808,24 +913,33 @@ def main() -> int:
             "phase_cursor": task.metadata.get("phase_cursor", ""),
             "baseline_head": task.metadata.get("baseline_head", ""),
         })
-        task.metadata["resume_history"] = history[-20:]
-        task.attempts = 0
-        task.status = TaskStatus.CREATED
-        task.last_error = ""
-        store.save_task(task)
-
         try:
-            result = build_runtime(store, progress=emit_progress, agent_config=args.agent_config).run(
-                task,
-                validators=validators,
-                allowed_paths=set(allowed) if allowed else None,
-                commit=commit,
-                resume=True,
-                validation_mode=validation_mode,
-                agent_name=agent_name,
+            with queue_runner_lease(store, ledger):
+                task.metadata["resume_history"] = history[-20:]
+                task.attempts = 0
+                task.status = TaskStatus.CREATED
+                task.last_error = ""
+                store.save_task(task)
+                result = build_runtime(store, progress=emit_progress, agent_config=args.agent_config).run(
+                    task,
+                    validators=validators,
+                    allowed_paths=set(allowed) if allowed else None,
+                    commit=commit,
+                    resume=True,
+                    validation_mode=validation_mode,
+                    agent_name=agent_name,
+                )
+        except RunnerLeaseError as exc:
+            print(
+                f"engineering resume refused: {safe_error_summary(exc)}",
+                file=sys.stderr,
             )
+            return 1
         except Exception as exc:
-            print(f"engineering resume failed: {exc}", file=sys.stderr)
+            print(
+                f"engineering resume failed: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
             return 1
         print(f"{result.id}\t{result.status.value}\t{result.branch_name}\t{result.worktree_path}")
         return 0
@@ -871,16 +985,140 @@ def main() -> int:
         return 0
 
     if args.command == "work-list":
-        for record in ledger.records():
+        records = ledger.records()
+        if args.include_archived:
+            records.extend(ledger.archived_records())
+        for record in records:
             print(
                 f"{record['fingerprint'][:12]}\t{record['state']}\t"
                 f"{record['kind']}\t{record['priority']}\t{record['title']}"
             )
         return 0
 
+    if args.command in {
+        "work-cancel",
+        "work-retry",
+        "work-quarantine",
+        "work-dead-letter",
+        "work-requeue",
+        "work-archive",
+    }:
+        lifecycle_lease = queue_runner_lease(store, ledger)
+        try:
+            lifecycle_lease.acquire()
+            resolved = resolve_work_record(ledger, args.fingerprint)
+            if resolved is None:
+                raise ContinuousLedgerError("work item not found")
+            record, archived = resolved
+            fingerprint = str(record["fingerprint"])
+            if archived and args.command != "work-requeue":
+                raise ContinuousLedgerError("archived work can only be requeued from this lifecycle interface")
+            task_id = str(record.get("task_id") or "")
+            linked_task = store.get_task(task_id) if task_id else None
+            if linked_task is not None and linked_task.status in {
+                TaskStatus.BASELINING,
+                TaskStatus.PLANNING,
+                TaskStatus.EDITING,
+                TaskStatus.VALIDATING,
+                TaskStatus.REVIEWING,
+            }:
+                raise ContinuousLedgerError("cannot change lifecycle state while the linked task is active")
+            if (
+                linked_task is not None
+                and linked_task.status == TaskStatus.SUCCEEDED
+                and str(record.get("state")) != "SUCCEEDED"
+            ):
+                raise ContinuousLedgerError("linked task already succeeded; reconcile queue state before lifecycle changes")
+            if (
+                linked_task is not None
+                and linked_task.status == TaskStatus.CANCELLED
+                and args.command not in {"work-cancel", "work-archive"}
+            ):
+                raise ContinuousLedgerError("linked task is cancelled; create a new task to run it again")
+            if args.command == "work-cancel":
+                if str(record.get("state")) == "RUNNING":
+                    raise ContinuousLedgerError("cannot cancel work while it is running")
+                reason = args.reason.strip()
+                if not reason:
+                    raise ContinuousLedgerError("cancellation reason must not be empty")
+                reason = redact_sensitive_text(reason, 2000)
+                task = linked_task
+                if task is not None and task.status == TaskStatus.SUCCEEDED:
+                    raise ContinuousLedgerError("cannot cancel succeeded task")
+                if task is not None and task.status != TaskStatus.CANCELLED:
+                    previous_status = task.status.value
+                    task.status = TaskStatus.CANCELLED
+                    task.last_error = f"cancelled: {reason}"[:2000]
+                    history = list(task.metadata.get("cancellation_history") or [])
+                    history.append({
+                        "at": time.time(),
+                        "reason": reason,
+                        "previous_status": previous_status,
+                        "previous_attempts": task.attempts,
+                    })
+                    task.metadata["cancellation_history"] = history[-20:]
+                    store.save_task(task)
+                    store.save_checkpoint(
+                        Checkpoint(
+                            task_id=task.id,
+                            phase="CANCELLED",
+                            payload={
+                                "reason": reason,
+                                "previous_status": previous_status,
+                                "previous_attempts": task.attempts,
+                            },
+                        )
+                    )
+                    path, digest = EvidenceExporter(store).export(task)
+                    task.metadata["evidence_path"] = str(path)
+                    task.metadata["evidence_sha256"] = digest
+                    store.save_task(task)
+                result = ledger.cancel(fingerprint, reason)
+            elif args.command == "work-retry":
+                result = ledger.retry(fingerprint, args.reason)
+            elif args.command == "work-quarantine":
+                result = ledger.quarantine(fingerprint, args.reason)
+            elif args.command == "work-dead-letter":
+                task_id = str(record.get("task_id") or "")
+                task = store.get_task(task_id) if task_id else None
+                result = ledger.dead_letter(
+                    fingerprint,
+                    args.reason,
+                    task=task.__dict__ if task else None,
+                )
+            elif args.command == "work-requeue":
+                result = ledger.requeue(fingerprint, args.reason)
+            else:
+                result = ledger.archive(fingerprint, args.reason)
+        except (ContinuousLedgerError, ValueError) as exc:
+            print(
+                f"queue lifecycle failed: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
+            return 2
+        except RunnerLeaseError as exc:
+            print(
+                f"queue lifecycle failed: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
+            return 2
+        finally:
+            if lifecycle_lease.fencing_token is not None:
+                lifecycle_lease.release()
+        print(json.dumps(result, indent=2, default=str))
+        return 0
+
     if args.command == "reconcile":
         reconciler = QueueReconciler(store, ledger)
-        report = reconciler.apply_safe() if args.apply else reconciler.inspect()
+        try:
+            if args.apply:
+                with queue_runner_lease(store, ledger):
+                    report = reconciler.apply_safe()
+            else:
+                report = reconciler.inspect()
+        except RunnerLeaseError as exc:
+            print(f"unable to reconcile while queue runner is active: {exc}", file=sys.stderr)
+            return 2
         print(json.dumps({
             "applied": [dataclasses.asdict(item) for item in report.applied],
             "findings": [dataclasses.asdict(item) for item in report.findings],
@@ -925,31 +1163,39 @@ def main() -> int:
             priority=args.priority,
             max_attempts=max(1, int(max_attempts)),
         )
-        record = ledger.register(item)
-        record = ledger.update(
-            item.fingerprint,
-            task_id=task.id,
-            state="PENDING",
-            attempts=task.attempts if task.status in {TaskStatus.BLOCKED, TaskStatus.FAILED} else 0,
-            last_error=task.last_error,
-        )
+        try:
+            record = ledger.register(
+                item,
+                initial_fields={
+                    "task_id": task.id,
+                    "state": "PENDING",
+                    "attempts": task.attempts if task.status in {TaskStatus.BLOCKED, TaskStatus.FAILED} else 0,
+                    "last_error": task.last_error,
+                },
+            )
+        except ContinuousLedgerError as exc:
+            print(
+                f"refusing to enqueue task: {safe_error_summary(exc)}",
+                file=sys.stderr,
+            )
+            return 2
         print(json.dumps(record, indent=2))
         return 0
 
     if args.command == "work-status":
-        records = ledger.records()
         if args.fingerprint:
-            matches = [
-                record for record in records
-                if record["fingerprint"].startswith(args.fingerprint)
-            ]
-            if not matches:
+            try:
+                resolved = resolve_work_record(ledger, args.fingerprint)
+            except ValueError as exc:
+                print(str(exc), file=sys.stderr)
+                return 2
+            if resolved is None:
                 print("work item not found", file=sys.stderr)
                 return 2
-            if len(matches) > 1:
-                print("fingerprint prefix is ambiguous", file=sys.stderr)
-                return 2
-            records = matches
+            record, archived = resolved
+            records = [record | {"archived": archived}]
+        else:
+            records = ledger.records()
 
         output = []
         for record in records:
@@ -974,18 +1220,21 @@ def main() -> int:
 
     if args.command in {"continuous", "recover"}:
         try:
+            before_run = None
             if args.command == "recover":
-                report = QueueReconciler(store, ledger).apply_safe()
-                if report.applied:
-                    emit_progress(
-                        f"[continuous] RECONCILE applied={len(report.applied)} "
-                        f"orphans={len(report.orphan_tasks)}"
-                    )
-                elif report.orphan_tasks:
-                    emit_progress(
-                        f"[continuous] RECONCILE applied=0 "
-                        f"orphans={len(report.orphan_tasks)}"
-                    )
+                def reconcile_before_run() -> None:
+                    report = QueueReconciler(store, ledger).apply_safe()
+                    if report.applied:
+                        emit_progress(
+                            f"[continuous] RECONCILE applied={len(report.applied)} "
+                            f"orphans={len(report.orphan_tasks)}"
+                        )
+                    elif report.orphan_tasks:
+                        emit_progress(
+                            f"[continuous] RECONCILE applied=0 "
+                            f"orphans={len(report.orphan_tasks)}"
+                        )
+                before_run = reconcile_before_run
             runner = ContinuousEngineeringRunner(
                 store,
                 ledger,
@@ -995,10 +1244,11 @@ def main() -> int:
             result = runner.run(
                 max_iterations=max(1, args.max_iterations),
                 retry_blocked=True if args.command == "recover" else args.retry_blocked,
+                before_run=before_run,
             )
         except Exception as exc:
             label = "engineering recovery" if args.command == "recover" else "continuous engineering"
-            print(f"{label} failed: {exc}", file=sys.stderr)
+            print(f"{label} failed: {safe_error_summary(exc)}", file=sys.stderr)
             return 1
         print(json.dumps(dataclasses.asdict(result), indent=2))
         return 0 if not result.blocked else 1
