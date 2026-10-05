@@ -46,7 +46,12 @@ class JsonContinuousLedger:
             value = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise ContinuousLedgerError(f"unable to read continuous ledger: {exc}") from exc
-        if value.get("schema") != self.SCHEMA or not isinstance(value.get("records"), dict):
+        if (
+            not isinstance(value, dict)
+            or type(value.get("schema")) is not int
+            or value.get("schema") != self.SCHEMA
+            or not isinstance(value.get("records"), dict)
+        ):
             raise ContinuousLedgerError("invalid continuous ledger structure")
         if "archives" not in value:
             value["archives"] = {}

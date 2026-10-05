@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 import subprocess
 import tempfile
 import unittest
@@ -7,7 +9,7 @@ from pathlib import Path
 
 from services.engineering.continuous import ContinuousEngineeringRunner
 from services.engineering.hardware import HardwareProfile
-from services.engineering.ledger import JsonContinuousLedger
+from services.engineering.ledger import ContinuousLedgerError, JsonContinuousLedger
 from services.engineering.loop import ContinuousEngineeringLoop, LoopPolicy, WorkItem, WorkKind
 from services.provider.zeaz_provider.cost import CostClass, CostPolicy, cost_allowed, cost_rank
 from services.engineering.models import Checkpoint, EngineeringTask, TaskStatus
@@ -51,6 +53,39 @@ class ProviderStructuredOutputTests(unittest.TestCase):
 
 
 class StoreTests(unittest.TestCase):
+    def test_unversioned_database_is_initialized_to_current_schema(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "state.db"
+            sqlite3.connect(path).close()
+
+            SQLiteEngineeringStore(path)
+
+            with sqlite3.connect(path) as connection:
+                version = connection.execute("PRAGMA user_version").fetchone()[0]
+                tables = {
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    )
+                }
+            self.assertEqual(version, SQLiteEngineeringStore.SCHEMA_VERSION)
+            self.assertTrue({"tasks", "checkpoints", "runner_leases"} <= tables)
+
+    def test_database_newer_than_supported_schema_is_preserved_and_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "state.db"
+            with sqlite3.connect(path) as connection:
+                connection.execute(
+                    f"PRAGMA user_version = {SQLiteEngineeringStore.SCHEMA_VERSION + 1}"
+                )
+
+            with self.assertRaisesRegex(RuntimeError, "newer than supported"):
+                SQLiteEngineeringStore(path)
+
+            with sqlite3.connect(path) as connection:
+                version = connection.execute("PRAGMA user_version").fetchone()[0]
+            self.assertEqual(version, SQLiteEngineeringStore.SCHEMA_VERSION + 1)
+
     def test_round_trip(self):
         with tempfile.TemporaryDirectory() as td:
             store = SQLiteEngineeringStore(Path(td) / "state.db")
@@ -208,6 +243,18 @@ class CostPolicyTests(unittest.TestCase):
 
 
 class ContinuousLedgerTests(unittest.TestCase):
+    def test_unsupported_schema_is_rejected_without_rewrite(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "continuous.json"
+            ledger = JsonContinuousLedger(path)
+
+            for schema in (2, True, 1.0):
+                raw = json.dumps({"schema": schema, "records": {}, "archives": {}}) + "\n"
+                path.write_text(raw, encoding="utf-8")
+                with self.assertRaisesRegex(ContinuousLedgerError, "invalid"):
+                    ledger.records()
+
+                self.assertEqual(path.read_text(encoding="utf-8"), raw)
     def test_cancelled_work_is_not_returned_as_pending(self):
         with tempfile.TemporaryDirectory() as td:
             ledger = JsonContinuousLedger(Path(td) / "continuous.json")

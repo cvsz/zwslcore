@@ -27,7 +27,11 @@ from services.engineering.delegation import (
     make_child_task,
     task_lineage,
 )
-from services.engineering.evidence import EvidenceExporter, redact_sensitive_text
+from services.engineering.evidence import (
+    EvidenceExporter,
+    EvidenceSchemaError,
+    redact_sensitive_text,
+)
 from services.engineering.hardware import detect_hardware
 from services.engineering.ledger import ContinuousLedgerError, JsonContinuousLedger
 from services.engineering.lease import RunnerLeaseError, SQLiteRunnerLease
@@ -485,7 +489,11 @@ def main() -> int:
 
     if args.command == "evidence-show":
         exporter = EvidenceExporter(store)
-        bundle = exporter.read(args.task_id)
+        try:
+            bundle = exporter.read(args.task_id)
+        except EvidenceSchemaError as exc:
+            print(f"evidence is incompatible: {exc}", file=sys.stderr)
+            return 2
         if bundle is None:
             print("evidence not found", file=sys.stderr)
             return 2
