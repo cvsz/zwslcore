@@ -2,16 +2,24 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 import tempfile
 import unittest
 import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
+from services.engineering.evidence import EvidenceExporter
 from services.engineering.continuous import ExecutionResult
 from services.engineering.loop import ContinuousEngineeringLoop, LoopPolicy, WorkItem, WorkKind
-from services.engineering.models import EngineeringTask
-from services.engineering.runtime import ProviderClient, ProviderTransportError
+from services.engineering.models import EngineeringTask, TaskStatus
+from services.engineering.runtime import (
+    EngineeringRuntime,
+    ProviderClient,
+    ProviderTransportError,
+)
+from services.engineering.store import SQLiteEngineeringStore
+from services.engineering.worktree import WorktreeManager
 
 
 class FakeResponse:
@@ -26,6 +34,38 @@ class FakeResponse:
 
     def read(self, *args, **kwargs):
         return self._raw.read(*args, **kwargs)
+
+
+class PlanningTransportFailureProvider:
+    model = "zeaz-fast"
+
+    def preflight(self) -> None:
+        return None
+
+    def chat(self, prompt, system, **kwargs):
+        raise ProviderTransportError("provider transport failed: timeout")
+
+
+def make_runtime_repo(root: Path) -> Path:
+    repo = root / "repo"
+    (repo / "services").mkdir(parents=True)
+    (repo / "services" / "example.py").write_text("value = 1\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "test@example.com"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "Test"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "base"],
+        check=True,
+        capture_output=True,
+    )
+    return repo
 
 
 class ProviderTransportRetryTests(unittest.TestCase):
@@ -59,6 +99,40 @@ class ProviderTransportRetryTests(unittest.TestCase):
 
 
 class InfrastructureBudgetTests(unittest.TestCase):
+    def test_runtime_transport_failure_does_not_consume_task_attempt_budget(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            repo = make_runtime_repo(root)
+            store = SQLiteEngineeringStore(root / "state.db")
+            evidence = EvidenceExporter(store, root / "evidence")
+            runtime = EngineeringRuntime(
+                store,
+                PlanningTransportFailureProvider(),
+                worktrees=WorktreeManager(root / "worktrees"),
+                evidence=evidence,
+            )
+            task = EngineeringTask(
+                title="transport failure",
+                repository=str(repo),
+                max_attempts=1,
+            )
+
+            with self.assertRaises(ProviderTransportError):
+                runtime.run(
+                    task,
+                    validators=["git diff --check"],
+                    allowed_paths={"services"},
+                )
+
+            saved = store.get_task(task.id)
+            self.assertIsNotNone(saved)
+            self.assertEqual(saved.attempts, 0)
+            self.assertEqual(saved.status, TaskStatus.BLOCKED)
+            self.assertTrue(evidence.verify(task.id))
+            bundle = evidence.read(task.id)
+            self.assertEqual(bundle["task"]["attempts"], 0)
+            self.assertEqual(bundle["task"]["status"], TaskStatus.BLOCKED.value)
+
     def test_infrastructure_retry_does_not_consume_work_attempt_budget(self):
         item = WorkItem("infra", WorkKind.REPAIR, max_attempts=2)
         checkpoints = []

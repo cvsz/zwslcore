@@ -296,6 +296,7 @@ class EngineeringRuntime:
         task.metadata["snapshot_max_bytes"] = self.snapshot_max_bytes
         self.store.save_task(task)
 
+        attempt_started = False
         try:
             task.status = TaskStatus.BASELINING
             self.store.save_task(task)
@@ -332,6 +333,7 @@ class EngineeringRuntime:
             task.metadata["baseline_head"] = baseline_head
 
             task.attempts += 1
+            attempt_started = True
             self.progress(f"[engineering] attempt={task.attempts}/{task.max_attempts}")
             self._checkpoint(
                 task,
@@ -603,7 +605,16 @@ class EngineeringRuntime:
             self._export_evidence(task)
             return task
         except Exception as exc:
-            task.status = TaskStatus.BLOCKED if task.attempts < task.max_attempts else TaskStatus.FAILED
+            if isinstance(exc, ProviderTransportError):
+                if attempt_started:
+                    task.attempts -= 1
+                task.status = TaskStatus.BLOCKED
+            else:
+                task.status = (
+                    TaskStatus.BLOCKED
+                    if task.attempts < task.max_attempts
+                    else TaskStatus.FAILED
+                )
             self.progress(f"[engineering] {task.id} {task.status.value} error={str(exc)[:500]}")
             task.last_error = str(exc)[:2000]
             self.store.save_task(task)
