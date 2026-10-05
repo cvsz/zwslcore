@@ -208,6 +208,28 @@ class CostPolicyTests(unittest.TestCase):
 
 
 class ContinuousLedgerTests(unittest.TestCase):
+    def test_cancelled_work_is_not_returned_as_pending(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger = JsonContinuousLedger(Path(td) / "continuous.json")
+            cancelled = WorkItem("cancelled", WorkKind.REPAIR, max_attempts=2)
+            pending = WorkItem("pending", WorkKind.REPAIR, max_attempts=2)
+            ledger.register(cancelled)
+            ledger.update(cancelled.fingerprint, state="CANCELLED", attempts=1)
+            ledger.register(pending)
+
+            self.assertEqual([item.title for item in ledger.pending()], ["pending"])
+            self.assertEqual(
+                [item.title for item in ledger.pending(retry_blocked=True)],
+                ["pending"],
+            )
+            cancelled_record = next(
+                record
+                for record in ledger.records()
+                if record["fingerprint"] == cancelled.fingerprint
+            )
+            self.assertEqual(cancelled_record["state"], "CANCELLED")
+            self.assertEqual(cancelled_record["attempts"], 1)
+
     def test_attempt_budget_survives_restart(self):
         with tempfile.TemporaryDirectory() as td:
             ledger = JsonContinuousLedger(Path(td) / "continuous.json")
