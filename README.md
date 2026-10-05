@@ -356,6 +356,16 @@ The combined `catalog.json?type=all` endpoint is cached atomically under `~/.zws
 
 This catalog is advisory metadata. Local Ollama availability and zwslcore Provider routing remain authoritative for what this machine can actually execute. The recommendation engine is explainable: every result includes its score, eligibility, reasons and blockers. Remote candidates are excluded unless `--include-remote` is requested, and remain ineligible when cloud fallback is disabled.
 
+## Local model identity
+
+Capture local model digests, sizes, quantization, and Ollama modification times with `make models-manifest`. Save the JSON outside Git as a baseline, then detect additions, removals, or identity changes with:
+
+```bash
+python3 scripts/model_manifest.py --compare ~/.zwslcore/evidence/models-baseline.json --fail-on-drift
+```
+
+The command reads only Ollama's loopback tags API and does not include model prompts or Modelfiles. Ollama's local inventory does not identify the original upstream publisher or download URL; preserve external provenance separately when available.
+
 ## Free model discovery
 
 Local Ollama models are the default and require no provider API key.
