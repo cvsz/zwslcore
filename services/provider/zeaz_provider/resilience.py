@@ -90,6 +90,7 @@ class ResilienceExecutor:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         uniform: Callable[[float, float], float] = random.uniform,
         clock: Callable[[], float] = time.monotonic,
+        on_retry: Callable[[ProviderError], None] | None = None,
     ):
         self.policy = policy or ResiliencePolicy()
         self.breaker = breaker or CircuitBreaker(
@@ -99,6 +100,7 @@ class ResilienceExecutor:
         self.sleep = sleep
         self.uniform = uniform
         self.clock = clock
+        self.on_retry = on_retry
 
     async def call(self, operation: Callable[[], Awaitable[T]]) -> T:
         last_error: ProviderError | None = None
@@ -134,6 +136,8 @@ class ResilienceExecutor:
                 remaining = self.policy.total_timeout_seconds - (self.clock() - started_at)
                 if delay >= remaining:
                     raise self._deadline_error(exc) from exc
+                if self.on_retry is not None:
+                    self.on_retry(exc)
                 await self.sleep(delay)
             else:
                 self.breaker.success()

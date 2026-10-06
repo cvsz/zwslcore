@@ -23,6 +23,49 @@ class Observability:
             "Gateway HTTP requests currently in flight.",
             registry=self.registry,
         )
+        self.provider_requests = Counter(
+            "zeaz_provider_requests",
+            "Provider model requests by configured provider, model, and outcome.",
+            ("provider", "model", "outcome"),
+            registry=self.registry,
+        )
+        self.provider_errors = Counter(
+            "zeaz_provider_errors",
+            "Provider request failures by bounded error class.",
+            ("provider", "model", "error_class"),
+            registry=self.registry,
+        )
+        self.provider_latency = Histogram(
+            "zeaz_provider_latency_seconds",
+            "Provider model request latency, including local response adaptation.",
+            ("provider", "model"),
+            buckets=(0.1, 0.5, 1, 5, 15, 30, 60, 120, 300, 600),
+            registry=self.registry,
+        )
+        self.inference_tokens = Counter(
+            "zeaz_inference_tokens",
+            "Provider-reported inference tokens, when response usage is available.",
+            ("provider", "model", "direction"),
+            registry=self.registry,
+        )
+        self.provider_retries = Counter(
+            "zeaz_provider_retries",
+            "Provider transport retries by bounded error class.",
+            ("provider", "error_class"),
+            registry=self.registry,
+        )
+        self.provider_fallbacks = Counter(
+            "zeaz_provider_fallbacks",
+            "Requests routed to a configured fallback provider.",
+            ("provider", "model"),
+            registry=self.registry,
+        )
+        self.circuit_breaker_state = Gauge(
+            "zeaz_provider_circuit_breaker_state",
+            "Provider circuit state: closed=0, half-open=0.5, open=1.",
+            ("provider",),
+            registry=self.registry,
+        )
         self._meter_provider = None
         self._otel_requests = None
         self._otel_duration = None
@@ -75,6 +118,51 @@ class Observability:
 
     def prometheus(self) -> bytes:
         return generate_latest(self.registry)
+
+    def record_provider_request(
+        self,
+        *,
+        provider: str,
+        model: str,
+        outcome: str,
+        duration_seconds: float,
+        error_class: str | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+    ) -> None:
+        self.provider_requests.labels(provider=provider, model=model, outcome=outcome).inc()
+        self.provider_latency.labels(provider=provider, model=model).observe(
+            max(0.0, duration_seconds)
+        )
+        if error_class is not None:
+            self.provider_errors.labels(
+                provider=provider,
+                model=model,
+                error_class=error_class,
+            ).inc()
+        if input_tokens is not None:
+            self.inference_tokens.labels(
+                provider=provider,
+                model=model,
+                direction="input",
+            ).inc(input_tokens)
+        if output_tokens is not None:
+            self.inference_tokens.labels(
+                provider=provider,
+                model=model,
+                direction="output",
+            ).inc(output_tokens)
+
+    def record_provider_retry(self, *, provider: str, error_class: str) -> None:
+        self.provider_retries.labels(provider=provider, error_class=error_class).inc()
+
+    def record_provider_fallback(self, *, provider: str, model: str) -> None:
+        self.provider_fallbacks.labels(provider=provider, model=model).inc()
+
+    def record_circuit_breaker_state(self, *, provider: str, state: str) -> None:
+        value = {"closed": 0.0, "half_open": 0.5, "open": 1.0}.get(state)
+        if value is not None:
+            self.circuit_breaker_state.labels(provider=provider).set(value)
 
     def shutdown(self) -> None:
         if self._meter_provider is not None:

@@ -94,6 +94,34 @@ class ModelsDevCatalogTests(unittest.TestCase):
             with self.assertRaisesRegex(ModelsDevError, "stale"):
                 read_cache(path, max_age_seconds=10)
 
+    def test_refresh_fetches_and_persists_a_fresh_cache(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "catalog.json"
+            catalog = normalize_catalog(SAMPLE)
+            source_url = "https://example.com/catalog.json"
+
+            with patch(
+                "services.model_catalog.models_dev.fetch_catalog",
+                return_value=catalog,
+            ) as fetch:
+                value, source = get_catalog(
+                    cache_path=path,
+                    refresh=True,
+                    url=source_url,
+                )
+
+            fetch.assert_called_once_with(url=source_url)
+            self.assertEqual(source, "network")
+            self.assertEqual(value["stats"]["provider_offerings"], 1)
+            envelope = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(envelope["source_url"], source_url)
+            self.assertGreater(envelope["fetched_at"], 0)
+
+            cached, cache_source = get_catalog(cache_path=path, max_age_seconds=60)
+
+        self.assertEqual(cache_source, "cache")
+        self.assertEqual(cached["stats"]["provider_offerings"], 1)
+
     def test_get_catalog_falls_back_to_stale_cache(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "catalog.json"
@@ -118,6 +146,17 @@ class ModelsDevCatalogTests(unittest.TestCase):
     def test_invalid_catalog_rejected(self):
         with self.assertRaisesRegex(ModelsDevError, "providers"):
             normalize_catalog({"models": {}})
+
+    def test_cache_rejects_unsupported_schema_version(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "catalog.json"
+            for schema in (2, True, 1.0):
+                path.write_text(
+                    json.dumps({"schema": schema, "source": "models.dev"}),
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(ModelsDevError, "cache envelope"):
+                    read_cache(path)
 
 
 if __name__ == "__main__":
