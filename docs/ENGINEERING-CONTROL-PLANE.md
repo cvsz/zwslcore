@@ -125,6 +125,18 @@ Inspect a durable work item while another terminal is running it:
 
 The status output includes the continuous ledger record, linked EngineeringTask and latest task checkpoint.
 
+## Local Prometheus metrics
+
+Run the engineering exporter on the host:
+
+~~~bash
+python3 scripts/engineering-metrics.py --port 9464
+~~~
+
+Scrape GET /metrics from a Prometheus process running on the same host. The exporter binds to 127.0.0.1 only and reads the SQLite store in read-only mode. Its fixed labels expose aggregate task and queue state, attempt counts, checkpoint phases, structured-output repair counts, terminal-task evidence checksum state, and currently recorded evidence-write errors. It does not expose task IDs, work fingerprints, titles, paths, descriptions, prompts, or error text.
+
+Evidence metrics check the stored checksum for each terminal task's evidence file; they do not validate the bundle schema. The exporter reports current persisted counts, not rates. Phase durations, cumulative worktree-sync events, provider streaming token usage, and historical evidence-write failures are not measured by this exporter.
+
 ## Local model context budget
 
 The local engineering snapshot defaults to:
