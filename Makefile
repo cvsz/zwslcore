@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs models free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config provider-build cloudflare-up ci
+.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config provider-build provider-lock provider-lock-check cloudflare-up ci
 
 help:
 	@printf '%s\n' \
@@ -9,7 +9,9 @@ help:
 	  'wait-runtime  wait for stable runtime health' \
 	  'doctor        verify runtime health' \
 	  'smoke         verify authenticated model inference' \
+	  'capacity      report disk and Docker storage pressure' \
 	  'models        list local Ollama models' \
+	  'models-manifest capture or compare local model identities' \
 	  'free-models   discover current OpenRouter zero-price text models' \
 	  'models-dev-sync sync provider/model metadata from models.dev' \
 	  'models-dev-stats inspect cached models.dev catalog counts' \
@@ -22,8 +24,10 @@ help:
 	  'engineer-tui   open read-only engineering terminal dashboard' \
 	  'engineer-test  run engineering agent/selector/TUI/control-plane tests' \
 	  'config        validate Compose configuration' \
-	  'provider-build build the in-repo provider gateway' \
-	  'cloudflare-up start zwslcore on the Cloudflare loopback ports' \
+  'provider-build build the in-repo provider gateway' \
+  'provider-lock update the hashed Provider dependency lock' \
+  'provider-lock-check verify Provider dependency lock drift' \
+  'cloudflare-up start zwslcore on the Cloudflare loopback ports' \
 	  'ci            repository + stack static validation'
 
 validate-template:
@@ -58,8 +62,14 @@ smoke:
 logs:
 	docker compose --env-file .env logs -f --tail=200
 
+capacity:
+	python3 scripts/capacity.py
+
 models:
 	docker exec zwslcore-ollama ollama list
+
+models-manifest:
+	python3 scripts/model_manifest.py
 
 free-models:
 	python3 scripts/sync-free-models.py
@@ -97,12 +107,18 @@ engineer-test:
 provider-build:
 	docker compose --env-file .env build provider
 
+provider-lock:
+	bash scripts/provider-lock.sh update
+
+provider-lock-check:
+	bash scripts/provider-lock.sh check
+
 cloudflare-up:
 	bash scripts/cloudflare-up.sh
 
 ci: validate-template
 	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
 	python3 -m compileall -q services/provider/zeaz_provider services/engineering scripts/engineer.py
-	python3 -m unittest tests.test_model_catalog tests.test_models_dev_catalog tests.test_model_selector tests.test_engineering_agents tests.test_engineering_custom_agents tests.test_engineering_delegation tests.test_engineering_mcp tests.test_engineering_change_snapshot tests.test_engineering_tui tests.test_engineering_reconcile tests.test_engineering_control_plane -v
+	python3 -m unittest discover -s tests -v
 	bash -n scripts/install.sh
 	bash -n scripts/doctor.sh

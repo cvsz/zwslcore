@@ -1,0 +1,179 @@
+name: Provider Supply Chain
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provider-supply-chain-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-scan-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Prepare artifact directory
+        run: mkdir -p artifacts
+
+      - name: Build Provider image
+        run: docker build --pull --tag local/zwslcore-provider:ci services/provider
+
+      - name: Scan Provider image
+        id: scan
+        continue-on-error: true
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: local/zwslcore-provider:ci
+          fail-build: true
+          severity-cutoff: high
+          output-format: json
+          output-file: artifacts/provider-scan.json
+
+      - name: Generate Provider image SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: local/zwslcore-provider:ci
+          format: spdx-json
+          output-file: artifacts/provider-image.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate Provider source SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: services/provider
+          format: spdx-json
+          output-file: artifacts/provider-source.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Package image and write release manifest
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+        run: |
+          set -euo pipefail
+          docker save local/zwslcore-provider:ci | gzip -n > artifacts/provider-image.tar.gz
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root = Path(".")
+          artifacts = root / "artifacts"
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as source:
+                  for block in iter(lambda: source.read(1024 * 1024), b""):
+                      digest.update(block)
+              return digest.hexdigest()
+
+          image_id = subprocess.check_output(
+              ["docker", "image", "inspect", "local/zwslcore-provider:ci", "--format", "{{.Id}}"],
+              text=True,
+          ).strip()
+          files = {
+              name: {"path": f"artifacts/{name}", "sha256": sha256(artifacts / name)}
+              for name in (
+                  "provider-image.tar.gz",
+                  "provider-image.spdx.json",
+                  "provider-source.spdx.json",
+                  "provider-scan.json",
+              )
+          }
+          manifest = {
+              "schema_version": 1,
+              "created_at_utc": datetime.now(timezone.utc).isoformat(),
+              "source_sha": os.environ["SOURCE_SHA"],
+              "workflow_run_id": os.environ["WORKFLOW_RUN_ID"],
+              "provider_image": {
+                  "local_reference": "local/zwslcore-provider:ci",
+                  "local_image_id": image_id,
+                  "registry_digest": None,
+              },
+              "dependency_lock": {
+                  "path": "services/provider/requirements.lock",
+                  "sha256": sha256(root / "services/provider/requirements.lock"),
+              },
+              "artifacts": files,
+              "scan": {
+                  "outcome": os.environ["SCAN_OUTCOME"],
+                  "fail_build_at_or_above": "high",
+              },
+              "rollback_target": None,
+              "registry_publish": False,
+              "deployment": False,
+          }
+          (artifacts / "release-manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Upload immutable workflow artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: provider-supply-chain-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce Provider image scan result
+        if: always() && steps.scan.outcome != 'success'
+        run: exit 1
+
+  attest-trusted-build:
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    needs: build-scan-sbom
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: provider-supply-chain-${{ github.sha }}
+          path: artifacts
+
+      - name: Attest Provider image archive provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: artifacts/provider-image.tar.gz
+
+      - name: Attest Provider image SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: artifacts/provider-image.tar.gz
+          sbom-path: artifacts/provider-image.spdx.json
+
+      - name: Attest release manifest provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: artifacts/release-manifest.json
+
+      - name: Verify generated attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh attestation verify artifacts/provider-image.tar.gz --repo "$GITHUB_REPOSITORY"
+          gh attestation verify artifacts/release-manifest.json --repo "$GITHUB_REPOSITORY"

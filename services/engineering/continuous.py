@@ -7,8 +7,10 @@ from collections.abc import Callable
 from typing import Any
 
 from .ledger import JsonContinuousLedger
+from .lease import RunnerLeaseError, SQLiteRunnerLease
 from .loop import ContinuousEngineeringLoop, LoopPolicy, LoopResult, WorkItem
 from .models import EngineeringTask, TaskRisk, TaskStatus
+from .observability import safe_error_class
 from .runtime import EngineeringRuntime, ProviderTransportError
 from .store import SQLiteEngineeringStore
 
@@ -66,23 +68,45 @@ class ContinuousEngineeringRunner:
         *,
         max_iterations: int = 12,
         retry_blocked: bool = False,
+        before_run: Callable[[], None] | None = None,
     ) -> LoopResult:
+        lock_paths = SQLiteRunnerLease.queue_lock_paths(self.store, self.ledger.path)
+        with SQLiteRunnerLease(self.store, lock_paths=lock_paths) as lease:
+            if before_run:
+                lease.assert_owned()
+                before_run()
+            return self._run_with_lease(
+                lease,
+                max_iterations=max_iterations,
+                retry_blocked=retry_blocked,
+            )
+
+    def _run_with_lease(
+        self,
+        lease: SQLiteRunnerLease,
+        *,
+        max_iterations: int,
+        retry_blocked: bool,
+    ) -> LoopResult:
+        lease.assert_owned()
         seed = self.ledger.pending(retry_blocked=retry_blocked)
         reset_once: set[str] = set()
         self.progress(f"[continuous] pending={len(seed)} max_iterations={max_iterations} retry_blocked={retry_blocked}")
 
         def implement(item: WorkItem) -> ExecutionResult:
+            lease.assert_owned()
             record = self.ledger.register(item)
             self.progress(
                 f"[continuous] START kind={item.kind.value} priority={item.priority} "
                 f"attempt={int(record.get('attempts', 0)) + 1}/{int(record.get('max_attempts', item.max_attempts))} "
-                f"title={item.title}"
+                f"work_fingerprint={item.fingerprint[:16]}"
             )
             task_id = record.get("task_id") or f"work_{item.fingerprint[:20]}"
             task = self.store.get_task(task_id)
             payload = item.payload
 
-            if retry_blocked and item.fingerprint not in reset_once and task is not None and (
+            retry_requested = retry_blocked or bool(record.get("retry_requested"))
+            if retry_requested and item.fingerprint not in reset_once and task is not None and (
                 task.status in {TaskStatus.BLOCKED, TaskStatus.FAILED}
                 or task.attempts >= task.max_attempts
             ):
@@ -113,9 +137,11 @@ class ContinuousEngineeringRunner:
                 item.fingerprint,
                 state="RUNNING",
                 task_id=task.id,
+                retry_requested=False,
             )
             before_attempts = task.attempts
             try:
+                lease.assert_owned()
                 completed = self.runtime.run(
                     task,
                     validators=list(payload.get("validators") or ["git diff --check"]),
@@ -125,11 +151,23 @@ class ContinuousEngineeringRunner:
                     validation_mode=str(payload.get("validation_mode", "strict")),
                     agent_name=str(payload.get("agent", "build")),
                 )
+                lease.assert_owned()
                 consumed = completed.attempts > before_attempts
                 if consumed:
-                    self.ledger.update(
+                    self.ledger.record_attempt(
                         item.fingerprint,
                         attempts=int(record.get("attempts", 0)) + 1,
+                        status=completed.status.value,
+                        error=completed.last_error,
+                        task_id=completed.id,
+                        model=str(
+                            completed.metadata.get("model_working")
+                            or completed.metadata.get("model_escalated_to")
+                            or completed.metadata.get("model_selected_for_run")
+                            or completed.metadata.get("model_current")
+                            or ""
+                        ),
+                        evidence_path=str(completed.metadata.get("evidence_path") or ""),
                     )
                 self._record_parent_state(completed)
                 self.progress(f"[continuous] task={completed.id} status={completed.status.value}")
@@ -139,15 +177,18 @@ class ContinuousEngineeringRunner:
                     error=completed.last_error,
                     consume_attempt=consumed,
                 )
+            except RunnerLeaseError:
+                raise
             except ProviderTransportError as exc:
                 latest = self.store.get_task(task.id) or task
                 self.progress(
-                    f"[continuous] INFRA_RETRY task={task.id} error={str(exc)[:500]}"
+                    f"[continuous] INFRA_RETRY task={task.id} "
+                    f"error_class={safe_error_class(exc)}"
                 )
-                self.ledger.update(
+                self.ledger.record_infrastructure_failure(
                     item.fingerprint,
+                    str(exc),
                     state="PENDING",
-                    last_error=str(exc)[:2000],
                 )
                 self._record_parent_state(latest)
                 return ExecutionResult(
@@ -159,9 +200,10 @@ class ContinuousEngineeringRunner:
             except Exception as exc:
                 latest = self.store.get_task(task.id) or task
                 consumed = latest.attempts > before_attempts
-                updates = {"last_error": str(exc)[:2000]}
+                updates: dict[str, Any] = {}
+                if not consumed:
+                    updates["last_error"] = str(exc)[:2000]
                 if consumed:
-                    updates["attempts"] = int(record.get("attempts", 0)) + 1
                     promoted = self.runtime.promote_model(str(exc))
                     if promoted:
                         previous_model = str(
@@ -187,8 +229,27 @@ class ContinuousEngineeringRunner:
                             "task_id": latest.id,
                             "model": promoted,
                         }
-                self.progress(f"[continuous] task={task.id} error={str(exc)[:500]}")
-                self.ledger.update(item.fingerprint, **updates)
+                self.progress(
+                    f"[continuous] task={task.id} error_class={safe_error_class(exc)}"
+                )
+                if consumed:
+                    self.ledger.record_attempt(
+                        item.fingerprint,
+                        attempts=int(record.get("attempts", 0)) + 1,
+                        status=latest.status.value,
+                        error=str(exc),
+                        task_id=latest.id,
+                        model=str(
+                            latest.metadata.get("model_working")
+                            or latest.metadata.get("model_escalated_to")
+                            or latest.metadata.get("model_selected_for_run")
+                            or latest.metadata.get("model_current")
+                            or ""
+                        ),
+                        evidence_path=str(latest.metadata.get("evidence_path") or ""),
+                    )
+                if updates:
+                    self.ledger.update(item.fingerprint, **updates)
                 self._record_parent_state(latest)
                 return ExecutionResult(False, latest, str(exc), consume_attempt=consumed)
 
@@ -200,6 +261,7 @@ class ContinuousEngineeringRunner:
                 self.runtime.worktrees.reset(result.task.worktree_path)
 
         def checkpoint(value: dict[str, Any]) -> None:
+            lease.assert_owned()
             state = value["state"]
             if state == "SUCCEEDED":
                 durable_state = "SUCCEEDED"

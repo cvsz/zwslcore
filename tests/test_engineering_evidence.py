@@ -1,17 +1,40 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from services.engineering.evidence import EvidenceExporter
+from services.engineering.evidence import EvidenceExporter, EvidenceSchemaError
 from services.engineering.models import Checkpoint, EngineeringTask, TaskStatus
 from services.engineering.store import SQLiteEngineeringStore
 
 
 class EvidenceExporterTests(unittest.TestCase):
+    def test_unknown_schema_fails_verification_and_read(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            evidence_root = root / "evidence"
+            exporter = EvidenceExporter(SQLiteEngineeringStore(root / "state.db"), evidence_root)
+
+            for index, schema in enumerate((EvidenceExporter.SCHEMA + 1, True, 1.0)):
+                task_id = f"task-{index}"
+                task_dir = evidence_root / task_id
+                task_dir.mkdir(parents=True)
+                content = json.dumps({"schema": schema}).encode()
+                (task_dir / "evidence.json").write_bytes(content)
+                digest = hashlib.sha256(content).hexdigest()
+                (task_dir / "evidence.sha256").write_text(
+                    f"{digest}  evidence.json\n",
+                    encoding="utf-8",
+                )
+
+                self.assertFalse(exporter.verify(task_id))
+                with self.assertRaisesRegex(EvidenceSchemaError, "unsupported"):
+                    exporter.read(task_id)
+
     def test_bundle_is_secret_minimized_and_verifiable(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

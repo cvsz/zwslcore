@@ -4,7 +4,9 @@ import dataclasses
 import json
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
+from collections.abc import Iterator
 
 from .models import Checkpoint, EngineeringTask, PushPolicy, TaskRisk, TaskStatus
 
@@ -12,21 +14,34 @@ from .models import Checkpoint, EngineeringTask, PushPolicy, TaskRisk, TaskStatu
 class SQLiteEngineeringStore:
     """Crash-consistent local task/checkpoint store using SQLite WAL."""
 
+    SCHEMA_VERSION = 1
+
     def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path or Path.home() / ".zwslcore" / "state" / "engineering.db")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.path, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=30000")
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _init_schema(self) -> None:
         with self._connect() as conn:
+            version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+            if version > self.SCHEMA_VERSION:
+                raise RuntimeError(
+                    f"engineering database schema {version} is newer than supported "
+                    f"schema {self.SCHEMA_VERSION}"
+                )
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS tasks (
@@ -57,8 +72,124 @@ class SQLiteEngineeringStore:
                     ON tasks(status, updated_at);
                 CREATE INDEX IF NOT EXISTS idx_checkpoints_task_created
                     ON checkpoints(task_id, created_at);
+                CREATE TABLE IF NOT EXISTS runner_leases (
+                    lease_name TEXT PRIMARY KEY,
+                    owner_id TEXT NOT NULL,
+                    fencing_token INTEGER NOT NULL,
+                    acquired_at REAL NOT NULL,
+                    heartbeat_at REAL NOT NULL,
+                    expires_at REAL NOT NULL,
+                    status TEXT NOT NULL,
+                    previous_owner_id TEXT NOT NULL DEFAULT '',
+                    reclaimed_at REAL,
+                    released_at REAL
+                );
                 """
             )
+            if version < self.SCHEMA_VERSION:
+                conn.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
+
+    def claim_runner_lease(
+        self,
+        lease_name: str,
+        owner_id: str,
+        *,
+        now: float,
+        expires_at: float,
+    ) -> dict[str, object]:
+        """Persist a new lease generation after the caller owns its process lock."""
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            previous = conn.execute(
+                "SELECT * FROM runner_leases WHERE lease_name = ?",
+                (lease_name,),
+            ).fetchone()
+            fencing_token = int(previous["fencing_token"]) + 1 if previous else 1
+            previous_owner = (
+                str(previous["owner_id"])
+                if previous and previous["status"] == "HELD"
+                else ""
+            )
+            reclaimed_at = now if previous_owner else None
+            conn.execute(
+                """
+                INSERT INTO runner_leases (
+                    lease_name, owner_id, fencing_token, acquired_at, heartbeat_at,
+                    expires_at, status, previous_owner_id, reclaimed_at, released_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'HELD', ?, ?, NULL)
+                ON CONFLICT(lease_name) DO UPDATE SET
+                    owner_id=excluded.owner_id,
+                    fencing_token=excluded.fencing_token,
+                    acquired_at=excluded.acquired_at,
+                    heartbeat_at=excluded.heartbeat_at,
+                    expires_at=excluded.expires_at,
+                    status='HELD',
+                    previous_owner_id=excluded.previous_owner_id,
+                    reclaimed_at=excluded.reclaimed_at,
+                    released_at=NULL
+                """,
+                (
+                    lease_name,
+                    owner_id,
+                    fencing_token,
+                    now,
+                    now,
+                    expires_at,
+                    previous_owner,
+                    reclaimed_at,
+                ),
+            )
+            conn.commit()
+        return self.get_runner_lease(lease_name) or {}
+
+    def heartbeat_runner_lease(
+        self,
+        lease_name: str,
+        owner_id: str,
+        fencing_token: int,
+        *,
+        now: float,
+        expires_at: float,
+    ) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE runner_leases
+                SET heartbeat_at = ?, expires_at = ?
+                WHERE lease_name = ? AND owner_id = ? AND fencing_token = ?
+                    AND status = 'HELD' AND released_at IS NULL
+                """,
+                (now, expires_at, lease_name, owner_id, fencing_token),
+            )
+            return cursor.rowcount == 1
+
+    def release_runner_lease(
+        self,
+        lease_name: str,
+        owner_id: str,
+        fencing_token: int,
+        *,
+        now: float,
+    ) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE runner_leases
+                SET heartbeat_at = ?, expires_at = ?, status = 'RELEASED', released_at = ?
+                WHERE lease_name = ? AND owner_id = ? AND fencing_token = ?
+                    AND status = 'HELD' AND released_at IS NULL
+                """,
+                (now, now, now, lease_name, owner_id, fencing_token),
+            )
+            return cursor.rowcount == 1
+
+    def get_runner_lease(self, lease_name: str) -> dict[str, object] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM runner_leases WHERE lease_name = ?",
+                (lease_name,),
+            ).fetchone()
+        return dict(row) if row else None
 
     def save_task(self, task: EngineeringTask) -> None:
         task.updated_at = time.time()

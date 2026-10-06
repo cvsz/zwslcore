@@ -30,11 +30,18 @@ def _stable_json(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
 
 
-def _redact_text(value: str, limit: int = 1000) -> str:
+def redact_sensitive_text(value: str, limit: int = 1000) -> str:
     text = value[:limit]
     for pattern in _SECRET_PATTERNS:
         text = pattern.sub("[REDACTED]", text)
     return text
+
+
+_redact_text = redact_sensitive_text
+
+
+class EvidenceSchemaError(ValueError):
+    """Raised when an evidence bundle uses an unsupported schema version."""
 
 
 class EvidenceExporter:
@@ -68,7 +75,14 @@ class EvidenceExporter:
         path = self.root / task_id / "evidence.json"
         if not path.exists():
             return None
-        return json.loads(path.read_text(encoding="utf-8"))
+        bundle = json.loads(path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(bundle, dict)
+            or type(bundle.get("schema")) is not int
+            or bundle.get("schema") != self.SCHEMA
+        ):
+            raise EvidenceSchemaError("unsupported engineering evidence schema")
+        return bundle
 
     def verify(self, task_id: str) -> bool:
         target_dir = self.root / task_id
@@ -76,8 +90,18 @@ class EvidenceExporter:
         checksum = target_dir / "evidence.sha256"
         if not path.exists() or not checksum.exists():
             return False
-        expected = checksum.read_text(encoding="utf-8").split()[0]
-        return _sha256_bytes(path.read_bytes()) == expected
+        try:
+            expected = checksum.read_text(encoding="utf-8").split()[0]
+            encoded = path.read_bytes()
+            bundle = json.loads(encoded)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, IndexError):
+            return False
+        return (
+            _sha256_bytes(encoded) == expected
+            and isinstance(bundle, dict)
+            and type(bundle.get("schema")) is int
+            and bundle.get("schema") == self.SCHEMA
+        )
 
     def _bundle(self, task: EngineeringTask) -> dict[str, Any]:
         checkpoints = self.store.list_checkpoints(task.id)
