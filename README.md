@@ -101,12 +101,14 @@ make cloudflare-up
 ```
 
 The command creates the ignored `.env.cloudflare` from its example when
-missing, then starts Provider at `127.0.0.1:18086` and Open WebUI at
+missing (set the real public hostname there; the example ships a placeholder),
+then starts Provider at `127.0.0.1:18086` and Open WebUI at
 `127.0.0.1:18087`. Both remain loopback-only. The profile sets Open WebUI's
-public URL and CORS allowlist to `https://zwsl.zeaz.dev`, enables secure
+public URL and CORS allowlist to that hostname, enables secure
 session cookies, and explicitly keeps signup disabled. Provider Bearer
 authentication stays required, and Ollama/LiteLLM are not published through
-the proxy.
+the proxy. `make doctor` and `make smoke` read the `.env` defaults, so reload
+the profile overlay when probing the Cloudflare ports.
 
 The zworkforce Caddy route sends `/api/v1/models`,
 `/api/v1/chat/completions`, `/api/v1/messages`, and `/api/v1/responses` to
