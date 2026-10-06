@@ -94,6 +94,34 @@ class ModelsDevCatalogTests(unittest.TestCase):
             with self.assertRaisesRegex(ModelsDevError, "stale"):
                 read_cache(path, max_age_seconds=10)
 
+    def test_refresh_fetches_and_persists_a_fresh_cache(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "catalog.json"
+            catalog = normalize_catalog(SAMPLE)
+            source_url = "https://example.com/catalog.json"
+
+            with patch(
+                "services.model_catalog.models_dev.fetch_catalog",
+                return_value=catalog,
+            ) as fetch:
+                value, source = get_catalog(
+                    cache_path=path,
+                    refresh=True,
+                    url=source_url,
+                )
+
+            fetch.assert_called_once_with(url=source_url)
+            self.assertEqual(source, "network")
+            self.assertEqual(value["stats"]["provider_offerings"], 1)
+            envelope = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(envelope["source_url"], source_url)
+            self.assertGreater(envelope["fetched_at"], 0)
+
+            cached, cache_source = get_catalog(cache_path=path, max_age_seconds=60)
+
+        self.assertEqual(cache_source, "cache")
+        self.assertEqual(cached["stats"]["provider_offerings"], 1)
+
     def test_get_catalog_falls_back_to_stale_cache(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "catalog.json"
