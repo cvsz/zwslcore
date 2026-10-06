@@ -85,6 +85,7 @@ make doctor
 make smoke
 make models
 make logs
+make capacity
 make restart
 make down
 make up
@@ -96,6 +97,8 @@ Validate configuration and repository checks:
 make config
 make ci
 ```
+
+`make capacity` reports filesystem pressure, Docker storage totals, service log limits, and byte counts for zwslcore data directories. It is read-only by default. To plan a BuildKit cache trim, run `python3 scripts/capacity.py --prune-build-cache-max-used-bytes 2147483648`; adding `--apply` runs that trim only when a monitored filesystem reaches the warning threshold. The command never targets images, volumes, logs, backups, evidence, models, or worktrees.
 
 ## Local engineering control plane
 
@@ -355,6 +358,16 @@ python3 scripts/models-dev.py recommend --structured-output --min-context 4096
 The combined `catalog.json?type=all` endpoint is cached atomically under `~/.zwslcore/cache/models.dev.catalog.json`. Fresh cache is preferred; network refresh falls back to a stale cache when the service is unavailable. The cache retains canonical model metadata separately from provider offerings, including published capabilities, token limits and provider pricing. No provider API keys are sent to Models.dev.
 
 This catalog is advisory metadata. Local Ollama availability and zwslcore Provider routing remain authoritative for what this machine can actually execute. The recommendation engine is explainable: every result includes its score, eligibility, reasons and blockers. Remote candidates are excluded unless `--include-remote` is requested, and remain ineligible when cloud fallback is disabled.
+
+## Local model identity
+
+Capture local model digests, sizes, quantization, and Ollama modification times with `make models-manifest`. Save the JSON outside Git as a baseline, then detect additions, removals, or identity changes with:
+
+```bash
+python3 scripts/model_manifest.py --compare ~/.zwslcore/evidence/models-baseline.json --fail-on-drift
+```
+
+The command reads only Ollama's loopback tags API and does not include model prompts or Modelfiles. Ollama's local inventory does not identify the original upstream publisher or download URL; preserve external provenance separately when available.
 
 ## Free model discovery
 

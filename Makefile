@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs models free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config provider-build provider-lock provider-lock-check ci
+.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config provider-build provider-lock provider-lock-check ci
 
 help:
 	@printf '%s\n' \
@@ -9,7 +9,9 @@ help:
 	  'wait-runtime  wait for stable runtime health' \
 	  'doctor        verify runtime health' \
 	  'smoke         verify authenticated model inference' \
+	  'capacity      report disk and Docker storage pressure' \
 	  'models        list local Ollama models' \
+	  'models-manifest capture or compare local model identities' \
 	  'free-models   discover current OpenRouter zero-price text models' \
 	  'models-dev-sync sync provider/model metadata from models.dev' \
 	  'models-dev-stats inspect cached models.dev catalog counts' \
@@ -59,8 +61,14 @@ smoke:
 logs:
 	docker compose --env-file .env logs -f --tail=200
 
+capacity:
+	python3 scripts/capacity.py
+
 models:
 	docker exec zwslcore-ollama ollama list
+
+models-manifest:
+	python3 scripts/model_manifest.py
 
 free-models:
 	python3 scripts/sync-free-models.py
