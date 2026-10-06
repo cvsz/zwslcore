@@ -41,6 +41,10 @@ def _state_color(state: str) -> str:
         return GREEN
     if value in {"FAILED", "BLOCKED", "BLOCKED_ATTEMPTS"}:
         return RED
+    if value == "DEAD_LETTER":
+        return RED
+    if value == "QUARANTINED":
+        return MAGENTA
     if value in {"RUNNING", "PLANNING", "EDITING", "VALIDATING", "REVIEWING"}:
         return CYAN
     if value in {"PENDING", "CREATED", "RETRY_INFRA"}:

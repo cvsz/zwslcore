@@ -56,11 +56,11 @@ async def lifespan(app: FastAPI):
     )
     app.state.settings = settings
     app.state.client = client
-    app.state.router = ProviderRouter(settings, client)
+    app.state.observability = Observability(otlp_enabled=settings.otlp_metrics_enabled)
+    app.state.router = ProviderRouter(settings, client, app.state.observability)
     app.state.rate_limiter = rate_limiter(settings)
     app.state.concurrency_limiter = RequestConcurrencyLimiter(settings.max_concurrent_requests)
     app.state.trusted_proxy_policy = TrustedProxyPolicy.from_cidrs(settings.trusted_proxy_cidrs)
-    app.state.observability = Observability(otlp_enabled=settings.otlp_metrics_enabled)
     yield
     app.state.observability.shutdown()
     await app.state.rate_limiter.close()

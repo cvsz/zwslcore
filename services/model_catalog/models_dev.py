@@ -148,7 +148,12 @@ def read_cache(
     except (OSError, json.JSONDecodeError) as exc:
         raise ModelsDevError(f"unable to read models.dev cache: {exc}") from exc
 
-    if envelope.get("schema") != 1 or envelope.get("source") != "models.dev":
+    if (
+        not isinstance(envelope, dict)
+        or type(envelope.get("schema")) is not int
+        or envelope.get("schema") != 1
+        or envelope.get("source") != "models.dev"
+    ):
         raise ModelsDevError("invalid models.dev cache envelope")
     fetched_at = envelope.get("fetched_at")
     if not isinstance(fetched_at, (int, float)):
