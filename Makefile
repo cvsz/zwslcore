@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config provider-build provider-lock provider-lock-check ci
+.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config provider-build provider-lock provider-lock-check cloudflare-up ci
 
 help:
 	@printf '%s\n' \
@@ -24,9 +24,10 @@ help:
 	  'engineer-tui   open read-only engineering terminal dashboard' \
 	  'engineer-test  run engineering agent/selector/TUI/control-plane tests' \
 	  'config        validate Compose configuration' \
-	  'provider-build build the in-repo provider gateway' \
-	  'provider-lock update the hashed Provider dependency lock' \
-	  'provider-lock-check verify Provider dependency lock drift' \
+  'provider-build build the in-repo provider gateway' \
+  'provider-lock update the hashed Provider dependency lock' \
+  'provider-lock-check verify Provider dependency lock drift' \
+  'cloudflare-up start zwslcore on the Cloudflare loopback ports' \
 	  'ci            repository + stack static validation'
 
 validate-template:
@@ -111,6 +112,9 @@ provider-lock:
 
 provider-lock-check:
 	bash scripts/provider-lock.sh check
+
+cloudflare-up:
+	bash scripts/cloudflare-up.sh
 
 ci: validate-template
 	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py

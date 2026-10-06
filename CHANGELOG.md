@@ -8,6 +8,7 @@ The format follows Keep a Changelog conventions; generated projects should adopt
 
 ### Added
 
+- Optional loopback-only Cloudflare host profile for the Provider and Open WebUI.
 - Safe project identity bootstrap with explicit dry-run/apply and idempotence tests.
 - Generated README/ABOUT templates and startup/profile documentation.
 - CI bootstrap test coverage and fail-closed Makefile placeholders.

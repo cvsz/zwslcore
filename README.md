@@ -91,6 +91,37 @@ make down
 make up
 ```
 
+### Cloudflare host profile
+
+When zworkforce's Cloudflare Tunnel and Caddy proxy share this host, use the
+optional profile to keep zwslcore clear of zworkforce's existing host ports:
+
+```bash
+make cloudflare-up
+```
+
+The command creates the ignored `.env.cloudflare` from its example when
+missing (set the real public hostname there; the example ships a placeholder),
+then starts Provider at `127.0.0.1:18086` and Open WebUI at
+`127.0.0.1:18087`. Both remain loopback-only. The profile sets Open WebUI's
+public URL and CORS allowlist to that hostname, enables secure
+session cookies, and explicitly keeps signup disabled. Provider Bearer
+authentication stays required, and Ollama/LiteLLM are not published through
+the proxy. `make doctor` and `make smoke` read the `.env` defaults, so reload
+the profile overlay when probing the Cloudflare ports.
+
+The zworkforce Caddy route sends `/api/v1/models`,
+`/api/v1/chat/completions`, `/api/v1/messages`, and `/api/v1/responses` to
+Provider after removing the `/api` prefix. `/data/` maps to Open WebUI's
+`/api/v1/files/` API and `/auth/` maps to `/api/v1/auths/`; other paths,
+including `/oauth/`, go to Open WebUI's login and OAuth flows. Protected UI
+and file operations remain behind Open WebUI authentication.
+
+The normal `make up` command continues to use local defaults (`8080` and
+`3000`). Recreating these containers with `make up` returns to those ports;
+run `make cloudflare-up` again to restore the Cloudflare profile. Existing
+Docker volumes are preserved when the containers are recreated.
+
 Validate configuration and repository checks:
 
 ```bash

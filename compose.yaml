@@ -102,6 +102,8 @@ services:
         condition: service_healthy
     environment:
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
+      WEBUI_URL: ${OPENWEBUI_WEB_URL:-http://localhost:3000}
+      WEBUI_SESSION_COOKIE_SECURE: ${OPENWEBUI_SESSION_COOKIE_SECURE:-false}
       ENABLE_SIGNUP: ${OPENWEBUI_ENABLE_SIGNUP:-false}
       OPENAI_API_BASE_URL: http://provider:8080/v1
       OPENAI_API_KEY: ${PROVIDER_CLIENT_KEY}
