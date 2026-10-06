@@ -281,9 +281,12 @@ def create_backup(
     repository_root: str | Path = ROOT,
     output: str | Path | None = None,
     include_webui_volume: bool = False,
+    recreate_webui_data: bool = False,
     gpg_recipient: str = "",
     webui_container: str = "zwslcore-open-webui",
 ) -> Path:
+    if include_webui_volume and recreate_webui_data:
+        raise BackupError("choose either encrypted Open WebUI capture or the recreate policy")
     started = time.monotonic()
     source = Path(source_root or Path.home() / ".zwslcore").expanduser().resolve()
     repository = Path(repository_root).expanduser().resolve()
@@ -376,8 +379,15 @@ def create_backup(
             }
             excluded = [item for item in excluded if not item.startswith("Ollama")]
             excluded.append("Open WebUI data volume is included as GPG-encrypted user data")
+            webui_policy = "encrypted_backup"
+        elif recreate_webui_data:
+            excluded.append("Open WebUI persistent volume (user-authorized recreate policy; not backed up)")
+            webui_policy = "recreate"
         else:
-            excluded.append("Open WebUI persistent volume (sensitive user data; requires explicit encrypted capture)")
+            excluded.append(
+                "Open WebUI persistent volume (sensitive user data; requires explicit encrypted capture or recreate policy)"
+            )
+            webui_policy = "unspecified"
 
         version = ""
         pyproject = repository / "services/provider/pyproject.toml"
@@ -408,6 +418,7 @@ def create_backup(
                 "local_file_mode": "0600; backup directories are 0700",
                 "encrypt_before_off-host_transfer": True,
                 "secrets_included": False,
+                "open_webui_user_data": webui_policy,
                 "rpo_target_hours": RPO_TARGET_HOURS,
                 "rto_target_minutes": RTO_TARGET_MINUTES,
             },
@@ -430,7 +441,13 @@ def main() -> int:
     parser.add_argument("--source-root", default=str(Path.home() / ".zwslcore"))
     parser.add_argument("--repository", default=str(ROOT))
     parser.add_argument("--output", help="destination directory; defaults to SOURCE_ROOT/backups")
-    parser.add_argument("--include-webui-volume", action="store_true")
+    webui_policy = parser.add_mutually_exclusive_group()
+    webui_policy.add_argument("--include-webui-volume", action="store_true")
+    webui_policy.add_argument(
+        "--recreate-webui-data",
+        action="store_true",
+        help="record that Open WebUI user data is intentionally recreatable and excluded",
+    )
     parser.add_argument("--gpg-recipient", default="")
     parser.add_argument("--webui-container", default="zwslcore-open-webui")
     args = parser.parse_args()
@@ -440,6 +457,7 @@ def main() -> int:
             repository_root=args.repository,
             output=args.output,
             include_webui_volume=args.include_webui_volume,
+            recreate_webui_data=args.recreate_webui_data,
             gpg_recipient=args.gpg_recipient,
             webui_container=args.webui_container,
         )

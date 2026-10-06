@@ -43,8 +43,15 @@ def _load_manifest(backup: Path) -> dict[str, Any]:
     if hashlib.sha256(encoded).hexdigest() != expected:
         raise RestoreError("backup manifest checksum failed")
     manifest = json.loads(encoded)
+    if not isinstance(manifest, dict):
+        raise RestoreError("backup manifest root must be an object")
     if manifest.get("schema") != BACKUP_SCHEMA or not isinstance(manifest.get("files"), dict):
         raise RestoreError("backup manifest schema is unsupported")
+    if not isinstance(manifest.get("policy", {}), dict):
+        raise RestoreError("backup manifest policy must be an object")
+    excluded = manifest.get("excluded", [])
+    if not isinstance(excluded, list) or any(not isinstance(item, str) for item in excluded):
+        raise RestoreError("backup manifest exclusions must be a string list")
     return manifest
 
 
@@ -172,13 +179,45 @@ def restore_backup(backup: str | Path, target: str | Path | None = None) -> Path
             "rpo": {"target_hours": RPO_TARGET_HOURS, "backup_age_hours": round(rpo_hours, 4), "met": rpo_hours <= RPO_TARGET_HOURS},
             "rto": {"target_minutes": RTO_TARGET_MINUTES, "restore_duration_seconds": elapsed, "met": elapsed <= RTO_TARGET_MINUTES * 60},
         }
+        policy = manifest.get("policy", {})
+        webui_excluded = any(
+            "Open WebUI persistent volume" in item
+            for item in manifest.get("excluded", [])
+        )
+        webui_policy = policy.get("open_webui_user_data")
+        if webui_policy is None:
+            webui_policy = "unspecified" if webui_excluded else (
+                "encrypted_backup" if manifest.get("docker_user_data") else "unspecified"
+            )
+        if not isinstance(webui_policy, str) or webui_policy not in {
+            "unspecified",
+            "recreate",
+            "encrypted_backup",
+        }:
+            raise RestoreError("backup Open WebUI user-data policy is unsupported")
+        if webui_policy == "recreate" and not webui_excluded:
+            raise RestoreError("recreate policy is inconsistent with the backup exclusions")
+        if webui_policy == "recreate" and manifest.get("docker_user_data") is not None:
+            raise RestoreError("recreate policy cannot also include Open WebUI volume data")
+        if webui_policy == "encrypted_backup":
+            user_data = manifest.get("docker_user_data")
+            if not isinstance(user_data, dict) or not user_data.get("encrypted"):
+                raise RestoreError("encrypted Open WebUI policy is missing its encrypted volume record")
+            user_data_path = user_data.get("path")
+            if not isinstance(user_data_path, str) or user_data_path not in copied:
+                raise RestoreError("encrypted Open WebUI archive is missing from the restored copy")
+        checks["open_webui_user_data"] = {
+            "policy": webui_policy,
+            "excluded_by_policy": webui_policy == "recreate",
+            "complete_for_declared_policy": webui_policy != "unspecified",
+        }
         report = {
             "schema": 1,
             "status": (
                 "FAIL"
                 if not checks["file_checksums"]["passed"] or not checks["rpo"]["met"] or not checks["rto"]["met"]
                 else "PARTIAL"
-                if any("Open WebUI persistent volume" in item for item in manifest.get("excluded", []))
+                if webui_policy == "unspecified" and webui_excluded
                 else "PASS"
             ),
             "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),

@@ -13,13 +13,21 @@ scripts/restore.sh ~/.zwslcore/backups/BACKUP_DIRECTORY
 
 Backups are restricted application data. The bundle directory is mode `0700` and files are mode `0600`; keep it on access-controlled local storage and encrypt it before any off-host transfer. `.env`, provider keys, GPG private keys, and other runtime credentials are excluded and must be recovered separately through the operator's secret process. `ollama-data` is treated as reproducible model cache and is excluded.
 
-Open WebUI's named volume may contain account, conversation, uploaded-file, and credential data. It is excluded unless explicitly requested. To include it, configure a GPG recipient key and run:
+Open WebUI's named volume may contain account, conversation, uploaded-file, and credential data. Choose an explicit policy for each backup. To include it, configure a GPG recipient key and run:
 
 ```bash
 scripts/backup.sh --include-webui-volume --gpg-recipient FINGERPRINT
 ```
 
 That operation briefly stops a running Open WebUI container for a consistent volume capture, streams the volume through a restricted helper container, encrypts the archive directly to GPG output, and restarts the container. The private decryption key is never included. The isolated restore preserves the encrypted volume archive; restoring it into a Docker volume is a separate operator action and must use an isolated volume first.
+
+If Open WebUI accounts, conversations, uploads, and credentials can be recreated, explicitly record that policy while excluding the volume:
+
+```bash
+scripts/backup.sh --recreate-webui-data
+```
+
+The backup manifest records `open_webui_user_data: recreate`. The isolated restore reports `PASS` only when all included-file, state, RPO, and RTO checks pass and the omission matches this declared policy. Without either encrypted capture or the recreate flag, the restore remains `PARTIAL`.
 
 Run deterministic loopback fault injection without changing Docker state:
 
