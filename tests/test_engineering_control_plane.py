@@ -516,3 +516,39 @@ class ContinuousRetryResetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProviderPreflightTests(unittest.TestCase):
+    def test_preflight_failure_does_not_consume_attempt_or_create_worktree(self):
+        class FailingProvider:
+            model = "zeaz-local"
+
+            def preflight(self):
+                raise RuntimeError("provider HTTP 502 for /health/ready: upstream unavailable")
+
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.com"], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test"], check=True)
+            (repo / "README.md").write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+            subprocess.run(["git", "-C", str(repo), "commit", "-m", "base"], check=True, capture_output=True)
+
+            store = SQLiteEngineeringStore(Path(td) / "state.db")
+            manager = WorktreeManager(Path(td) / "worktrees")
+            task = EngineeringTask(title="preflight", repository=str(repo))
+            runtime = EngineeringRuntime(
+                store,
+                FailingProvider(),
+                worktrees=manager,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "provider HTTP 502"):
+                runtime.run(task)
+
+            loaded = store.get_task(task.id)
+            self.assertEqual(loaded.attempts, 0)
+            self.assertEqual(loaded.worktree_path, "")
+            self.assertEqual(list(manager.base_dir.glob("*")), [])
