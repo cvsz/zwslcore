@@ -230,6 +230,12 @@ def parser() -> argparse.ArgumentParser:
     tui.add_argument("--no-color", action="store_true")
     tui.add_argument("--limit", type=int, default=12)
 
+    tui = sub.add_parser("tui")
+    tui.add_argument("--interval", type=float, default=2.0)
+    tui.add_argument("--once", action="store_true")
+    tui.add_argument("--no-color", action="store_true")
+    tui.add_argument("--limit", type=int, default=12)
+
     r = sub.add_parser("run")
     r.add_argument("task_id")
     r.add_argument("--validate", action="append", default=[])
