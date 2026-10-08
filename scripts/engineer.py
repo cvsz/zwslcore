@@ -1048,7 +1048,7 @@ def _run_command() -> int:
         store.save_task(task)
 
         try:
-            result = build_runtime(store, progress=emit_progress).run(
+            result = build_runtime(store, progress=emit_progress, agent_config=args.agent_config).run(
                 task,
                 validators=validators,
                 allowed_paths=set(allowed) if allowed else None,
