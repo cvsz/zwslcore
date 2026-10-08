@@ -294,6 +294,14 @@ def parser() -> argparse.ArgumentParser:
     resume.add_argument("--validation-mode", choices=["strict", "delta"], default=None)
     resume.add_argument("--agent", default=None)
 
+    resume = sub.add_parser("resume")
+    resume.add_argument("task_id")
+    resume.add_argument("--validate", action="append", default=[])
+    resume.add_argument("--allow-path", action="append", default=[])
+    commit_group = resume.add_mutually_exclusive_group()
+    commit_group.add_argument("--commit", action="store_true")
+    commit_group.add_argument("--no-commit", action="store_true")
+
     wa = sub.add_parser("work-add")
     wa.add_argument("title")
     wa.add_argument("--kind", choices=[kind.value for kind in WorkKind], default="IMPLEMENT_FEATURE")
@@ -999,6 +1007,53 @@ def _run_command() -> int:
                 f"engineering resume failed: {safe_error_summary(exc)}",
                 file=sys.stderr,
             )
+            return 1
+        print(f"{result.id}\t{result.status.value}\t{result.branch_name}\t{result.worktree_path}")
+        return 0
+
+    if args.command == "resume":
+        task = store.get_task(args.task_id)
+        if not task:
+            print("task not found", file=sys.stderr)
+            return 2
+        if task.status == TaskStatus.SUCCEEDED:
+            print("refusing to resume a succeeded task", file=sys.stderr)
+            return 2
+
+        config = dict(task.metadata.get("run_config") or {})
+        validators = args.validate or list(config.get("validators") or ["git diff --check"])
+        allowed = args.allow_path or list(config.get("allowed_paths") or [])
+        if args.commit:
+            commit = True
+        elif args.no_commit:
+            commit = False
+        else:
+            commit = bool(config.get("commit", False))
+
+        history = list(task.metadata.get("resume_history") or [])
+        history.append({
+            "at": time.time(),
+            "previous_status": task.status.value,
+            "previous_attempts": task.attempts,
+            "phase_cursor": task.metadata.get("phase_cursor", ""),
+            "baseline_head": task.metadata.get("baseline_head", ""),
+        })
+        task.metadata["resume_history"] = history[-20:]
+        task.attempts = 0
+        task.status = TaskStatus.CREATED
+        task.last_error = ""
+        store.save_task(task)
+
+        try:
+            result = build_runtime(store, progress=emit_progress).run(
+                task,
+                validators=validators,
+                allowed_paths=set(allowed) if allowed else None,
+                commit=commit,
+                resume=True,
+            )
+        except Exception as exc:
+            print(f"engineering resume failed: {exc}", file=sys.stderr)
             return 1
         print(f"{result.id}\t{result.status.value}\t{result.branch_name}\t{result.worktree_path}")
         return 0
