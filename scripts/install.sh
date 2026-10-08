@@ -225,6 +225,15 @@ if ! bash "$ROOT/scripts/wait-runtime.sh"; then
   die "AI stack did not become stable within the readiness timeout."
 fi
 
+log "Waiting for the full AI stack to become healthy"
+deadline=$((SECONDS + 300))
+while (( SECONDS < deadline )); do
+  if bash "$ROOT/scripts/doctor.sh" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 5
+done
+
 log "Running health checks"
 if ! bash "$ROOT/scripts/doctor.sh"; then
   printf '\n[zwslcore] Stack health check failed. Current container state:\n' >&2
