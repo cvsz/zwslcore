@@ -373,6 +373,9 @@ def parser() -> argparse.ArgumentParser:
     ws = sub.add_parser("work-status")
     ws.add_argument("fingerprint", nargs="?")
 
+    ws = sub.add_parser("work-status")
+    ws.add_argument("fingerprint", nargs="?")
+
     cont = sub.add_parser("continuous")
     cont.add_argument("--max-iterations", type=int, default=12)
     cont.add_argument("--retry-blocked", action="store_true")
