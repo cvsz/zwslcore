@@ -79,6 +79,46 @@ def emit_progress(message: str) -> None:
     print(message, flush=True)
 
 
+def _engineering_alias(env: dict[str, str]) -> tuple[str, dict[str, object]]:
+    configured = env.get("ZEAZ_ENGINEERING_MODEL", "auto").strip() or "auto"
+    if configured != "auto":
+        return configured, {"mode": "explicit", "alias": configured}
+
+    profile = detect_hardware()
+    runtime = profile.recommended_runtime()
+    recommended = profile.recommended_models()
+    alias_models = {
+        "zeaz-fast": env.get("ZEAZ_FAST_MODEL", "qwen2.5-coder:3b"),
+        "zeaz-coder": env.get("ZEAZ_CODER_MODEL", "qwen2.5-coder:7b"),
+        "zeaz-reasoning": env.get("ZEAZ_REASONING_MODEL", "qwen3:8b"),
+        "zeaz-local": env.get("ZEAZ_LOCAL_MODEL", recommended["default"]),
+    }
+    candidates = configured_local_candidates(
+        alias_models,
+        context_length=int(runtime["context_length"]),
+    )
+    selected = select_model(
+        candidates,
+        SelectionRequirements(
+            structured_output=True,
+            tool_call=True,
+            min_context=min(4096, int(runtime["context_length"])),
+            cost_policy="ZERO_COST_ONLY",
+        ),
+        hardware_models=[recommended["engineering"]],
+    )
+    if selected is None or not selected.execution_alias:
+        raise RuntimeError("no eligible local engineering model alias found")
+    return selected.execution_alias, {
+        "mode": "auto",
+        "alias": selected.execution_alias,
+        "model": selected.id,
+        "score": selected.score,
+        "reasons": list(selected.reasons),
+        "hardware_profile": profile.profile,
+    }
+
+
 def build_runtime(
     store: SQLiteEngineeringStore,
     *,
