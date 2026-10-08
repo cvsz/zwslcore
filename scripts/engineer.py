@@ -303,6 +303,19 @@ def parser() -> argparse.ArgumentParser:
     enqueue.add_argument("--validation-mode", choices=["strict", "delta"], default=None)
     enqueue.add_argument("--agent", default=None)
 
+    reconcile = sub.add_parser("reconcile")
+    reconcile.add_argument("--apply", action="store_true")
+
+    enqueue = sub.add_parser("enqueue-task")
+    enqueue.add_argument("task_id")
+    enqueue.add_argument("--kind", choices=[kind.value for kind in WorkKind], default="REPAIR")
+    enqueue.add_argument("--priority", type=int, default=50)
+    enqueue.add_argument("--max-attempts", type=int, default=None)
+    enqueue.add_argument("--validate", action="append", default=[])
+    enqueue.add_argument("--allow-path", action="append", default=[])
+    enqueue.add_argument("--commit", action="store_true")
+    enqueue.add_argument("--validation-mode", choices=["strict", "delta"], default=None)
+
     ws = sub.add_parser("work-status")
     ws.add_argument("fingerprint", nargs="?")
 
