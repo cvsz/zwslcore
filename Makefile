@@ -54,7 +54,11 @@ wait-runtime:
 	bash scripts/wait-runtime.sh
 
 doctor:
-	bash scripts/doctor.sh
+	@if [[ "$(uname -s)" == "Linux" ]]; then \
+	  bash scripts/doctor.sh; \
+	else \
+	  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/doctor-wsl.ps1; \
+	fi
 
 smoke:
 	bash scripts/smoke.sh
