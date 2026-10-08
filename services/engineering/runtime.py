@@ -1002,6 +1002,20 @@ class EngineeringRuntime:
         self.store.save_task(task)
         self.progress(f"[engineering] EVIDENCE_WRITTEN sha256={digest[:16]} path={path}")
 
+    def _export_evidence(self, task: EngineeringTask) -> None:
+        try:
+            path, digest = self.evidence.export(task)
+        except Exception as exc:
+            task.metadata["evidence_error"] = str(exc)[:500]
+            self.store.save_task(task)
+            self.progress(f"[engineering] EVIDENCE_WRITE_FAILED error={str(exc)[:300]}")
+            return
+        task.metadata["evidence_path"] = str(path)
+        task.metadata["evidence_sha256"] = digest
+        task.metadata.pop("evidence_error", None)
+        self.store.save_task(task)
+        self.progress(f"[engineering] EVIDENCE_WRITTEN sha256={digest[:16]} path={path}")
+
     @staticmethod
     def _git(root: Path, args: list[str], *, capture: bool = False) -> str:
         proc = subprocess.run(
