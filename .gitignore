@@ -5,6 +5,8 @@
 !.env.cloudflare.example
 *.pem
 *.key
+# Local recording configs (binaries may embed credentials)
+*.vmix
 
 # Dependencies
 node_modules/
