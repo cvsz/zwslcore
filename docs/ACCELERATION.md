@@ -53,7 +53,7 @@ The installer manages:
     ZEAZ_OLLAMA_CONTEXT_LENGTH=4096
     ZEAZ_OLLAMA_FLASH_ATTENTION=false
 
-Ollama receives the context and Flash Attention values through Compose.
+Ollama receives the context, Flash Attention, and model keep-alive values through Compose. `ZEAZ_OLLAMA_KEEP_ALIVE` defaults to `30m` to reduce repeated cold loads; lower it in `.env` when memory is more constrained.
 
 ## vLLM
 

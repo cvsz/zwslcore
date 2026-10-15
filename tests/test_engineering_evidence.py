@@ -43,6 +43,7 @@ class EvidenceExporterTests(unittest.TestCase):
             subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True)
             subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.com"], check=True)
             subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test"], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "commit.gpgsign", "false"], check=True)
             (repo / "app.py").write_text("value = 1\n", encoding="utf-8")
             subprocess.run(["git", "-C", str(repo), "add", "app.py"], check=True)
             subprocess.run(["git", "-C", str(repo), "commit", "-m", "base"], check=True, capture_output=True)

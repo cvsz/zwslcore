@@ -35,6 +35,21 @@ This installer provisions a Windows host from PowerShell through a complete zwsl
 
 Docker is installed from Docker's official Ubuntu APT repository.
 
+### Host PostgreSQL prerequisite
+
+LiteLLM's admin dashboard requires a host PostgreSQL database named `litellm`.
+It is not installed by the bootstrap scripts; set it up on the WSL host first:
+
+```bash
+sudo apt install postgresql
+sudo -u postgres psql -c "CREATE ROLE litellm LOGIN PASSWORD 'REPLACE_ME_DATABASE_PASSWORD';"
+sudo -u postgres psql -c "CREATE DATABASE litellm OWNER litellm;"
+```
+
+Use the same password as `LITELLM_DB_PASSWORD` in `.env`. `make install`
+verifies database reachability before starting the stack. See
+[Host PostgreSQL setup](../README.md#host-postgresql-setup).
+
 ## Full install
 
 Open **PowerShell as Administrator** from the zwslcore repository:
@@ -91,7 +106,7 @@ Expected application endpoints:
 ```text
 Open WebUI  http://localhost:3000
 Provider    http://localhost:8080
-LiteLLM     http://localhost:4000
+LiteLLM     http://localhost:4000/ui/
 Ollama      http://localhost:11434
 ```
 

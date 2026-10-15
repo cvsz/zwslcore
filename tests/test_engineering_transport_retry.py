@@ -59,6 +59,10 @@ def make_runtime_repo(root: Path) -> Path:
         ["git", "-C", str(repo), "config", "user.name", "Test"],
         check=True,
     )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "commit.gpgsign", "false"],
+        check=True,
+    )
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
     subprocess.run(
         ["git", "-C", str(repo), "commit", "-m", "base"],

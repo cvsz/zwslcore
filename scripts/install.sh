@@ -30,10 +30,24 @@ path = Path(sys.argv[1])
 lines = path.read_text(encoding="utf-8").splitlines()
 
 managed_defaults = {
-    "OLLAMA_IMAGE": ("ollama/ollama:0.35.1", {"", "ollama/ollama:latest"}),
+    "OLLAMA_IMAGE": (
+        "ollama/ollama:0.40.2@sha256:b86366bb528bbf7f1424435d165028497a5b69bf6ddb4fa5a87102e2b79f44fb",
+        {
+            "",
+            "ollama/ollama:latest",
+            "ollama/ollama:0.35.1",
+            "ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c",
+        },
+    ),
     "LITELLM_IMAGE": (
-        "ghcr.io/berriai/litellm:v1.104.0",
-        {"", "docker.litellm.ai/berriai/litellm:latest", "ghcr.io/berriai/litellm:latest"},
+        "ghcr.io/berriai/litellm:v1.104.2@sha256:3d88bd757134a00e8c00237b85a021ab1f6d54abb9c1df750f411dbe7256a500",
+        {
+            "",
+            "docker.litellm.ai/berriai/litellm:latest",
+            "ghcr.io/berriai/litellm:latest",
+            "ghcr.io/berriai/litellm:v1.104.0",
+            "ghcr.io/berriai/litellm:v1.104.0@sha256:625981c83410a3ea68eb0697590a57ec1d764d634514d54fa5db0591077ee839",
+        },
     ),
     "OPENWEBUI_IMAGE": (
         "ghcr.io/open-webui/open-webui:v0.11.4",
@@ -41,16 +55,14 @@ managed_defaults = {
     ),
 }
 
-values = {}
-for line in lines:
-    if "=" in line and not line.lstrip().startswith("#"):
-        key, value = line.split("=", 1)
-        values[key] = value
-
+database_password = secrets.token_hex(32)
+salt_key = secrets.token_hex(32)
 replacements = {
     "REPLACE_ME_WEBUI_SECRET": secrets.token_hex(32),
     "REPLACE_ME_LITELLM_MASTER_KEY": "sk-" + secrets.token_hex(32),
     "REPLACE_ME_PROVIDER_CLIENT_KEY": "zw-" + secrets.token_hex(32),
+    "REPLACE_ME_DATABASE_PASSWORD": database_password,
+    "REPLACE_ME_LITELLM_SALT_KEY": salt_key,
 }
 text = "\n".join(lines) + "\n"
 for old, new in replacements.items():
@@ -59,11 +71,33 @@ for old, new in replacements.items():
 lines = text.splitlines()
 seen = set()
 out = []
+values = {}
+for line in lines:
+    if "=" in line and not line.lstrip().startswith("#"):
+        key, value = line.split("=", 1)
+        values[key] = value
+if not values.get("LITELLM_DB_PASSWORD"):
+    values["LITELLM_DB_PASSWORD"] = database_password
+if not values.get("LITELLM_SALT_KEY"):
+    values["LITELLM_SALT_KEY"] = salt_key
+database_url = values.get("DATABASE_URL", "")
+if not database_url or "REPLACE_ME" in database_url:
+    database_url = (
+        "postgresql://litellm:"
+        + values["LITELLM_DB_PASSWORD"]
+        + "@host.docker.internal:5432/litellm"
+    )
 for line in lines:
     if "=" not in line or line.lstrip().startswith("#"):
         out.append(line)
         continue
     key, value = line.split("=", 1)
+    if key == "DATABASE_URL":
+        value = database_url
+    elif key == "LITELLM_DB_PASSWORD":
+        value = values["LITELLM_DB_PASSWORD"]
+    elif key == "LITELLM_SALT_KEY":
+        value = values["LITELLM_SALT_KEY"]
     seen.add(key)
     if key in managed_defaults:
         target, old_values = managed_defaults[key]
@@ -78,12 +112,49 @@ if "OPENWEBUI_CORS_ALLOW_ORIGIN" not in seen:
     out.append("OPENWEBUI_CORS_ALLOW_ORIGIN=http://localhost:3000;http://127.0.0.1:3000")
 if "ZEAZ_COST_POLICY" not in seen:
     out.append("ZEAZ_COST_POLICY=ZERO_COST_ONLY")
+if "LITELLM_PROXY_ADMIN_NAME" not in seen:
+    out.append("LITELLM_PROXY_ADMIN_NAME=zeaz")
+if "DATABASE_URL" not in seen:
+    out.append(f"DATABASE_URL={database_url}")
+if "LITELLM_DB_PASSWORD" not in seen:
+    out.append(f"LITELLM_DB_PASSWORD={values['LITELLM_DB_PASSWORD']}")
+if "LITELLM_SALT_KEY" not in seen:
+    out.append(f"LITELLM_SALT_KEY={values['LITELLM_SALT_KEY']}")
 
 path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
 PY
 
-if grep -Eq 'REPLACE_ME_(WEBUI_SECRET|LITELLM_MASTER_KEY|PROVIDER_CLIENT_KEY)' "$ENV_FILE"; then
+if grep -Eq 'REPLACE_ME_(WEBUI_SECRET|LITELLM_MASTER_KEY|PROVIDER_CLIENT_KEY|DATABASE_PASSWORD|LITELLM_SALT_KEY)' "$ENV_FILE"; then
   die "Secret placeholders remain in .env."
+fi
+
+log "Checking host PostgreSQL reachability for LiteLLM"
+if ! python3 - "$ENV_FILE" <<'PY'
+from pathlib import Path
+import socket
+import sys
+from urllib.parse import urlsplit
+
+values = {}
+for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    line = line.strip()
+    if line and not line.startswith("#") and "=" in line:
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+url = urlsplit(values.get("DATABASE_URL", ""))
+host = url.hostname or ""
+if host == "host.docker.internal":
+    host = "127.0.0.1"
+port = url.port or 5432
+try:
+    socket.create_connection((host, port), timeout=3).close()
+except OSError as exc:
+    print(f"PostgreSQL unreachable at {host}:{port}: {exc}")
+    raise SystemExit(1)
+print(f"PostgreSQL reachable at {host}:{port}")
+PY
+then
+  die "Host PostgreSQL is unreachable. Install it and create the litellm role/database first; see README Host PostgreSQL setup."
 fi
 
 log "Validating Compose configuration"
@@ -199,7 +270,8 @@ path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
 PY
 chmod 600 "$ENV_FILE"
 
-mapfile -t SELECTED < <(printf '%s\n' "$FAST_MODEL" "$CODER_MODEL" "$REASONING_MODEL" | awk '!seen[$0]++')
+EMBED_MODEL="nomic-embed-text"
+mapfile -t SELECTED < <(printf '%s\n' "$FAST_MODEL" "$CODER_MODEL" "$REASONING_MODEL" "$EMBED_MODEL" | awk '!seen[$0]++')
 for model in "${SELECTED[@]}"; do
   if ! docker exec zwslcore-ollama ollama list | awk 'NR>1 {print $1}' | grep -qx "$model"; then
     log "Pulling $model"
@@ -224,6 +296,9 @@ if ! bash "$ROOT/scripts/wait-runtime.sh"; then
   docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" logs --tail=120 >&2 || true
   die "AI stack did not become stable within the readiness timeout."
 fi
+
+log "Ensuring a private password-based LiteLLM admin account exists"
+python3 "$ROOT/scripts/bootstrap-litellm-admin.py" "$ENV_FILE"
 
 log "Running health checks"
 if ! bash "$ROOT/scripts/doctor.sh"; then

@@ -72,3 +72,15 @@ models:
     fallbacks:
       - provider: ollama
         model: ${ZEAZ_LOCAL_MODEL:-qwen3:8b}
+
+  zeaz-cloud:
+    provider: openrouter
+    model: ${OPENROUTER_FREE_MODEL:-openrouter/free}
+
+  zeaz-cloud-fast:
+    provider: openrouter
+    model: ${OPENROUTER_FREE_FAST:-liquid/lfm-2.5-2.6b:free}
+
+  zeaz-cloud-code:
+    provider: openrouter
+    model: ${OPENROUTER_FREE_CODE:-cohere/north-mini-code:free}
