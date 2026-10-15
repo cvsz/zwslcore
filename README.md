@@ -48,7 +48,7 @@ Prerequisites:
 - WSL2 Ubuntu 26.04 or compatible Linux
 - Docker Engine
 - Docker Compose plugin
-- PostgreSQL on the host (LiteLLM's admin dashboard uses it)
+- PostgreSQL on the host (LiteLLM's admin dashboard uses it; see Host PostgreSQL setup)
 - Python 3
 - curl
 
@@ -84,15 +84,19 @@ Ollama      http://localhost:11434
 
 ### Coding clients
 
-Codex CLI can use the local Provider through the `zwslcore` profile. The
-launcher reads only `PROVIDER_CLIENT_KEY` from the private `.env.production`
-file, then starts Codex with that profile:
+Codex CLI can use the local Provider through `scripts/zwslcore-codex.sh`.
+The launcher reads only `PROVIDER_CLIENT_KEY` (and `PROVIDER_PORT`) from the
+private `.env.production` file, verifies the local Provider is ready, then
+starts Codex with your own arguments passed through untouched:
 
 ```bash
-zwslcore-codex
+cp .env .env.production  # once; then set production values inside
+bash scripts/zwslcore-codex.sh
 ```
 
-The default Codex profile remains unchanged. See [LiteLLM cookbook client
+Model and profile selection follows your own Codex configuration; the
+launcher only supplies Provider credentials and never changes the default
+Codex profile. See [LiteLLM cookbook client
 setup](docs/LITELLM-CLIENTS.md) for Claude Code, Gemini CLI, Cursor, and
 GitHub Copilot compatibility and setup notes.
 
@@ -110,6 +114,24 @@ restarts and upgrades. The PostgreSQL role/database must exist before starting
 LiteLLM, and the server must accept connections from the zwslcore Compose
 bridge only. Back up the PostgreSQL database along with the local application
 data.
+
+### Host PostgreSQL setup
+
+Install PostgreSQL on the WSL host and create the `litellm` role/database
+before running `make install`. The installer fails fast when the database is
+unreachable.
+
+```bash
+sudo apt install postgresql
+sudo -u postgres psql -c "CREATE ROLE litellm LOGIN PASSWORD 'REPLACE_ME_DATABASE_PASSWORD';"
+sudo -u postgres psql -c "CREATE DATABASE litellm OWNER litellm;"
+```
+
+Use the same password as `LITELLM_DB_PASSWORD` in `.env`. Keep the server
+bound to loopback and restart PostgreSQL after changing authentication or
+listen settings. The database is operator-managed: it is outside the
+`scripts/backup.py` bundle, so dump it separately (see
+[Local backup and isolated restore](docs/BACKUP-RESTORE.md)).
 
 ## Operations
 

@@ -7,10 +7,15 @@ connecting them straight to LiteLLM would skip that gateway.
 
 ## Codex CLI
 
-Run `zwslcore-codex`. It starts Codex with the `zwslcore` profile and reads
-only `PROVIDER_CLIENT_KEY` from the private `.env.production` file. The
-profile selects `zeaz-coder` and the Responses API. Codex's default profile is
-left intact. This setup requires Codex CLI in WSL and the local stack running.
+Run `bash scripts/zwslcore-codex.sh`. It reads only `PROVIDER_CLIENT_KEY`
+(and `PROVIDER_PORT`) from the private `.env.production` file, verifies the
+local Provider is ready, exports them as OpenAI-compatible client settings,
+and starts Codex with your arguments passed through untouched. Model and
+profile selection follows your own Codex configuration.
+
+Prerequisites: Codex CLI installed in WSL, the local stack running, and a
+`.env.production` file holding the Provider key (copy `.env` once and set
+production values inside).
 
 ## Other cookbook clients
 

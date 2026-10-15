@@ -44,7 +44,9 @@ services:
     ports:
       - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
     extra_hosts:
-      - "host.docker.internal:172.18.0.1"
+      # Pinned bridge IP verified on this host's zwslcore-ai network.
+      # Override with host-gateway where the daemon supports it.
+      - "host.docker.internal:${HOST_DOCKER_INTERNAL_IP:-172.18.0.1}"
     healthcheck:
       test:
         ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=5)"]

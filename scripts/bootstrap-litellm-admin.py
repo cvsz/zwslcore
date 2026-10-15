@@ -82,6 +82,46 @@ def account_exists(base_url: str, master_key: str, username: str) -> bool:
         return False
 
 
+def load_record(path: Path) -> dict[str, str]:
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(record, dict):
+        return {}
+    username = record.get("username")
+    password = record.get("password")
+    if not username or not password:
+        return {}
+    if not isinstance(username, str) or not isinstance(password, str):
+        return {}
+    return {"username": username, "password": password}
+
+
+def save_record(path: Path, record: dict[str, str]) -> None:
+    temporary_path = path.with_suffix(".tmp")
+    temporary_path.write_text(json.dumps(record), encoding="utf-8")
+    os.chmod(temporary_path, 0o600)
+    temporary_path.replace(path)
+
+
+def finalize_credentials(
+    credentials_path: Path,
+    pending_path: Path,
+    username: str,
+    password: str,
+) -> int:
+    temporary_path = credentials_path.with_suffix(".tmp")
+    temporary_path.write_text(
+        f"username={username}\npassword={password}\n", encoding="utf-8"
+    )
+    os.chmod(temporary_path, 0o600)
+    temporary_path.replace(credentials_path)
+    pending_path.unlink(missing_ok=True)
+    print("LiteLLM local password-based proxy admin is ready.")
+    return 0
+
+
 def main() -> int:
     env_path = Path(sys.argv[1] if len(sys.argv) > 1 else ".env").resolve()
     values = read_env(env_path)
@@ -104,6 +144,7 @@ def main() -> int:
     credentials_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(credentials_dir, 0o700)
     credentials_path = credentials_dir / "litellm-admin-credentials"
+    pending_path = credentials_dir / "litellm-admin-pending.json"
 
     if credentials_path.exists():
         saved: dict[str, str] = {}
@@ -123,9 +164,42 @@ def main() -> int:
             return 0
         raise RuntimeError("Saved LiteLLM admin account is missing. Restore it before retrying; no duplicate admin was created.")
 
+    pending = load_record(pending_path) if pending_path.exists() else {}
+    if pending:
+        if login_succeeds(base_url, pending["username"], pending["password"]):
+            return finalize_credentials(
+                credentials_path, pending_path,
+                pending["username"], pending["password"],
+            )
+        if account_exists(base_url, master_key, pending["username"]):
+            post_json(
+                base_url,
+                "/user/update",
+                master_key,
+                {
+                    "user_id": pending["username"],
+                    "user_email": pending["username"],
+                    "user_role": "proxy_admin",
+                    "password": pending["password"],
+                },
+            )
+            if not login_succeeds(
+                base_url, pending["username"], pending["password"]
+            ):
+                raise RuntimeError(
+                    "LiteLLM did not accept the recovered admin login"
+                )
+            return finalize_credentials(
+                credentials_path, pending_path,
+                pending["username"], pending["password"],
+            )
+        pending_path.unlink(missing_ok=True)
+        pending = {}
+
     username = f"operator-{uuid4().hex[:12]}@localhost.localdomain"
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*()-_=+"
     password = "Aa1!" + "".join(secrets.choice(alphabet) for _ in range(40))
+    save_record(pending_path, {"username": username, "password": password})
     post_json(
         base_url,
         "/user/new",
@@ -150,16 +224,12 @@ def main() -> int:
         },
     )
     if not login_succeeds(base_url, username, password):
-        raise RuntimeError("LiteLLM did not accept the bootstrapped admin login")
+        raise RuntimeError(
+            "LiteLLM did not accept the bootstrapped admin login; "
+            "a pending record was kept, retry to recover it"
+        )
 
-    temporary_path = credentials_path.with_suffix(".tmp")
-    temporary_path.write_text(
-        f"username={username}\npassword={password}\n", encoding="utf-8"
-    )
-    os.chmod(temporary_path, 0o600)
-    temporary_path.replace(credentials_path)
-    print("Created and verified LiteLLM proxy admin; credentials are in the private local credentials file.")
-    return 0
+    return finalize_credentials(credentials_path, pending_path, username, password)
 
 
 if __name__ == "__main__":

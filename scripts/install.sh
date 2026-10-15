@@ -128,6 +128,35 @@ if grep -Eq 'REPLACE_ME_(WEBUI_SECRET|LITELLM_MASTER_KEY|PROVIDER_CLIENT_KEY|DAT
   die "Secret placeholders remain in .env."
 fi
 
+log "Checking host PostgreSQL reachability for LiteLLM"
+if ! python3 - "$ENV_FILE" <<'PY'
+from pathlib import Path
+import socket
+import sys
+from urllib.parse import urlsplit
+
+values = {}
+for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    line = line.strip()
+    if line and not line.startswith("#") and "=" in line:
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+url = urlsplit(values.get("DATABASE_URL", ""))
+host = url.hostname or ""
+if host == "host.docker.internal":
+    host = "127.0.0.1"
+port = url.port or 5432
+try:
+    socket.create_connection((host, port), timeout=3).close()
+except OSError as exc:
+    print(f"PostgreSQL unreachable at {host}:{port}: {exc}")
+    raise SystemExit(1)
+print(f"PostgreSQL reachable at {host}:{port}")
+PY
+then
+  die "Host PostgreSQL is unreachable. Install it and create the litellm role/database first; see README Host PostgreSQL setup."
+fi
+
 log "Validating Compose configuration"
 docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" config --quiet
 
@@ -241,7 +270,8 @@ path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
 PY
 chmod 600 "$ENV_FILE"
 
-mapfile -t SELECTED < <(printf '%s\n' "$FAST_MODEL" "$CODER_MODEL" "$REASONING_MODEL" | awk '!seen[$0]++')
+EMBED_MODEL="nomic-embed-text"
+mapfile -t SELECTED < <(printf '%s\n' "$FAST_MODEL" "$CODER_MODEL" "$REASONING_MODEL" "$EMBED_MODEL" | awk '!seen[$0]++')
 for model in "${SELECTED[@]}"; do
   if ! docker exec zwslcore-ollama ollama list | awk 'NR>1 {print $1}' | grep -qx "$model"; then
     log "Pulling $model"
