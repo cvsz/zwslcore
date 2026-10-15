@@ -35,7 +35,7 @@ function Get-OptionalFeatureState([string]$FeatureName) {
   } catch {
     Write-Warning "Get-WindowsOptionalFeature failed ($($_.Exception.Message)); falling back to dism.exe."
   }
-  $info = & dism.exe /online /Get-FeatureInfo /FeatureName:$FeatureName 2>&1
+  $info = & dism.exe /online /English /Get-FeatureInfo /FeatureName:$FeatureName 2>&1
   foreach ($line in $info) {
     if ([string]$line -match "^\s*State\s*:\s*(.+?)\s*$") { return $Matches[1].Trim() }
   }
@@ -49,7 +49,10 @@ function Enable-OptionalFeature([string]$FeatureName) {
   } catch {
     Write-Warning "Enable-WindowsOptionalFeature failed ($($_.Exception.Message)); falling back to dism.exe."
   }
-  Invoke-Native dism.exe @("/online", "/Enable-Feature", "/FeatureName:$FeatureName", "/All", "/NoRestart")
+  & dism.exe /online /English /Enable-Feature /FeatureName:$FeatureName /All /NoRestart
+  if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) {
+    throw "dism.exe /Enable-Feature /FeatureName:$FeatureName failed with exit code $LASTEXITCODE"
+  }
 }
 
 function ConvertFrom-WslDistroOutput([object[]]$Lines) {
