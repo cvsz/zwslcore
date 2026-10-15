@@ -29,6 +29,29 @@ function Invoke-Native([string]$FilePath, [string[]]$Arguments) {
   }
 }
 
+function Get-OptionalFeatureState([string]$FeatureName) {
+  try {
+    return (Get-WindowsOptionalFeature -Online -FeatureName $FeatureName).State
+  } catch {
+    Write-Warning "Get-WindowsOptionalFeature failed ($($_.Exception.Message)); falling back to dism.exe."
+  }
+  $info = & dism.exe /online /Get-FeatureInfo /FeatureName:$FeatureName 2>&1
+  foreach ($line in $info) {
+    if ([string]$line -match "^\s*State\s*:\s*(.+?)\s*$") { return $Matches[1].Trim() }
+  }
+  throw "Unable to determine state of optional feature $FeatureName."
+}
+
+function Enable-OptionalFeature([string]$FeatureName) {
+  try {
+    Enable-WindowsOptionalFeature -Online -FeatureName $FeatureName -All -NoRestart | Out-Null
+    return
+  } catch {
+    Write-Warning "Enable-WindowsOptionalFeature failed ($($_.Exception.Message)); falling back to dism.exe."
+  }
+  Invoke-Native dism.exe @("/online", "/Enable-Feature", "/FeatureName:$FeatureName", "/All", "/NoRestart")
+}
+
 function ConvertFrom-WslDistroOutput([object[]]$Lines) {
   $names = [System.Collections.Generic.List[string]]::new()
   $ignored = @("NAME", "The", "Install", "Default", "Windows", "Copyright")
@@ -161,9 +184,9 @@ if ([version]$os.Version -lt [version]"10.0.19041") {
 Write-Step "Enabling WSL and Virtual Machine Platform"
 $restartRequired = $false
 foreach ($feature in @("Microsoft-Windows-Subsystem-Linux", "VirtualMachinePlatform")) {
-  $state = (Get-WindowsOptionalFeature -Online -FeatureName $feature).State
+  $state = Get-OptionalFeatureState -FeatureName $feature
   if ($state -ne "Enabled") {
-    Enable-WindowsOptionalFeature -Online -FeatureName $feature -All -NoRestart | Out-Null
+    Enable-OptionalFeature -FeatureName $feature
     $restartRequired = $true
   }
 }
