@@ -1,5 +1,5 @@
 # Replace or extend ownership rules for generated repositories.
-* @cvsz
+* @cvsz @policedbc
 
 /.github/ @cvsz
 /SECURITY.md @cvsz

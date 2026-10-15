@@ -48,3 +48,10 @@ logs/
 # Local runtime data
 .tmp/
 tmp/
+
+# Local recording artifacts (binaries may embed credentials)
+*.vmix
+
+# Operator-local generated skill catalogs (downloaded libraries, not repo content)
+.agents/skills/cvsz-*/
+.agents/skills/.cvsz-skill-catalog.json

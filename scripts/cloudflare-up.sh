@@ -18,7 +18,7 @@ fi
 
 # Keep long-lived port overrides in the ignored profile so every compose
 # invocation that loads the overlay agrees; backfill older copies.
-for entry in PROVIDER_PORT=18086 OPENWEBUI_PORT=18087; do
+for entry in PROVIDER_PORT=18086 OPENWEBUI_PORT=18087 OPENWEBUI_BIND_ADDRESS=127.0.0.1; do
   if ! grep -q "^${entry%%=*}=" "$PROFILE_FILE"; then
     printf '%s\n' "$entry" >> "$PROFILE_FILE"
   fi
@@ -26,6 +26,11 @@ done
 
 # shellcheck disable=SC1090
 set -a; source "$PROFILE_FILE"; set +a
+
+if [[ "${OPENWEBUI_BIND_ADDRESS:-}" != "127.0.0.1" ]]; then
+  printf 'Cloudflare profile requires OPENWEBUI_BIND_ADDRESS=127.0.0.1 in %s.\n' "$PROFILE_FILE" >&2
+  exit 2
+fi
 
 docker compose \
   --project-directory "$ROOT" \

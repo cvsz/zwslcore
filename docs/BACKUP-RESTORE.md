@@ -13,6 +13,18 @@ scripts/restore.sh ~/.zwslcore/backups/BACKUP_DIRECTORY
 
 Backups are restricted application data. The bundle directory is mode `0700` and files are mode `0600`; keep it on access-controlled local storage and encrypt it before any off-host transfer. `.env`, provider keys, GPG private keys, and other runtime credentials are excluded and must be recovered separately through the operator's secret process. `ollama-data` is treated as reproducible model cache and is excluded.
 
+The operator-managed host PostgreSQL database (LiteLLM state, including the
+bootstrapped proxy-admin account) is also outside this bundle. Dump it
+separately with the database password from `.env`:
+
+```bash
+PGPASSWORD="$LITELLM_DB_PASSWORD" pg_dump -h 127.0.0.1 -U litellm litellm > litellm-backup.sql
+```
+
+Restore it before starting LiteLLM, otherwise the admin login in
+`~/.local/share/zwslcore/litellm-admin-credentials` has no matching database
+account. The isolated restore report covers only the declared bundle scope.
+
 Open WebUI's named volume may contain account, conversation, uploaded-file, and credential data. Choose an explicit policy for each backup. To include it, configure a GPG recipient key and run:
 
 ```bash
