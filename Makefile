@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config provider-build provider-lock provider-lock-check cloudflare-up ci
+.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
 
 help:
 	@printf '%s\n' \
@@ -24,6 +24,8 @@ help:
 	  'engineer-tui   open read-only engineering terminal dashboard' \
 	  'engineer-test  run engineering agent/selector/TUI/control-plane tests' \
 	  'config        validate Compose configuration' \
+	  'production-config validate production Compose configuration' \
+	  'production-up start with .env.production' \
   'provider-build build the in-repo provider gateway' \
   'provider-lock update the hashed Provider dependency lock' \
   'provider-lock-check verify Provider dependency lock drift' \
@@ -41,8 +43,19 @@ config:
 	@test -f .env || cp .env.example .env
 	docker compose --env-file .env config --quiet
 
+production-config:
+	@test -f .env.production || { echo 'Create .env.production first.' >&2; exit 1; }
+	docker compose --env-file .env.production config --quiet
+
+production-up:
+	@test -f .env.production || { echo 'Create .env.production first.' >&2; exit 1; }
+	@! grep -Eq '^(OPENWEBUI_WEB_URL|OPENWEBUI_CORS_ALLOW_ORIGIN)=.*REPLACE_ME_DOMAIN' .env.production || { echo 'Set the production HTTPS hostname in .env.production first.' >&2; exit 1; }
+	docker compose --env-file .env.production up -d
+	python3 scripts/bootstrap-litellm-admin.py .env.production
+
 up:
 	docker compose --env-file .env up -d
+	python3 scripts/bootstrap-litellm-admin.py .env
 
 down:
 	docker compose --env-file .env down

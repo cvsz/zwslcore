@@ -23,7 +23,10 @@ Windows 11
         └── Open WebUI
 ```
 
-All published ports bind to `127.0.0.1` by default.
+All published ports bind to `127.0.0.1` by default. To expose Open WebUI
+directly on the LAN, set `OPENWEBUI_BIND_ADDRESS=0.0.0.0` in `.env`; this
+allows other devices that can reach the host to connect to the authenticated
+UI. Provider, LiteLLM, and Ollama remain loopback-only.
 
 ## Windows one-command host bootstrap
 
@@ -45,6 +48,7 @@ Prerequisites:
 - WSL2 Ubuntu 26.04 or compatible Linux
 - Docker Engine
 - Docker Compose plugin
+- PostgreSQL on the host (LiteLLM's admin dashboard uses it)
 - Python 3
 - curl
 
@@ -74,9 +78,38 @@ Open:
 ```text
 Open WebUI  http://localhost:3000
 Provider    http://localhost:8080
-LiteLLM     http://localhost:4000
+LiteLLM     http://localhost:4000/ui/
 Ollama      http://localhost:11434
 ```
+
+### Coding clients
+
+Codex CLI can use the local Provider through the `zwslcore` profile. The
+launcher reads only `PROVIDER_CLIENT_KEY` from the private `.env.production`
+file, then starts Codex with that profile:
+
+```bash
+zwslcore-codex
+```
+
+The default Codex profile remains unchanged. See [LiteLLM cookbook client
+setup](docs/LITELLM-CLIENTS.md) for Claude Code, Gemini CLI, Cursor, and
+GitHub Copilot compatibility and setup notes.
+
+LiteLLM's dashboard uses a dedicated password-based proxy-admin account.
+`make install`, `make up`, and `make production-up` create and verify one when
+needed, then save its login in
+`~/.local/share/zwslcore/litellm-admin-credentials` with owner-only access.
+The Admin UI rejects the environment master key; keep that key for API and
+service authentication. `LITELLM_PROXY_ADMIN_NAME=zeaz` sets LiteLLM's default
+proxy-admin identity to `zeaz` instead of `default_user_id`; this is separate
+from the individual UI account login. LiteLLM connects to a host PostgreSQL
+database named `litellm` using `DATABASE_URL`; Compose does not publish or run
+PostgreSQL. Keep `LITELLM_DB_PASSWORD` and `LITELLM_SALT_KEY` stable across
+restarts and upgrades. The PostgreSQL role/database must exist before starting
+LiteLLM, and the server must accept connections from the zwslcore Compose
+bridge only. Back up the PostgreSQL database along with the local application
+data.
 
 ## Operations
 
@@ -411,6 +444,11 @@ python3 scripts/sync-free-models.py
 ```
 
 Optionally export `OPENROUTER_API_KEY` before discovery or configure it only in the untracked `.env`. External free tiers and quotas can change and are not treated as permanently free.
+
+The `zeaz-cloud`, `zeaz-cloud-fast`, and `zeaz-cloud-code` aliases are available
+through Provider when `FREE_CLOUD_FALLBACK_ENABLED=true` is set in `.env` and
+an OpenRouter key is configured. This flag also enables cloud fallback for
+`zeaz-free`; prompts sent through those routes leave the local machine.
 
 ## Windows runtime verification
 

@@ -36,7 +36,7 @@ if not isinstance(choices, list) or not choices:
 print("[PASS] litellm inference")
 PY
 
-payload='{"model":"zeaz-local","messages":[{"role":"user","content":"Reply exactly OK"}],"temperature":0,"max_tokens":8}'
+payload='{"model":"zeaz-fast","messages":[{"role":"user","content":"Reply exactly OK"}],"temperature":0,"max_tokens":32}'
 response="$(
   curl -fsS --max-time 180     -H "Authorization: Bearer ${PROVIDER_CLIENT_KEY}"     -H "Content-Type: application/json"     -d "$payload"     "http://127.0.0.1:${PROVIDER_PORT:-8080}/v1/chat/completions"
 )"

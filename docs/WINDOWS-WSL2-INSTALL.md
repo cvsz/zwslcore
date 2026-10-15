@@ -91,7 +91,7 @@ Expected application endpoints:
 ```text
 Open WebUI  http://localhost:3000
 Provider    http://localhost:8080
-LiteLLM     http://localhost:4000
+LiteLLM     http://localhost:4000/ui/
 Ollama      http://localhost:11434
 ```
 

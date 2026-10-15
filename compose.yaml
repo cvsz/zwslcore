@@ -8,7 +8,7 @@ x-default-logging: &default-logging
 
 services:
   ollama:
-    image: ${OLLAMA_IMAGE:-ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c}
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.2@sha256:b86366bb528bbf7f1424435d165028497a5b69bf6ddb4fa5a87102e2b79f44fb}
     container_name: zwslcore-ollama
     restart: unless-stopped
     logging: *default-logging
@@ -17,6 +17,7 @@ services:
     environment:
       OLLAMA_CONTEXT_LENGTH: ${ZEAZ_OLLAMA_CONTEXT_LENGTH:-4096}
       OLLAMA_FLASH_ATTENTION: ${ZEAZ_OLLAMA_FLASH_ATTENTION:-false}
+      OLLAMA_KEEP_ALIVE: ${ZEAZ_OLLAMA_KEEP_ALIVE:-30m}
     volumes:
       - ollama-data:/root/.ollama
     healthcheck:
@@ -28,7 +29,7 @@ services:
     networks: [ai]
 
   litellm:
-    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.104.0@sha256:625981c83410a3ea68eb0697590a57ec1d764d634514d54fa5db0591077ee839}
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.104.2@sha256:3d88bd757134a00e8c00237b85a021ab1f6d54abb9c1df750f411dbe7256a500}
     container_name: zwslcore-litellm
     restart: unless-stopped
     logging: *default-logging
@@ -37,13 +38,13 @@ services:
         condition: service_healthy
     command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
     env_file:
-      - .env
+      - ${ZW_ENV_FILE:-.env}
     volumes:
       - ./config/litellm.yaml:/app/config.yaml:ro
     ports:
       - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:172.18.0.1"
     healthcheck:
       test:
         ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=5)"]
@@ -66,7 +67,7 @@ services:
       litellm:
         condition: service_healthy
     env_file:
-      - .env
+      - ${ZW_ENV_FILE:-.env}
     environment:
       ZEAZ_CONFIG: /app/config/providers.yaml
       ZEAZ_CLIENT_KEYS: ${PROVIDER_CLIENT_KEY}
@@ -112,7 +113,8 @@ services:
     volumes:
       - open-webui-data:/app/backend/data
     ports:
-      - "127.0.0.1:${OPENWEBUI_PORT:-3000}:8080"
+      # Loopback by default; operators may opt into LAN access via .env.
+      - "${OPENWEBUI_BIND_ADDRESS:-127.0.0.1}:${OPENWEBUI_PORT:-3000}:8080"
     healthcheck:
       test:
         ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5)"]
