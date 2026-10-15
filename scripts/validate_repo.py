@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import unquote
@@ -57,9 +58,37 @@ def normalize_link_target(raw: str) -> str:
     return unquote(target)
 
 
+def tracked_markdown_files() -> list[Path]:
+    """Return repository Markdown files, excluding operator-local bulk.
+
+    Uses git-tracked files plus untracked-but-not-ignored files so an
+    operator-local generated catalog (for example a downloaded skill
+    library under `.agents/skills/`) never fails repository validation.
+    Falls back to a filesystem scan when git is unavailable.
+    """
+    try:
+        tracked = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "-z", "*.md"],
+            check=True,
+            capture_output=True,
+        ).stdout.split(b"\0")
+        others = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "-z", "--others",
+             "--exclude-standard", "*.md"],
+            check=True,
+            capture_output=True,
+        ).stdout.split(b"\0")
+        files = sorted(
+            {ROOT / part.decode("utf-8") for part in (*tracked, *others) if part}
+        )
+        return [path for path in files if path.is_file()]
+    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError):
+        return sorted(ROOT.rglob("*.md"))
+
+
 def validate_markdown_links() -> list[str]:
     errors: list[str] = []
-    for md in sorted(ROOT.rglob("*.md")):
+    for md in tracked_markdown_files():
         if ".git" in md.parts:
             continue
         text = md.read_text(encoding="utf-8")

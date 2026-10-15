@@ -29,6 +29,7 @@
 
 ## Reusable prompts
 
+- [Master Think / Drill / Dive-Deeper](prompts/master-think-drill.md)
 - [Repository execution](prompts/repository.md)
 - [Code review](prompts/code-review.md)
 - [Architecture review](prompts/architecture.md)
