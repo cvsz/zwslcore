@@ -4,6 +4,8 @@ import hashlib
 import hmac
 import json
 import os
+import time
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -33,11 +35,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(400, {"error": "invalid_length"})
         if length < 0 or length > MAX_BODY:
             return self.reply(413, {"error": "invalid_length"})
+        timestamp = self.headers.get("X-ZWSL-Timestamp", "")
+        event_id = self.headers.get("X-ZWSL-Event-ID", "")
+        try:
+            sent_at = int(timestamp)
+        except ValueError:
+            return self.reply(401, {"error": "invalid_timestamp"})
+        if abs(time.time() - sent_at) > 300 or not (1 <= len(event_id) <= 128) or not all(c.isalnum() or c in "-_" for c in event_id):
+            return self.reply(401, {"error": "invalid_timestamp_or_event"})
         body = self.rfile.read(length)
         supplied = self.headers.get("X-ZWSL-Signature", "")
         if not supplied.startswith("sha256="):
             return self.reply(401, {"error": "unauthorized"})
-        expected = hmac.new(self.server.webhook_secret, body, hashlib.sha256).hexdigest()
+        expected = hmac.new(self.server.webhook_secret, (timestamp + '.' + event_id + '.').encode() + body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(supplied[7:], expected):
             return self.reply(401, {"error": "unauthorized"})
         try:
@@ -46,6 +56,12 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("not an object")
         except (ValueError, UnicodeDecodeError):
             return self.reply(400, {"error": "invalid_json"})
+        with self.server.seen_lock:
+            now = time.time()
+            self.server.seen = {k: v for k, v in self.server.seen.items() if now - v < 600}
+            if event_id in self.server.seen:
+                return self.reply(409, {"error": "replay"})
+            self.server.seen[event_id] = now
         # Intentionally no provider-specific dispatch until contracts are defined.
         return self.reply(202, {"accepted": True, "executed": False})
     def reply(self, status, payload):
@@ -65,6 +81,8 @@ def main():
     secret = load_secret()
     with ThreadingHTTPServer(("127.0.0.1", PORT), Handler) as server:
         server.webhook_secret = secret
+        server.seen_lock = threading.Lock()
+        server.seen = {}
         server.serve_forever()
 
 if __name__ == "__main__":
