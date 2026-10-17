@@ -50,6 +50,30 @@ class CloudShellRecoveryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("ZCLOUD_HOSTNAME", result.stderr)
 
+    def test_missing_ollama_archive_dependency_has_selective_install_gate(self):
+        source = SCRIPT.read_text()
+        # Cloud Shell can have curl and cloudflared but lack the zstd CLI needed
+        # to extract Ollama's Linux release. Installing missing zstd must precede
+        # execution of the upstream installer; re-runs must skip a present tool.
+        helper = source.index("ensure_ollama_prerequisites() {")
+        installer = source.index("install_ollama() {")
+        downloader = source.index("https://ollama.com/install.sh")
+        self.assertLess(helper, installer)
+        self.assertLess(installer, downloader)
+        section = source[helper:installer]
+        self.assertIn('if exists zstd; then', section)
+        self.assertIn('SKIP: zstd already installed', section)
+        self.assertIn('sudo apt-get install -y --no-install-recommends zstd', section)
+        self.assertIn('exists zstd || fail', section)
+        self.assertIn('ensure_ollama_prerequisites', source[installer:downloader])
+        self.assertIn('ollama_dependency_zstd=', source)
+
+    def test_dependency_status_is_reported_without_install(self):
+        result = self.invoke("status")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertRegex(result.stdout, r"ollama_dependency_zstd=(INSTALLED|MISSING)")
+        self.assertNotIn("Installing missing", result.stdout)
+
     def test_installer_reuses_existing_without_model_pull_or_routing_changes(self):
         source = SCRIPT.read_text()
         self.assertIn("SKIP: cloudflared installed", source)
