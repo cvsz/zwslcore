@@ -252,3 +252,20 @@ ci: validate-template
 	python3 -m unittest discover -s tests -v
 	bash -n scripts/install.sh
 	bash -n scripts/doctor.sh
+
+# Non-mutating inspection of the active AI stack host ports and intended
+# Cloudflare hostname routes. Does not read .env or update public DNS.
+.PHONY: ai-ports ai-ports-verify ai-ingress-preview
+
+ai-ports:
+	@python3 scripts/ai-stack-port-map.py map --profile "$$${ZWSL_PROFILE:-cloudshell}" \
+	  --ssh-host "$$${ZCLOUD_HOSTNAME:-}" --api-host "$$${ZWSL_API_HOSTNAME:-}" \
+	  --webui-host "$$${ZWSL_WEBUI_HOSTNAME:-}"
+
+ai-ports-verify:
+	@python3 scripts/ai-stack-port-map.py verify-local --profile "$$${ZWSL_PROFILE:-cloudshell}"
+
+ai-ingress-preview:
+	@python3 scripts/ai-stack-port-map.py ingress-preview --profile "$$${ZWSL_PROFILE:-cloudshell}" \
+	  --ssh-host "$$${ZCLOUD_HOSTNAME:-}" --api-host "$$${ZWSL_API_HOSTNAME:-}" \
+	  --webui-host "$$${ZWSL_WEBUI_HOSTNAME:-}"
