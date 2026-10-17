@@ -1,5 +1,28 @@
 # zwslcore
 
+## Google Cloud Shell (CLI-only)
+
+Google Cloud Shell does not need the full WSL2/Compose stack for remote AI chat.
+This profile does not install PostgreSQL, start Docker, or pull Ollama models.
+
+```bash
+git fetch origin
+git switch feat/single-file-ai-cli-20261017
+make cloudshell
+make ai-test
+export AI_API_URL="https://YOUR_PROVIDER/v1/chat/completions"
+export AI_MODEL="YOUR_MODEL"
+read -rsp 'API key: ' AI_API_KEY; echo; export AI_API_KEY
+bash scripts/ai.sh chat
+```
+
+The Cloud Shell project ID is not an API key. The default CLI endpoint
+`http://127.0.0.1:8080/v1/chat/completions` only works when a compatible
+local Provider is running. Do not use `make install` in Cloud Shell unless
+you explicitly provision the full Docker/PostgreSQL stack. Cloud Shell is
+ephemeral and unsuitable for always-on production hosting.
+
+
 WSL2-first local AI orchestration stack for Ubuntu 26.04. It contains its own integrated provider gateway, local-model runtime, model catalog, installer, diagnostics, and UI orchestration. Runtime operation does not require cloning or importing any other ZEAZ repository.
 
 ## Runtime

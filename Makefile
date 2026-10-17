@@ -1,9 +1,27 @@
 SHELL := /bin/bash
 
-.PHONY: help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
+.PHONY: cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
+
+cloudshell:
+	bash scripts/cloudshell.sh
+
+ai-help:
+	bash scripts/ai.sh help
+
+ai-doctor:
+	bash scripts/ai.sh doctor
+
+ai-test:
+	bash -n scripts/ai.sh
+	bash scripts/ai.sh selftest
+	bash -n scripts/cloudshell.sh
 
 help:
 	@printf '%s\n' \
+	  'cloudshell    bootstrap Cloud Shell CLI-only profile (no Docker/PostgreSQL)' \
+	  'ai-help      show AI CLI help' \
+	  'ai-doctor    inspect AI CLI configuration' \
+	  'ai-test      validate standalone AI CLI and Cloud Shell script' \
 	  'install       bootstrap local AI stack' \
 	  'up/down       start or stop stack' \
 	  'wait-runtime  wait for stable runtime health' \
