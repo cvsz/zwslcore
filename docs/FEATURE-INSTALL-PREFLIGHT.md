@@ -99,6 +99,10 @@ make models                     # Uses existing Docker container or native Ollam
 
 `cloudshell-recover` installs missing cloudflared from Cloudflare's stable
 signed APT repository and missing Ollama using its official Linux installer.
+If the Google Cloud Shell image lacks `zstd`, recovery installs this archive
+extraction dependency from the system APT repositories before invoking the
+Ollama installer; if `zstd` exists it is reused. Recovery does not start
+Docker or provision models.
 It reuses installed tools and an already healthy Ollama instance. Ollama is
 started locally at `127.0.0.1:11434` when needed, without pulling a model.
 Installing Ollama may require sudo and uses disk/network resources. The
@@ -121,6 +125,9 @@ unknown connector. A separate destination Tunnel on a different origin is
 not interchangeable with the locally configured Tunnel.
 
 **Failure interpretation:**
+- `This version requires zstd for extraction` — older recovery script versions
+  need `sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends zstd`
+  before retrying; current recovery installs missing `zstd` automatically.
 - `MISSING: cloudflared` — restore CLI with `make cloudshell-recover`.
 - Native Ollama missing or port 11434 not responding — recover runtime, then
   check `make models`. If no model is installed, provisioning is a separate
