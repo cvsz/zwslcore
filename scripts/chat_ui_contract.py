@@ -22,7 +22,7 @@ def inspect(compose: str, env: str):
         "ollama_loopback": '"127.0.0.1:${OLLAMA_PORT:-11434}:11434"' in compose,
         "conversation_volume": "open-webui-data:/app/backend/data" in compose,
         "secure_cookie_configurable": "OPENWEBUI_SESSION_COOKIE_SECURE:" in compose,
-        "healthcheck": bool(re.search(r"(?s)^  open-webui:.*?healthcheck:", compose)),
+        "healthcheck": bool(re.search(r"(?ms)^  open-webui:.*?^    healthcheck:", compose)),
     }
     return checks
 
