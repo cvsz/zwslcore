@@ -14,7 +14,7 @@ The local receiver binds `127.0.0.1:8765`. It accepts `POST /webhook` with JSON 
 - `X-ZWSL-Event-ID`: a unique, unguessable event identifier (alphanumeric, underscore or hyphen)
 - `X-ZWSL-Signature`: `sha256=` plus hex HMAC-SHA256 of `timestamp + "." + event_id + "." + raw_body`
 
-The secret is generated locally at `~/.config/zwslcore/webhook.key` with mode 0600; it is never committed. In-memory event IDs are rejected if repeated during a live process; for durable replay protection across restarts or multiple replicas use a persistent shared deduplication store before enabling external production traffic. Authentication does not mean the event is executed; the current receiver acknowledges valid events with `accepted=true, executed=false`.
+The secret is generated locally at `~/.config/zwslcore/webhook.key` with mode 0600; it is never committed. Accepted event identifiers are stored as keyed hashes in a private SQLite replay database at `~/.local/state/zwslcore-webhook/replay.sqlite3` (override using `ZWSL_WEBHOOK_REPLAY_DB`). Unique inserts reject concurrent duplicates and persist across receiver process restarts. The state directory must be owner-only (0700) and the database private (0600); an unavailable or insecure store fails closed. The retention window is 600 seconds, longer than the 300-second signature clock skew. Multiple replicas on independent disks, ephemeral home-directory loss and full production durability still require an operator-managed shared deduplication store. Authentication does not mean the event is executed; the current receiver acknowledges valid events with `accepted=true, executed=false`.
 
 ## Cloudflare route (separate SSH and HTTP paths)
 
