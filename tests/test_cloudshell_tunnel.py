@@ -27,12 +27,12 @@ class CloudShellTunnelTests(unittest.TestCase):
     def test_insecure_config_permissions_rejected(self):
         with tempfile.TemporaryDirectory() as home:
             config = Path(home) / "config.yml"
-            config.write_text("tunnel: sample\\ningress:\\n  - service: http_status:404\\n")
+            config.write_text("tunnel: sample\ningress:\n  - service: http_status:404\n")
             config.chmod(0o644)
             fake_bin = Path(home) / "bin"
             fake_bin.mkdir()
             cloudflared = fake_bin / "cloudflared"
-            cloudflared.write_text("#!/bin/sh\\nexit 0\\n")
+            cloudflared.write_text("#!/bin/sh\nexit 0\n")
             cloudflared.chmod(0o700)
             env = dict(os.environ, HOME=home, XDG_STATE_HOME=f"{home}/state",
                        ZCLOUD_CONFIG=str(config),
