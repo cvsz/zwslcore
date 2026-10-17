@@ -258,14 +258,14 @@ ci: validate-template
 .PHONY: ai-ports ai-ports-verify ai-ingress-preview
 
 ai-ports:
-	@python3 scripts/ai-stack-port-map.py map --profile "$$${ZWSL_PROFILE:-cloudshell}" \
-	  --ssh-host "$$${ZCLOUD_HOSTNAME:-}" --api-host "$$${ZWSL_API_HOSTNAME:-}" \
-	  --webui-host "$$${ZWSL_WEBUI_HOSTNAME:-}"
+	@python3 scripts/ai-stack-port-map.py map --profile "${ZWSL_PROFILE:-cloudshell}" \
+	  --ssh-host "${ZCLOUD_HOSTNAME:-}" --api-host "${ZWSL_API_HOSTNAME:-}" \
+	  --webui-host "${ZWSL_WEBUI_HOSTNAME:-}"
 
 ai-ports-verify:
-	@python3 scripts/ai-stack-port-map.py verify-local --profile "$$${ZWSL_PROFILE:-cloudshell}"
+	@python3 scripts/ai-stack-port-map.py verify-local --profile "${ZWSL_PROFILE:-cloudshell}"
 
 ai-ingress-preview:
-	@python3 scripts/ai-stack-port-map.py ingress-preview --profile "$$${ZWSL_PROFILE:-cloudshell}" \
-	  --ssh-host "$$${ZCLOUD_HOSTNAME:-}" --api-host "$$${ZWSL_API_HOSTNAME:-}" \
-	  --webui-host "$$${ZWSL_WEBUI_HOSTNAME:-}"
+	@python3 scripts/ai-stack-port-map.py ingress-preview --profile "${ZWSL_PROFILE:-cloudshell}" \
+	  --ssh-host "${ZCLOUD_HOSTNAME:-}" --api-host "${ZWSL_API_HOSTNAME:-}" \
+	  --webui-host "${ZWSL_WEBUI_HOSTNAME:-}"
