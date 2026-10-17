@@ -70,11 +70,14 @@ def preserve_ssh(source: str, host: str) -> None:
         raise Blocked("Existing SSH ingress hostname missing or ambiguous")
     lines = source.splitlines()
     for i, line in enumerate(lines):
-        if re.fullmatch(r"[ \\t]*-[ \\t]*hostname:[ \\t]*" + re.escape(host) + r"[ \\t]*", line):
+        if line.strip() == "- hostname: " + host:
             for following in lines[i + 1:]:
-                if re.match(r"[ \\t]*-[ \\t]*(?:hostname|service):", following):
+                item = following.strip()
+                if item.startswith("- hostname:") or item.startswith("- service:"):
                     break
-                if re.fullmatch(r"[ \\t]*service:[ \\t]*ssh://127\\.0\\.0\\.1:22[ \\t]*", following):
+                if item.startswith("path:"):
+                    raise Blocked("SSH hostname must not use a path-specific rule")
+                if item == "service: ssh://127.0.0.1:22":
                     return
     raise Blocked("Existing SSH ingress does not point to loopback port 22")
 
