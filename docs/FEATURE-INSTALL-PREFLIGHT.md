@@ -2,6 +2,19 @@
 
 Run the preflight **before** any installation. The script discovers the active profile and reports available optional services without changing the system. It never deletes Ollama models, resets volumes, restarts the existing Cloudflare tunnel, or exposes a public endpoint.
 
+## Cloudflare SSH failure remediation
+
+The installer now includes a token-safe Cloudflare SSH doctor. Run it on the origin Cloud Shell when a remote client reports `websocket: bad handshake` or the Access CLI callback returns HTTP 404:
+
+```bash
+ZCLOUD_HOSTNAME=ssh.example.org make cloudflare-doctor
+ZWSL_CHECK_CLOUDFLARE=1 ZCLOUD_HOSTNAME=ssh.example.org make feature-preflight
+```
+
+It inspects active connector processes, validates the ingress target and SSH listener, and explicitly identifies that an existing connector might not have reloaded a changed config. It does **not** print Access JWTs/callback tokens, make an unauthenticated command-execution endpoint, or kill/restart an unknown supervisor.
+
+A complete Access fix also requires a real Cloudflare Zero Trust Self-hosted Application and a verified identity-bound Allow/MFA policy, plus successful client-side CLI and SSH tests. The installer cannot safely manufacture a verified policy from a local YAML file, and does not impersonate the administrator. After verifying policy, restart **only** the existing connector through its original manager, then test externally. A 404 at the root of an SSH-only hostname is not itself proof of failed Access authorization.
+
 ## Selective install and Cloudflare configuration validation
 
 Run the following checks before installing or changing services:
