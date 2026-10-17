@@ -7,6 +7,8 @@ PROFILE="${ZWSL_PROFILE:-auto}"
 MODE="${1:-preflight}"
 INSTALL_WEBUI="${ZWSL_INSTALL_WEBUI:-0}"
 INSTALL_MCP="${ZWSL_INSTALL_MCP:-0}"
+CHECK_CLOUDFLARE="${ZWSL_CHECK_CLOUDFLARE:-0}"
+CLOUDFLARE_HOST="${ZCLOUD_HOSTNAME:-}"
 MODEL_POLICY="${ZWSL_MODEL_POLICY:-reuse}"
 STORAGE="${ZWSL_WEBUI_BASE:-/opt/zeaz-storage}"
 require() { command -v "$1" >/dev/null 2>&1 || { echo "MISSING: $1" >&2; return 1; }; }
@@ -46,6 +48,14 @@ preflight() {
   report "SSH listener" "ss -lnt | grep -Eq '[:.]22[[:space:]]'" || true
   report "Docker Compose" "docker compose version" || true
   report "PostgreSQL host listener" "ss -lnt | grep -Eq '[:.]5432[[:space:]]'" || true
+  if [[ "$CHECK_CLOUDFLARE" == 1 ]]; then
+    [[ -n "$CLOUDFLARE_HOST" ]] || { note "Set ZCLOUD_HOSTNAME before checking Cloudflare"; failed=1; }
+    if [[ -n "$CLOUDFLARE_HOST" ]]; then
+      ZCLOUD_HOSTNAME="$CLOUDFLARE_HOST" bash "$ROOT/scripts/zwsl-cloudflare.sh" preflight || failed=1
+      ZCLOUD_HOSTNAME="$CLOUDFLARE_HOST" bash "$ROOT/scripts/zwsl-cloudflare.sh" verify || failed=1
+      note "Cloudflare Access policy, live connector reload and external SSH remain operator E2E gates."
+    fi
+  fi
   if [[ "$PROFILE" == cloudshell ]]; then
     note "Cloud Shell: Compose, host PostgreSQL, and model downloads are not provisioned."
     if [[ "$INSTALL_WEBUI" == 1 ]]; then
@@ -90,10 +100,19 @@ case "$MODE" in
       make -C "$ROOT" ai-test
       if [[ "$INSTALL_MCP" == 1 ]]; then
         [[ -f "$ROOT/scripts/install-zwsl-remote-exec.sh" ]] || { note "Missing optional MCP installer"; exit 1; }
-        bash "$ROOT/scripts/install-zwsl-remote-exec.sh" install
+        if [[ -f "$HOME/.local/share/zwsl-remote-exec/server.py" && -x "$HOME/.local/share/zwsl-remote-exec/.venv/bin/python" ]]; then
+          note "SKIP: existing MCP installation; checking it"
+          bash "$ROOT/scripts/install-zwsl-remote-exec.sh" check
+        else
+          bash "$ROOT/scripts/install-zwsl-remote-exec.sh" install
+        fi
       fi
       if [[ "$INSTALL_WEBUI" == 1 ]]; then
-        bash "$ROOT/scripts/cloudshell-webui.sh" install
+        if [[ -x "$STORAGE/venvs/openwebui/bin/open-webui" ]]; then
+          note "SKIP: native Open WebUI is already installed"
+        else
+          bash "$ROOT/scripts/cloudshell-webui.sh" install
+        fi
         note "Open WebUI installed but NOT started. First admin registration must remain local and authenticated."
       fi
       note "Cloud Shell installation complete. Existing Ollama models and Tunnel processes were not modified."
