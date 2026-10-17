@@ -67,6 +67,12 @@ ai-test:
 
 help:
 	@printf '%s\n' \
+	  'cloudflare-stack-preflight check WebUI health and ingress prerequisites' \
+	  'cloudflare-stack-configure add protected WebUI route with backup' \
+	  'cloudflare-stack-rollback restore previous ingress configuration' \
+	  'webhook-install   install local signed webhook receiver' \
+	  'webhook-health    check local receiver health' \
+	  'webhook-route     opt-in Cloudflare webhook route' \
 	  'feature-preflight  inspect installed features before any changes' \
 	  'feature-install    install the selected environment profile' \
 	  'feature-verify     validate selected profile' \
