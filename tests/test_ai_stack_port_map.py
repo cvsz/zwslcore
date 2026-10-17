@@ -81,9 +81,10 @@ class AIStackPortMapTests(unittest.TestCase):
         self.assertEqual(rc, 1)
 
     def test_preview_requires_both_public_domains(self):
-        with self.assertRaises(portmap.PortMapError):
-            portmap.main(["ingress-preview", "--ssh-host", "ssh.example.net",
-                          "--api-host", "ssh.example.net"])
+        self.assertEqual(portmap.main([
+            "ingress-preview", "--ssh-host", "ssh.example.net",
+            "--api-host", "ssh.example.net",
+        ]), 2)
 
 
 if __name__ == "__main__":
