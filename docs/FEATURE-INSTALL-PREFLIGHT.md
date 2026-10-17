@@ -83,6 +83,65 @@ Protect any API credentials, never commit `.env`, and never disable SSH host key
 
 ## Cloud Shell session recovery
 
+## Cloud Shell model storage and restoration
+
+After the Cloud Shell VM was replaced, `ollama list` showed no models and
+`~/.ollama/models` held only empty directories. The operator explicitly
+downloaded `qwen2.5-coder:7b` into `/opt/zeaz-storage/models` and verified
+that a native Ollama process listened on loopback. This is runtime evidence
+for that session only, not persistent data.
+
+`make cloudshell-recover` now uses **`/opt/zeaz-storage/models` by
+default** for native Ollama, creating the directory when it is missing.
+The recovery process starts Ollama with both
+`OLLAMA_MODELS=/opt/zeaz-storage/models` and
+`OLLAMA_HOST=127.0.0.1:11434`; it never exposes an unauthenticated model
+server publicly. It reuses the existing model directory without deleting
+blobs, manifests, or modifying a live managed process.
+
+```bash
+make cloudshell-recover-status
+make cloudshell-recover
+make models
+```
+
+`cloudshell-recover-status` reports storage path and on-disk KiB as well as
+the model inventory and whether a **recovery-managed Ollama PID** is
+verifiably bound to the expected storage directory. On an already responding
+Ollama service with an unverified/different storage path, recovery **fails
+closed** rather than killing or restarting an unknown process. Inspect
+`$HOME/.local/state/zwslcore-cloudshell-recovery/ollama.pid` and
+`/proc/PID/environ`; safely stop only a confirmed recovery-owned Ollama
+process before starting a replacement. Manually exported variables do not
+change the environment of an already running process.
+
+The default location is part of Cloud Shell's **ephemeral** filesystem. It
+has room for larger models than the 4.8 GiB persistent `/home` mount, but
+**models are not guaranteed to survive a Cloud Shell VM replacement**.
+The tool never repulls a deleted model or claims durable model backup.
+
+If and only if no model remains after a VM recreation, the operator may
+explicitly approve a download by setting *both* parameters:
+
+```bash
+ZWSL_RECOVERY_MODEL=qwen2.5-coder:7b ZWSL_ALLOW_MODEL_DOWNLOAD=1 \
+  make cloudshell-model-restore
+```
+
+`cloudshell-model-restore` requires the native Ollama server to be healthy
+and verified against the configured model directory. It skips a matching
+installed model, downloads **only that explicitly named model** if absent,
+then verifies the Ollama inventory. This action uses bandwidth and ephemeral
+disk space and must not run automatically on shell startup. If a different
+storage location is required, set `ZWSL_OLLAMA_MODELS` to a dedicated,
+canonical, absolute, owner-writable directory. Symlinked and noncanonical
+paths are rejected before repair writes to disk.
+
+This recovery does **not** start the public Provider, Open WebUI, or
+Cloudflare Tunnel automatically. Those components have independent auth,
+Access, route-ownership, and client-side E2E verification gates.
+
+
 A new Cloud Shell VM may have SSH available but no cloudflared binary, native
 Ollama process, or Compose containers. That is not an instruction to run the
 WSL2/production installer or to manufacture a new Tunnel credential.
