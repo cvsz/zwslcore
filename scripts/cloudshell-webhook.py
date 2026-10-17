@@ -43,6 +43,9 @@ class ReplayStore:
         if path.exists():
             self._check_file()
         with self._connect() as database:
+            # Set journal mode during startup only; doing this on every
+            # concurrent request can cause avoidable SQLITE_BUSY errors.
+            database.execute("PRAGMA journal_mode=DELETE")
             database.execute("CREATE TABLE IF NOT EXISTS events (event_hash TEXT PRIMARY KEY, seen_at INTEGER NOT NULL)")
         self._check_file()
 
@@ -57,7 +60,6 @@ class ReplayStore:
         database = sqlite3.connect(self.path, timeout=5.0)
         if not self.path.is_symlink():
             os.chmod(self.path, 0o600)
-        database.execute("PRAGMA journal_mode=DELETE")
         database.execute("PRAGMA synchronous=FULL")
         return database
 
