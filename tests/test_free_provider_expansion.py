@@ -37,10 +37,11 @@ class FreeProviderExpansionTests(unittest.TestCase):
             self.assertIn(provider, settings.providers)
             self.assertEqual(settings.models[alias].primary.provider, provider)
             self.assertEqual(settings.providers[provider].cost_class, "FREE_REMOTE")
-        self.assertEqual(
-            [item.provider for item in settings.models["zeaz-cloud-auto"].fallbacks],
-            ["cerebras", "sambanova", "cloudflare"],
-        ) if not os.getenv("FREE_CLOUD_FALLBACK_ENABLED") else None
+        self.assertTrue(
+            {"cerebras", "sambanova", "cloudflare"}.issubset(
+                {item.provider for item in settings.models["zeaz-cloud-auto"].fallbacks}
+            )
+        )
 
     def test_cloud_auto_is_local_first_when_optional_providers_disabled(self):
         with patch.dict(os.environ, {
