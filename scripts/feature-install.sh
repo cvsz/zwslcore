@@ -53,7 +53,8 @@ preflight() {
     if [[ -n "$CLOUDFLARE_HOST" ]]; then
       ZCLOUD_HOSTNAME="$CLOUDFLARE_HOST" bash "$ROOT/scripts/zwsl-cloudflare.sh" preflight || failed=1
       ZCLOUD_HOSTNAME="$CLOUDFLARE_HOST" bash "$ROOT/scripts/zwsl-cloudflare.sh" verify || failed=1
-      note "Cloudflare Access policy, live connector reload and external SSH remain operator E2E gates."
+      ZCLOUD_HOSTNAME="$CLOUDFLARE_HOST" bash "$ROOT/scripts/cloudflare-ssh-doctor.sh" doctor || failed=1
+      note "Cloudflare Access policy and external SSH remain operator E2E gates."
     fi
   fi
   if [[ "$PROFILE" == cloudshell ]]; then
@@ -78,6 +79,10 @@ preflight() {
 verify() {
   bash -n "$ROOT/scripts/cloudshell.sh" "$ROOT/scripts/ai.sh"
   bash "$ROOT/scripts/ai.sh" selftest
+  if [[ "$CHECK_CLOUDFLARE" == 1 ]]; then
+    [[ -n "$CLOUDFLARE_HOST" ]] || { note "Missing Cloudflare hostname"; return 1; }
+    ZCLOUD_HOSTNAME="$CLOUDFLARE_HOST" bash "$ROOT/scripts/cloudflare-ssh-doctor.sh" doctor
+  fi
   if [[ "$PROFILE" == cloudshell ]]; then
     if [[ "$INSTALL_WEBUI" == 1 ]]; then
       bash "$ROOT/scripts/cloudshell-webui.sh" health
