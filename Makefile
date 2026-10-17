@@ -1,9 +1,82 @@
 SHELL := /bin/bash
 
-.PHONY: cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
+.PHONY: cloudshell-model-restore cloudshell-recover cloudshell-recover-status cloudshell-tunnel-start cloudflare-migration-inspect cloudflare-migration-stage cloudflare-stack-preflight cloudflare-stack-configure cloudflare-stack-rollback webhook-install webhook-start webhook-health webhook-route webhook-rollback cloudflare-doctor feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
+
+# Safe migration preparation only: does not change the active tunnel, DNS, or Access.
+cloudflare-migration-inspect:
+	@test -n "$$ZWSL_TARGET_TUNNEL_ID" && test -n "$$ZCLOUD_HOSTNAME" || { echo "Set ZWSL_TARGET_TUNNEL_ID and ZCLOUD_HOSTNAME" >&2; exit 2; }
+	python3 scripts/cloudflare-tunnel-migrate.py inspect
+
+cloudflare-migration-stage:
+	@test -n "$$ZWSL_TARGET_TUNNEL_ID" && test -n "$$ZCLOUD_HOSTNAME" || { echo "Set ZWSL_TARGET_TUNNEL_ID and ZCLOUD_HOSTNAME" >&2; exit 2; }
+	python3 scripts/cloudflare-tunnel-migrate.py stage
 
 cloudshell:
 	bash scripts/cloudshell.sh
+
+# Explicit opt-in Cloud Shell repair; preserve existing DNS/Access and model data.
+cloudshell-recover-status:
+	bash scripts/cloudshell-recover.sh status
+
+cloudshell-recover:
+	bash scripts/cloudshell-recover.sh repair
+
+# Explicit operator-approved model download; never part of routine recovery.
+cloudshell-model-restore:
+	bash scripts/cloudshell-recover.sh model-restore
+
+# Start only an existing locally managed tunnel with private matching credentials.
+cloudshell-tunnel-start:
+	bash scripts/cloudshell-recover.sh tunnel-start
+
+cloudflare-stack-preflight:
+	bash scripts/cloudflare-stack.sh preflight
+
+cloudflare-stack-configure:
+	bash scripts/cloudflare-stack.sh configure
+
+cloudflare-stack-rollback:
+	bash scripts/cloudflare-stack.sh rollback
+
+webhook-install:
+	bash scripts/cloudshell-webhook.sh install
+
+webhook-start:
+	bash scripts/cloudshell-webhook.sh start
+
+webhook-health:
+	bash scripts/cloudshell-webhook.sh health
+
+webhook-route:
+	bash scripts/cloudshell-webhook.sh configure
+
+webhook-rollback:
+	bash scripts/cloudshell-webhook.sh rollback
+
+# Non-destructive capability inventory; Cloud Shell uses installed Ollama models.
+feature-preflight:
+	bash scripts/feature-install.sh preflight
+
+feature-install:
+	bash scripts/feature-install.sh install
+
+feature-verify:
+	bash scripts/feature-install.sh verify
+
+# Set ZCLOUD_HOSTNAME in the command environment; does not modify routing or policy.
+cloudflare-doctor:
+	@test -n "$$ZCLOUD_HOSTNAME" || { echo "Set ZCLOUD_HOSTNAME first" >&2; exit 2; }
+	bash scripts/cloudflare-ssh-doctor.sh doctor
+
+cloudflare-preflight:
+	@test -n "$$ZCLOUD_HOSTNAME" || { echo "Set ZCLOUD_HOSTNAME first" >&2; exit 2; }
+	ZWSL_CHECK_CLOUDFLARE=1 bash scripts/feature-install.sh preflight
+
+# Install only missing Open WebUI and local read-only MCP diagnostics.
+# Prepare writable ZWSL_WEBUI_BASE (default /opt/zeaz-storage) beforehand.
+cloudshell-full-install:
+	ZWSL_PROFILE=cloudshell ZWSL_INSTALL_WEBUI=1 ZWSL_INSTALL_MCP=1 bash scripts/feature-install.sh preflight
+	ZWSL_PROFILE=cloudshell ZWSL_INSTALL_WEBUI=1 ZWSL_INSTALL_MCP=1 bash scripts/feature-install.sh install
 
 ai-help:
 	bash scripts/ai.sh help
@@ -18,7 +91,25 @@ ai-test:
 
 help:
 	@printf '%s\n' \
+	  'cloudflare-migration-inspect inspect SSH source and destination tunnel without changes' \
+	  'cloudflare-migration-stage  stage a verified destination config without cutover' \
+	  'cloudflare-stack-preflight check WebUI health and ingress prerequisites' \
+	  'cloudflare-stack-configure add protected WebUI route with backup' \
+	  'cloudflare-stack-rollback restore previous ingress configuration' \
+	  'webhook-install   install local signed webhook receiver' \
+	  'webhook-health    check local receiver health' \
+	  'webhook-route     opt-in Cloudflare webhook route' \
+	  'feature-preflight  inspect installed features before any changes' \
+	  'feature-install    install the selected environment profile' \
+	  'feature-verify     validate selected profile' \
+	  'cloudflare-doctor  diagnose active connector, ingress and SSH transport' \
+	  'cloudflare-preflight inspect existing SSH ingress; requires ZCLOUD_HOSTNAME' \
+	  'cloudshell-full-install install missing native WebUI and local read-only MCP' \
 	  'cloudshell    bootstrap Cloud Shell CLI-only profile (no Docker/PostgreSQL)' \
+	  'cloudshell-recover-status inventory Cloud Shell runtime without mutation' \
+	  'cloudshell-recover  restore missing tools, configure dedicated Ollama storage, start locally' \
+	  'cloudshell-model-restore opt-in install one explicitly named model (requires consent flag)' \
+	  'cloudshell-tunnel-start start only the verified existing managed SSH tunnel' \
 	  'ai-help      show AI CLI help' \
 	  'ai-doctor    inspect AI CLI configuration' \
 	  'ai-test      validate standalone AI CLI and Cloud Shell script' \
@@ -97,7 +188,15 @@ capacity:
 	python3 scripts/capacity.py
 
 models:
-	docker exec zwslcore-ollama ollama list
+	@if command -v docker >/dev/null 2>&1 && \
+	   docker ps --format '{{.Names}}' 2>/dev/null | grep -Fxq 'zwslcore-ollama'; then \
+	  docker exec zwslcore-ollama ollama list; \
+	elif command -v ollama >/dev/null 2>&1; then \
+	  ollama list; \
+	else \
+	  echo 'No Ollama runtime installed. On Cloud Shell use make cloudshell-recover.' >&2; \
+	  exit 1; \
+	fi
 
 models-manifest:
 	python3 scripts/model_manifest.py
@@ -153,3 +252,20 @@ ci: validate-template
 	python3 -m unittest discover -s tests -v
 	bash -n scripts/install.sh
 	bash -n scripts/doctor.sh
+
+# Non-mutating inspection of the active AI stack host ports and intended
+# Cloudflare hostname routes. Does not read .env or update public DNS.
+.PHONY: ai-ports ai-ports-verify ai-ingress-preview
+
+ai-ports:
+	@python3 scripts/ai-stack-port-map.py map --profile "$${ZWSL_PROFILE:-cloudshell}" \
+	  --ssh-host "$${ZCLOUD_HOSTNAME:-}" --api-host "$${ZWSL_API_HOSTNAME:-}" \
+	  --webui-host "$${ZWSL_WEBUI_HOSTNAME:-}"
+
+ai-ports-verify:
+	@python3 scripts/ai-stack-port-map.py verify-local --profile "$${ZWSL_PROFILE:-cloudshell}"
+
+ai-ingress-preview:
+	@python3 scripts/ai-stack-port-map.py ingress-preview --profile "$${ZWSL_PROFILE:-cloudshell}" \
+	  --ssh-host "$${ZCLOUD_HOSTNAME:-}" --api-host "$${ZWSL_API_HOSTNAME:-}" \
+	  --webui-host "$${ZWSL_WEBUI_HOSTNAME:-}"
