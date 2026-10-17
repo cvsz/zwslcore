@@ -4,11 +4,11 @@ SHELL := /bin/bash
 
 # Safe migration preparation only: does not change the active tunnel, DNS, or Access.
 cloudflare-migration-inspect:
-	@test -n "$ZWSL_TARGET_TUNNEL_ID" && test -n "$ZCLOUD_HOSTNAME" || { echo "Set ZWSL_TARGET_TUNNEL_ID and ZCLOUD_HOSTNAME" >&2; exit 2; }
+	@test -n "$$ZWSL_TARGET_TUNNEL_ID" && test -n "$$ZCLOUD_HOSTNAME" || { echo "Set ZWSL_TARGET_TUNNEL_ID and ZCLOUD_HOSTNAME" >&2; exit 2; }
 	python3 scripts/cloudflare-tunnel-migrate.py inspect
 
 cloudflare-migration-stage:
-	@test -n "$ZWSL_TARGET_TUNNEL_ID" && test -n "$ZCLOUD_HOSTNAME" || { echo "Set ZWSL_TARGET_TUNNEL_ID and ZCLOUD_HOSTNAME" >&2; exit 2; }
+	@test -n "$$ZWSL_TARGET_TUNNEL_ID" && test -n "$$ZCLOUD_HOSTNAME" || { echo "Set ZWSL_TARGET_TUNNEL_ID and ZCLOUD_HOSTNAME" >&2; exit 2; }
 	python3 scripts/cloudflare-tunnel-migrate.py stage
 
 cloudshell:
