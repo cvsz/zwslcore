@@ -3,10 +3,56 @@
 set -Eeuo pipefail
 umask 077
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required" >&2; exit 127; }
+export ZWSLCORE_AI_REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 exec python3 - "$@" <<'PY'
 import json, os, sys, pathlib, urllib.request, urllib.error, urllib.parse, ssl, stat, tempfile, time
 
-VERSION = "1.0.0"
+import re
+
+def load_dotenv():
+    path = pathlib.Path(os.environ["ZWSLCORE_AI_REPO_ROOT"]) / ".env"
+    if path.is_symlink():
+        sys.exit("Refusing symlink .env")
+    if not path.exists():
+        return
+    if not path.is_file():
+        sys.exit("Invalid .env file")
+    if path.stat().st_size > 1_000_000:
+        sys.exit(".env file too large")
+    if stat.S_IMODE(path.stat().st_mode) & 0o077:
+        sys.exit("Insecure .env permissions: run chmod 600 .env")
+    allowed = {"AI_API_URL", "AI_MODEL", "AI_API_KEY", "GEMINI_API_KEY",
+               "OPENROUTER_API_KEY", "GROQ_API_KEY", "AI_TIMEOUT",
+               "AI_SESSION", "AI_SYSTEM_PROMPT"}
+    with path.open(encoding="utf-8") as stream:
+        for number, raw in enumerate(stream, 1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            match = re.fullmatch(r'(?:export\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(.*)', line)
+            if not match:
+                continue  # Other application settings are not shell commands.
+            key, value = match.groups()
+            if key not in allowed or key in os.environ:
+                continue
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                value = value[1:-1]
+            if value.startswith("${") and value.endswith("}") and re.fullmatch(r'\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}', value):
+                value = os.environ.get(value[2:-1], "")
+            os.environ[key] = value
+    if not os.environ.get("AI_API_KEY"):
+        url = os.environ.get("AI_API_URL", "")
+        if "generativelanguage.googleapis.com" in url:
+            os.environ["AI_API_KEY"] = os.environ.get("GEMINI_API_KEY", "")
+        elif "openrouter.ai" in url:
+            os.environ["AI_API_KEY"] = os.environ.get("OPENROUTER_API_KEY", "")
+        elif "api.groq.com" in url:
+            os.environ["AI_API_KEY"] = os.environ.get("GROQ_API_KEY", "")
+
+load_dotenv()
+
+VERSION = "1.0.1"
 ROOT = pathlib.Path(os.environ.get("XDG_STATE_HOME", str(pathlib.Path.home()/".local/state"))) / "zwslcore-ai"
 SESSION = os.environ.get("AI_SESSION", "default")
 if not SESSION or not all(c.isalnum() or c in "-_" for c in SESSION) or len(SESSION)>64:
