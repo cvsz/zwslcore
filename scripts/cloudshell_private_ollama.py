@@ -55,10 +55,22 @@ def tunnel_id(config: Path) -> str:
     return found[0].lower()
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never forward private network requests to a redirected destination."""
+
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        raise Failed("Origin redirected the request; private endpoint identity not verified")
+
+
+def private_opener():
+    # Avoid inherited HTTP(S)_PROXY settings and disallow redirect destinations.
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+
+
 def fetch_json(url: str, timeout: int = 10) -> dict:
     try:
         request = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with private_opener().open(request, timeout=timeout) as response:
             # Limit response size, no secrets in response are printed.
             raw = response.read(128 * 1024 + 1)
             if len(raw) > 128 * 1024:
@@ -160,7 +172,7 @@ def infer(ip: str, model: str) -> None:
         headers={"Content-Type": "application/json", "Accept": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=120) as response:
+        with private_opener().open(req, timeout=120) as response:
             raw = response.read(1024 * 1024 + 1)
         if len(raw) > 1024 * 1024:
             raise Failed("Inference response too large")
