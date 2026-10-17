@@ -1,5 +1,9 @@
 """Fail-closed Cloud Shell private Ollama/WARP route regression tests."""
 import importlib.util
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import os
+import threading
+import urllib.request
 from pathlib import Path
 import tempfile
 import types
@@ -73,6 +77,38 @@ class PrivateOllamaTests(unittest.TestCase):
              patch.object(module, "run", side_effect=lambda *a, **kw: next(replies)) as run:
             module.sync_route(self.args(True))
         self.assertEqual(run.call_count, 4)
+
+    def test_private_opener_disables_proxy_configuration(self):
+        with patch.dict(os.environ, {"http_proxy": "http://127.0.0.1:9999",
+                                    "https_proxy": "http://127.0.0.1:9999"}):
+            opener = module.private_opener()
+        proxy_handlers = [handler for handler in opener.handlers
+                          if isinstance(handler, urllib.request.ProxyHandler)]
+        self.assertEqual(len(proxy_handlers), 1)
+        self.assertEqual(proxy_handlers[0].proxies, {})
+        self.assertTrue(any(isinstance(handler, module.NoRedirect)
+                            for handler in opener.handlers))
+
+    def test_private_inventory_rejects_redirect(self):
+        class Redirect(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", "https://example.com/untrusted")
+                self.end_headers()
+
+            def log_message(self, fmt, *args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Redirect)
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            with self.assertRaisesRegex(module.Failed, "redirected"):
+                module.fetch_json(f"http://127.0.0.1:{server.server_port}/api/tags")
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join(timeout=3)
 
     def test_public_client_target_rejected(self):
         args = types.SimpleNamespace(ip="203.0.113.9", model="test-model")
