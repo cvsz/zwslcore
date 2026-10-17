@@ -65,21 +65,40 @@ def local_ssh() -> None:
 
 
 def preserve_ssh(source: str, host: str) -> None:
-    matches = re.findall(r"(?m)^[ \t]*-[ \t]*hostname:[ \t]*" + re.escape(host) + r"[ \t]*$", source)
-    if len(matches) != 1:
-        raise Blocked("Existing SSH ingress hostname missing or ambiguous")
+    """Require one unscoped SSH route; permit existing path-scoped webhook routes."""
+    if not HOST_PATTERN.fullmatch(host):
+        raise Blocked("Invalid SSH hostname")
     lines = source.splitlines()
-    for i, line in enumerate(lines):
-        if line.strip() == "- hostname: " + host:
-            for following in lines[i + 1:]:
-                item = following.strip()
-                if item.startswith("- hostname:") or item.startswith("- service:"):
-                    break
-                if item.startswith("path:"):
-                    raise Blocked("SSH hostname must not use a path-specific rule")
-                if item == "service: ssh://127.0.0.1:22":
-                    return
-    raise Blocked("Existing SSH ingress does not point to loopback port 22")
+    routes: list[list[str]] = []
+    route: list[str] | None = None
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("- hostname:") or stripped.startswith("- service:"):
+            if route is not None:
+                routes.append(route)
+            route = [stripped]
+        elif route is not None:
+            route.append(stripped)
+    if route is not None:
+        routes.append(route)
+    matching = [entry for entry in routes if entry[0] == "- hostname: " + host]
+    if not matching:
+        raise Blocked("Existing SSH hostname has no ingress rule")
+    unscoped: list[str] = []
+    for entry in matching:
+        services = [line.partition(":")[2].strip() for line in entry[1:]
+                    if line.startswith("service:")]
+        paths = [line.partition(":")[2].strip() for line in entry[1:]
+                 if line.startswith("path:")]
+        if len(services) != 1 or len(paths) > 1:
+            raise Blocked("Ambiguous existing SSH hostname ingress")
+        if paths:
+            if not paths[0] or services[0].startswith("ssh://"):
+                raise Blocked("Invalid path-specific rule for SSH hostname")
+            continue
+        unscoped.append(services[0])
+    if unscoped != ["ssh://127.0.0.1:22"]:
+        raise Blocked("Expected exactly one unscoped SSH rule on loopback port 22")
 
 
 def render(source: str, api_host: str, ssh_host: str) -> str:
