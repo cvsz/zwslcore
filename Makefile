@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: cloudshell-recover cloudshell-recover-status cloudshell-tunnel-start cloudflare-migration-inspect cloudflare-migration-stage cloudflare-stack-preflight cloudflare-stack-configure cloudflare-stack-rollback webhook-install webhook-start webhook-health webhook-route webhook-rollback cloudflare-doctor feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
+.PHONY: cloudshell-model-restore cloudshell-recover cloudshell-recover-status cloudshell-tunnel-start cloudflare-migration-inspect cloudflare-migration-stage cloudflare-stack-preflight cloudflare-stack-configure cloudflare-stack-rollback webhook-install webhook-start webhook-health webhook-route webhook-rollback cloudflare-doctor feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
 
 # Safe migration preparation only: does not change the active tunnel, DNS, or Access.
 cloudflare-migration-inspect:
@@ -20,6 +20,10 @@ cloudshell-recover-status:
 
 cloudshell-recover:
 	bash scripts/cloudshell-recover.sh repair
+
+# Explicit operator-approved model download; never part of routine recovery.
+cloudshell-model-restore:
+	bash scripts/cloudshell-recover.sh model-restore
 
 # Start only an existing locally managed tunnel with private matching credentials.
 cloudshell-tunnel-start:
@@ -103,7 +107,8 @@ help:
 	  'cloudshell-full-install install missing native WebUI and local read-only MCP' \
 	  'cloudshell    bootstrap Cloud Shell CLI-only profile (no Docker/PostgreSQL)' \
 	  'cloudshell-recover-status inventory Cloud Shell runtime without mutation' \
-	  'cloudshell-recover  install missing cloudflared and native Ollama, start loopback Ollama' \
+	  'cloudshell-recover  restore missing tools, configure dedicated Ollama storage, start locally' \
+	  'cloudshell-model-restore opt-in install one explicitly named model (requires consent flag)' \
 	  'cloudshell-tunnel-start start only the verified existing managed SSH tunnel' \
 	  'ai-help      show AI CLI help' \
 	  'ai-doctor    inspect AI CLI configuration' \
