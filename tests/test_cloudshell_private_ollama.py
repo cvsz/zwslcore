@@ -79,15 +79,19 @@ class PrivateOllamaTests(unittest.TestCase):
         self.assertEqual(run.call_count, 4)
 
     def test_private_opener_disables_proxy_configuration(self):
+        build = urllib.request.build_opener
         with patch.dict(os.environ, {"http_proxy": "http://127.0.0.1:9999",
-                                    "https_proxy": "http://127.0.0.1:9999"}):
-            opener = module.private_opener()
-        proxy_handlers = [handler for handler in opener.handlers
-                          if isinstance(handler, urllib.request.ProxyHandler)]
-        self.assertEqual(len(proxy_handlers), 1)
-        self.assertEqual(proxy_handlers[0].proxies, {})
-        self.assertTrue(any(isinstance(handler, module.NoRedirect)
-                            for handler in opener.handlers))
+                                    "https_proxy": "http://127.0.0.1:9999"}), \
+             patch.object(module.urllib.request, "build_opener", wraps=build) as wrapped:
+            module.private_opener()
+        # An empty ProxyHandler intentionally has no matching handler methods
+        # and need not be present in OpenerDirector.handlers. Assert instead
+        # that the explicit empty proxy configuration was passed to build_opener.
+        handlers = wrapped.call_args.args
+        proxies = [h for h in handlers if isinstance(h, urllib.request.ProxyHandler)]
+        self.assertEqual(len(proxies), 1)
+        self.assertEqual(proxies[0].proxies, {})
+        self.assertTrue(any(isinstance(h, module.NoRedirect) for h in handlers))
 
     def test_private_inventory_rejects_redirect(self):
         class Redirect(BaseHTTPRequestHandler):
