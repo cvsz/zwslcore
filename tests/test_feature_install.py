@@ -7,6 +7,17 @@ ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "scripts" / "feature-install.sh"
 
 class FeatureInstallerTests(unittest.TestCase):
+    def test_cloudflare_doctor_script_is_safe(self):
+        path = ROOT / "scripts" / "cloudflare-ssh-doctor.sh"
+        result = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        source = path.read_text()
+        self.assertNotIn("access token", source)
+        self.assertNotIn("kill -9", source)
+        self.assertNotIn("tunnel run", source)
+        self.assertIn("cloudflared tunnel --config", source)
+        self.assertIn("confirm connector was restarted", source)
+
     def test_make_targets_present(self):
         makefile = (ROOT / "Makefile").read_text()
         for target in ("feature-preflight", "feature-install", "feature-verify",
