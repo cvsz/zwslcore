@@ -7,6 +7,7 @@ import os
 import time
 import sqlite3
 import stat
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -42,11 +43,12 @@ class ReplayStore:
             raise RuntimeError("Replay database must be a private regular file")
         if path.exists():
             self._check_file()
-        with self._connect() as database:
-            # Set journal mode during startup only; doing this on every
-            # concurrent request can cause avoidable SQLITE_BUSY errors.
-            database.execute("PRAGMA journal_mode=DELETE")
-            database.execute("CREATE TABLE IF NOT EXISTS events (event_hash TEXT PRIMARY KEY, seen_at INTEGER NOT NULL)")
+        with closing(self._connect()) as database:
+            with database:
+                # Set journal mode during startup only; doing this on every
+                # concurrent request can cause avoidable SQLITE_BUSY errors.
+                database.execute("PRAGMA journal_mode=DELETE")
+                database.execute("CREATE TABLE IF NOT EXISTS events (event_hash TEXT PRIMARY KEY, seen_at INTEGER NOT NULL)")
         self._check_file()
 
     def _check_file(self):
@@ -66,11 +68,12 @@ class ReplayStore:
     def accept(self, event_id: str, now: int) -> bool:
         self._check_file()
         digest = hmac.new(self.secret, b"event-id:" + event_id.encode("ascii"), hashlib.sha256).hexdigest()
-        with self._connect() as database:
-            database.execute("BEGIN IMMEDIATE")
-            database.execute("DELETE FROM events WHERE seen_at < ?", (now - REPLAY_TTL_SECONDS,))
-            inserted = database.execute("INSERT OR IGNORE INTO events(event_hash, seen_at) VALUES (?, ?)", (digest, now))
-            return inserted.rowcount == 1
+        with closing(self._connect()) as database:
+            with database:
+                database.execute("BEGIN IMMEDIATE")
+                database.execute("DELETE FROM events WHERE seen_at < ?", (now - REPLAY_TTL_SECONDS,))
+                inserted = database.execute("INSERT OR IGNORE INTO events(event_hash, seen_at) VALUES (?, ?)", (digest, now))
+                return inserted.rowcount == 1
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
