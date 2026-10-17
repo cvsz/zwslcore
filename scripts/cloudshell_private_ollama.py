@@ -106,7 +106,7 @@ def local_connector_running(tunnel: str) -> bool:
         if not item.name.isdigit():
             continue
         try:
-            args = (item / "cmdline").read_bytes().split(b"\\0")
+            args = (item / "cmdline").read_bytes().split(b"\0")
             values = [arg.decode("utf-8", errors="replace") for arg in args if arg]
         except (OSError, PermissionError):
             continue
