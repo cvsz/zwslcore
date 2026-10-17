@@ -29,7 +29,7 @@ def load_dotenv():
             line = raw.strip()
             if not line or line.startswith("#"):
                 continue
-            match = re.fullmatch(r'(?:export\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(.*)', line)
+            match = re.fullmatch(r'(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)', line)
             if not match:
                 continue  # Other application settings are not shell commands.
             key, value = match.groups()
@@ -38,7 +38,7 @@ def load_dotenv():
             value = value.strip()
             if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
                 value = value[1:-1]
-            if value.startswith("${") and value.endswith("}") and re.fullmatch(r'\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}', value):
+            if value.startswith("${") and value.endswith("}") and re.fullmatch(r'\$\{[A-Za-z_][A-Za-z0-9_]*\}', value):
                 value = os.environ.get(value[2:-1], "")
             os.environ[key] = value
     if not os.environ.get("AI_API_KEY"):
