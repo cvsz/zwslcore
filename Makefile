@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: cloudflare-migration-inspect cloudflare-migration-stage cloudflare-stack-preflight cloudflare-stack-configure cloudflare-stack-rollback webhook-install webhook-start webhook-health webhook-route webhook-rollback cloudflare-doctor feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
+.PHONY: cloudshell-recover cloudshell-recover-status cloudshell-tunnel-start cloudflare-migration-inspect cloudflare-migration-stage cloudflare-stack-preflight cloudflare-stack-configure cloudflare-stack-rollback webhook-install webhook-start webhook-health webhook-route webhook-rollback cloudflare-doctor feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
 
 # Safe migration preparation only: does not change the active tunnel, DNS, or Access.
 cloudflare-migration-inspect:
@@ -13,6 +13,17 @@ cloudflare-migration-stage:
 
 cloudshell:
 	bash scripts/cloudshell.sh
+
+# Explicit opt-in Cloud Shell repair; preserve existing DNS/Access and model data.
+cloudshell-recover-status:
+	bash scripts/cloudshell-recover.sh status
+
+cloudshell-recover:
+	bash scripts/cloudshell-recover.sh repair
+
+# Start only an existing locally managed tunnel with private matching credentials.
+cloudshell-tunnel-start:
+	bash scripts/cloudshell-recover.sh tunnel-start
 
 cloudflare-stack-preflight:
 	bash scripts/cloudflare-stack.sh preflight
@@ -91,6 +102,9 @@ help:
 	  'cloudflare-preflight inspect existing SSH ingress; requires ZCLOUD_HOSTNAME' \
 	  'cloudshell-full-install install missing native WebUI and local read-only MCP' \
 	  'cloudshell    bootstrap Cloud Shell CLI-only profile (no Docker/PostgreSQL)' \
+	  'cloudshell-recover-status inventory Cloud Shell runtime without mutation' \
+	  'cloudshell-recover  install missing cloudflared and native Ollama, start loopback Ollama' \
+	  'cloudshell-tunnel-start start only the verified existing managed SSH tunnel' \
 	  'ai-help      show AI CLI help' \
 	  'ai-doctor    inspect AI CLI configuration' \
 	  'ai-test      validate standalone AI CLI and Cloud Shell script' \
@@ -169,7 +183,15 @@ capacity:
 	python3 scripts/capacity.py
 
 models:
-	docker exec zwslcore-ollama ollama list
+	@if command -v docker >/dev/null 2>&1 && \
+	   docker ps --format '{{.Names}}' 2>/dev/null | grep -Fxq 'zwslcore-ollama'; then \
+	  docker exec zwslcore-ollama ollama list; \
+	elif command -v ollama >/dev/null 2>&1; then \
+	  ollama list; \
+	else \
+	  echo 'No Ollama runtime installed. On Cloud Shell use make cloudshell-recover.' >&2; \
+	  exit 1; \
+	fi
 
 models-manifest:
 	python3 scripts/model_manifest.py
