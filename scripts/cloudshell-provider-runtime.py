@@ -181,7 +181,8 @@ def start(preferred: str) -> None:
     env = os.environ.copy()
     env.update({"ZEAZ_CONFIG": str(CONFIG), "ZEAZ_CLIENT_KEY_HASHES": hashlib.sha256(token.encode()).hexdigest(),
                 "ZEAZ_CLIENT_KEYS": "", "ZEAZ_ALLOW_UNAUTHENTICATED": "false",
-                "ZEAZ_HOST": "127.0.0.1", "ZEAZ_PORT": "8080", "ZEAZ_WORKERS": "1"})
+                "ZEAZ_HOST": "127.0.0.1", "ZEAZ_PORT": "8080", "ZEAZ_WORKERS": "1",
+                "ZEAZ_METRICS_ENABLED": "false"})
     if LOG.is_symlink() or PID.is_symlink():
         raise Blocked("Runtime log or PID file must not be a symlink")
     fd = os.open(LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0), 0o600)
