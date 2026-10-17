@@ -4,6 +4,7 @@ No test installs a package or starts an actual tunnel/ollama process.
 """
 from pathlib import Path
 import os
+import json
 import subprocess
 import tempfile
 import unittest
@@ -61,6 +62,51 @@ class CloudShellRecoveryTests(unittest.TestCase):
         for forbidden in ("ollama pull", "tunnel route dns", "tunnel delete",
                           "rm -rf ~/.cloudflared", "docker compose down", "systemctl restart ssh"):
             self.assertNotIn(forbidden, source)
+
+    def test_invalid_existing_tunnel_credentials_block_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            binary = base / "bin"
+            binary.mkdir()
+            cloudflared = binary / "cloudflared"
+            cloudflared.write_text("#!/bin/sh\nexit 0\n")
+            cloudflared.chmod(0o700)
+            tunnel_id = "11111111-1111-4111-8111-111111111111"
+            config = base / "config.yml"
+            credentials = base / "credentials.json"
+            config.write_text(
+                f"tunnel: {tunnel_id}\n"
+                f"credentials-file: {credentials}\n"
+                "ingress:\n"
+                "  - hostname: ssh.example.org\n"
+                "    service: ssh://127.0.0.1:22\n"
+                "  - service: http_status:404\n"
+            )
+            config.chmod(0o600)
+            credentials.write_text(json.dumps({"TunnelID": "22222222-2222-4222-8222-222222222222"}))
+            credentials.chmod(0o600)
+            env = dict(os.environ, CLOUD_SHELL="true", HOME=tmp,
+                       ZCLOUD_HOSTNAME="ssh.example.org", ZCLOUD_CONFIG=str(config),
+                       PATH=f"{binary}:{os.environ.get('PATH', '')}")
+            result = subprocess.run(["bash", str(SCRIPT), "tunnel-start"], env=env,
+                                    cwd=ROOT, capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("TunnelID mismatch", result.stderr)
+
+            credentials.write_text(json.dumps({"TunnelID": tunnel_id}))
+            credentials.chmod(0o600)
+            config.write_text(config.read_text().replace(
+                "ssh://127.0.0.1:22", "http://127.0.0.1:8080"
+            ))
+            config.chmod(0o600)
+            result = subprocess.run(["bash", str(SCRIPT), "tunnel-start"], env=env,
+                                    cwd=ROOT, capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("not mapped to local port 22", result.stderr)
+
+    def test_supervisor_can_start_without_executable_bit(self):
+        supervisor = (ROOT / "scripts/zcloud-tunnel.sh").read_text()
+        self.assertIn('nohup bash "$SELF" supervise', supervisor)
 
     def test_makefile_exposes_recovery_and_native_model_fallback(self):
         makefile = (ROOT / "Makefile").read_text()
