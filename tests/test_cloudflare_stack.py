@@ -16,6 +16,17 @@ class CloudflareStackTests(unittest.TestCase):
             self.assertIn(required,text)
         self.assertNotIn("kill -9",text)
         self.assertNotIn("cloudflared tunnel run",text)
+    def test_make_preserves_cloudflare_hostname(self):
+        makefile=(ROOT/"Makefile").read_text()
+        self.assertIn('test -n "$ZCLOUD_HOSTNAME"',makefile)
+        for target in ("cloudflare-doctor","cloudflare-preflight"):
+            result=subprocess.run(
+                ["make","--no-print-directory","-n",target],
+                cwd=ROOT, env={"PATH":"/usr/bin:/bin","ZCLOUD_HOSTNAME":"ssh.example.org"},
+                capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertIn('test -n "$ZCLOUD_HOSTNAME"',result.stdout)
+
     def test_make_exposes_lifecycle(self):
         text=(ROOT/"Makefile").read_text()
         for name in ("cloudflare-stack-preflight","cloudflare-stack-configure","cloudflare-stack-rollback"):
