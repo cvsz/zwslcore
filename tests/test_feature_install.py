@@ -26,6 +26,11 @@ class FeatureInstallerTests(unittest.TestCase):
         self.assertIn('ZWSL_INSTALL_WEBUI=1 ZWSL_INSTALL_MCP=1', makefile)
         self.assertIn('ZWSL_CHECK_CLOUDFLARE=1', makefile)
 
+    def test_preflight_does_not_eval_inventory_inputs(self):
+        source = (ROOT / "scripts" / "feature-install.sh").read_text()
+        self.assertNotIn('eval "$check"', source)
+        self.assertIn('"${argv[@]}"', source)
+
     def test_bash_syntax(self):
         result = subprocess.run(["bash", "-n", str(INSTALLER)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
