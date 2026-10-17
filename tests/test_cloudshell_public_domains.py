@@ -39,11 +39,11 @@ class PublicIngressTests(unittest.TestCase):
 
     def test_existing_path_scoped_webhook_does_not_block_ssh_and_api(self):
         webhook_and_ssh = SOURCE.replace(
-            "  - hostname: " + SSH_HOST + "\\n",
-            "  - hostname: " + SSH_HOST + "\\n"
-            "    path: ^/webhook/?$\\n"
-            "    service: http://127.0.0.1:8765\\n"
-            "  - hostname: " + SSH_HOST + "\\n",
+            "  - hostname: " + SSH_HOST + "\n",
+            "  - hostname: " + SSH_HOST + "\n"
+            "    path: ^/webhook/?$\n"
+            "    service: http://127.0.0.1:8765\n"
+            "  - hostname: " + SSH_HOST + "\n",
             1,
         )
         # Existing webhook and the unscoped SSH route must remain intact.
@@ -55,10 +55,10 @@ class PublicIngressTests(unittest.TestCase):
 
     def test_refuses_second_unscoped_rule_on_ssh_hostname(self):
         unsafe = SOURCE.replace(
-            "  - service: http_status:404\\n",
-            "  - hostname: " + SSH_HOST + "\\n"
-            "    service: http://127.0.0.1:3000\\n"
-            "  - service: http_status:404\\n",
+            "  - service: http_status:404\n",
+            "  - hostname: " + SSH_HOST + "\n"
+            "    service: http://127.0.0.1:3000\n"
+            "  - service: http_status:404\n",
         )
         with self.assertRaisesRegex(ingress.Blocked, "one unscoped SSH"):
             ingress.render(unsafe, API_HOST, SSH_HOST)
