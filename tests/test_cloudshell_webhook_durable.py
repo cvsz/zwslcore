@@ -3,6 +3,8 @@ from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import hmac
 import importlib.util
+import sqlite3
+from unittest.mock import patch
 import os
 from pathlib import Path
 import socket
@@ -88,6 +90,31 @@ class DurableReplayTests(unittest.TestCase):
                 self.assertEqual(send("new-event"), 202)
             finally:
                 stop(process)
+
+    def test_replay_connections_close_on_success_and_duplicate(self):
+        spec = importlib.util.spec_from_file_location("webhook_connection_test", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state" / "events.sqlite3"
+            store = module.ReplayStore(path, b"a" * 64)
+            opened = []
+            original = store._connect
+
+            def track_connection():
+                connection = original()
+                opened.append(connection)
+                return connection
+
+            with patch.object(store, "_connect", side_effect=track_connection):
+                self.assertTrue(store.accept("event-one", 123456789))
+                self.assertFalse(store.accept("event-one", 123456789))
+                self.assertTrue(store.accept("event-two", 123456789))
+
+            self.assertEqual(len(opened), 3)
+            for connection in opened:
+                with self.assertRaises(sqlite3.ProgrammingError):
+                    connection.execute("SELECT 1")
 
     def test_refuses_insecure_replay_file(self):
         with tempfile.TemporaryDirectory() as folder:
