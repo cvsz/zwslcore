@@ -22,6 +22,12 @@ The zWorkforce control-plane/MCP listener (default port 9569) is on the
 **zWorkforce host**, not necessarily the same origin as zwslcore.
 Keep the existing authorized MCP endpoint and provider pool unchanged.
 
+Do **not** browse to `https://api.example.net:3000` or
+`https://ssh.example.net:3000`. Port 3000 is a private WebUI origin port,
+not a supported Cloudflare-proxied HTTPS edge port. Cloudflare Access also
+strips port numbers from protected application URLs. Use the mapped public
+hostname over `https://` on **443**, without an explicit origin port.
+
 Cloudflare's public entrypoint uses HTTPS port 443 and a hostname mapped
 to a tunnel. It forwards to the configured **origin host port**. It does
 not expose 8080, 3000 or 11434 on the public DNS address by default.
@@ -101,3 +107,19 @@ service lifecycle. No GitHub CI pass proves a public service is live.
 Run tests with
 `python3 -m unittest tests.test_ai_stack_port_map
 tests.test_cloudshell_public_domains -v`.
+
+## Makefile entrypoints
+
+All commands are read-only and do not read `.env`:
+
+```bash
+ZCLOUD_HOSTNAME=ssh.example.net ZWSL_API_HOSTNAME=api.example.net make ai-ports
+make ai-ports-verify
+ZCLOUD_HOSTNAME=ssh.example.net ZWSL_API_HOSTNAME=api.example.net make ai-ingress-preview
+```
+
+To create actual ingress on a locally managed tunnel after checking Access
+policy and authenticated origin, use the existing
+`scripts/cloudshell-public-ingress.py` staged workflow. This is a
+**separate**, privileged release step and not something that `make ai-ports`
+performs.
