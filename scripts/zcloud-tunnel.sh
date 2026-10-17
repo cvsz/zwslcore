@@ -28,10 +28,19 @@ supervisor_pid() {
 preflight() {
   command -v cloudflared >/dev/null || { echo "cloudflared not installed" >&2; return 1; }
   [[ -f "$CONFIG" && ! -L "$CONFIG" ]] || { echo "Config missing or symlink: $CONFIG" >&2; return 1; }
+  local perms
+  perms="$(stat -c %a "$CONFIG")"
+  if (( (8#$perms & 8#077) != 0 )); then
+    echo "Config permissions expose credentials or origin metadata; require mode 0600" >&2
+    return 1
+  fi
   cloudflared tunnel --config "$CONFIG" ingress validate >/dev/null
   local name
   name="$(sed -n 's/^[[:space:]]*tunnel:[[:space:]]*//p' "$CONFIG" | head -1)"
   [[ -n "$name" ]] || { echo "Config missing tunnel ID" >&2; return 1; }
+  if [[ -n "${ZCLOUD_TUNNEL_ID:-}" && "$name" != "$ZCLOUD_TUNNEL_ID" ]]; then
+    echo "Tunnel ID mismatch; refusing to start" >&2; return 1
+  fi
 }
 run_supervisor() {
   exec 9>"$LOCKFILE"
@@ -77,12 +86,19 @@ case "${1:-status}" in
   stop)
     if pid="$(supervisor_pid)"; then
       kill -TERM "$pid"
-      echo "Supervisor stop requested"
+      for ((i=0;i<50;i++)); do
+        if ! kill -0 "$pid" 2>/dev/null || ! supervisor_pid >/dev/null; then
+          echo "Managed supervisor stopped"; exit 0
+        fi
+        sleep 0.1
+      done
+      echo "Supervisor did not stop within 5 seconds; investigate before restart" >&2
+      exit 1
     else
       echo "No managed supervisor running"
     fi
     ;;
-  restart) "$SELF" stop; sleep 2; "$SELF" start ;;
+  restart) "$SELF" stop; "$SELF" start ;;
   status)
     if pid="$(supervisor_pid)"; then echo "Supervisor RUNNING pid=$pid"; else echo "Supervisor STOPPED"; fi
     echo "Config: $CONFIG"
