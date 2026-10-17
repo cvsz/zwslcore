@@ -21,6 +21,7 @@ def load():
     secure_root()
     if HISTORY.is_symlink(): sys.exit("Refusing symlink session")
     if not HISTORY.exists(): return []
+    if stat.S_IMODE(HISTORY.stat().st_mode) & 0o077: sys.exit("Insecure session file permissions")
     if HISTORY.stat().st_size > 5_000_000: sys.exit("Session too large")
     with HISTORY.open(encoding="utf-8") as f: obj=json.load(f)
     if not isinstance(obj,list): sys.exit("Invalid session format")
@@ -58,10 +59,15 @@ def ask(prompt):
     headers={"Content-Type":"application/json","Accept":"application/json"}
     token=os.environ.get("AI_API_KEY") or os.environ.get("PROVIDER_CLIENT_KEY") or os.environ.get("OPENAI_API_KEY")
     if token: headers["Authorization"]="Bearer "+token
+    try:
+        timeout=float(os.environ.get("AI_TIMEOUT","60"))
+        if not (0 < timeout <= 300): raise ValueError("Timeout must be within (0,300] seconds")
+    except ValueError as exc:
+        sys.exit("Invalid AI_TIMEOUT: "+str(exc))
     req=urllib.request.Request(url,data=payload,headers=headers,method="POST")
     opener=urllib.request.build_opener(NoRedirect(),urllib.request.HTTPSHandler(context=ssl.create_default_context()))
     try:
-        with opener.open(req,timeout=float(os.environ.get("AI_TIMEOUT","60"))) as res:
+        with opener.open(req,timeout=timeout) as res:
             if res.status!=200: sys.exit("Unexpected HTTP status "+str(res.status))
             data=res.read(2_000_001)
             if len(data)>2_000_000: sys.exit("Response too large")
