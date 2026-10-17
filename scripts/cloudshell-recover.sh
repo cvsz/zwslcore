@@ -46,7 +46,7 @@ status() {
 }
 require_cloudshell() {
   if [[ -z "${CLOUD_SHELL:-}" && -z "${DEVSHELL_PROJECT_ID:-}" &&
-        "${ZWSL_ALLOW_NON_CLOUDSHELL:-0}" != 1 ]]; then
+        ! -d /google/devshell && "${ZWSL_ALLOW_NON_CLOUDSHELL:-0}" != 1 ]]; then
     fail "Mutation is Cloud Shell only (override with ZWSL_ALLOW_NON_CLOUDSHELL=1)"
   fi
 }
