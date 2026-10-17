@@ -7,6 +7,7 @@ approval. The script never restarts a connector or changes Cloudflare Access.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -69,10 +70,12 @@ def preserve_ssh(source: str, host: str) -> None:
         raise Blocked("Existing SSH ingress hostname missing or ambiguous")
     lines = source.splitlines()
     for i, line in enumerate(lines):
-        if re.fullmatch(r"[ \t]*-[ \t]*hostname:[ \t]*" + re.escape(host) + r"[ \t]*", line):
-            after = lines[i + 1:i + 4]
-            if any(re.fullmatch(r"[ \t]*service:[ \t]*ssh://127\.0\.0\.1:22[ \t]*", a) for a in after):
-                return
+        if re.fullmatch(r"[ \\t]*-[ \\t]*hostname:[ \\t]*" + re.escape(host) + r"[ \\t]*", line):
+            for following in lines[i + 1:]:
+                if re.match(r"[ \\t]*-[ \\t]*(?:hostname|service):", following):
+                    break
+                if re.fullmatch(r"[ \\t]*service:[ \\t]*ssh://127\\.0\\.0\\.1:22[ \\t]*", following):
+                    return
     raise Blocked("Existing SSH ingress does not point to loopback port 22")
 
 
@@ -180,6 +183,9 @@ def apply_ingress(config: Path, ssh_host: str, api_host: str) -> None:
         Path(temp).unlink(missing_ok=True)
     (STATE / "last-backup").write_text(str(backup) + "\n")
     (STATE / "last-backup").chmod(0o600)
+    applied_hash = hashlib.sha256(replacement.encode()).hexdigest()
+    (STATE / "last-applied-sha256").write_text(applied_hash + "\n")
+    (STATE / "last-applied-sha256").chmod(0o600)
     print("INGRESS=APPLIED tunnel=" + tid)
     print("CONNECTOR_RELOAD=REQUIRED: restart via existing supervisor after SSH/Access maintenance plan")
     print("DNS=UNCHANGED")
@@ -309,7 +315,9 @@ def main(argv=None) -> int:
             preserve_ssh(old, args.ssh_host)
             run_cloudflared(backup)
             current = private_file(config)
-            # Do not overwrite changes since our route was applied.
+            recorded_hash = private_file(STATE / "last-applied-sha256").strip()
+            if hashlib.sha256(current.encode()).hexdigest() != recorded_hash:
+                raise Blocked("Active ingress changed since apply; do not overwrite during rollback")
             if "- hostname: " + args.api_host not in current:
                 raise Blocked("Current API route not owned by this rollback")
             fd, temp = tempfile.mkstemp(prefix=".rollback-", dir=config.parent)
