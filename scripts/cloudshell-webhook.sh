@@ -43,6 +43,8 @@ PYKEY
     # This does not alter the Access policy. A path-specific authentication
     # policy must be configured separately before exposing a public webhook.
     [[ "${ZWSL_WEBHOOK_ACCESS_VERIFIED:-}" == YES ]] || { echo "Verify path-specific Access and provider authentication before routing" >&2; exit 1; }
+    [[ -f "$KEY" && ! -L "$KEY" && "$(stat -c %a "$KEY")" == 600 ]] || { echo "Install a private webhook secret first" >&2; exit 1; }
+    curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$PORT/health" >/dev/null || { echo "Webhook receiver health failed" >&2; exit 1; }
     mkdir -p "$STATE"; chmod 700 "$STATE"
     ZCLOUD_HOSTNAME="$HOST" ZWSL_WEBHOOK_PORT="$PORT" ZCLOUD_CONFIG="$CONFIG" ZWSL_WEBHOOK_STATE="$STATE" python3 - <<'PYROUTE'
 from pathlib import Path
