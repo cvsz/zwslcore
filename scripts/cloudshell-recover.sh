@@ -7,6 +7,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH="$HOME/.local/bin:$PATH"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/zwslcore-cloudshell-recovery"
 CONFIG="${ZCLOUD_CONFIG:-$HOME/.cloudflared/config.yml}"
+MODEL_DIR="${ZWSL_OLLAMA_MODELS:-${OLLAMA_MODELS:-/opt/zeaz-storage/models}}"
+MODEL_PIDFILE="$STATE/ollama.pid"
 ACTION="${1:-status}"
 
 note() { printf '[cloudshell-recover] %s\n' "$*"; }
@@ -16,11 +18,80 @@ ollama_healthy() {
   exists curl && curl --noproxy '*' --fail --silent --max-time 3 \
     http://127.0.0.1:11434/api/version >/dev/null
 }
+managed_ollama_pid() {
+  local pid args
+  [[ -f "$MODEL_PIDFILE" && ! -L "$MODEL_PIDFILE" ]] || return 1
+  read -r pid < "$MODEL_PIDFILE" || return 1
+  [[ "$pid" =~ ^[1-9][0-9]*$ && -r "/proc/$pid/cmdline" ]] || return 1
+  [[ "$(stat -c %u "/proc/$pid" 2>/dev/null)" == "$(id -u)" ]] || return 1
+  args="$(tr '\0' ' ' < "/proc/$pid/cmdline")"
+  [[ "$args" == *"ollama serve"* ]] || return 1
+  printf '%s\n' "$pid"
+}
+
+ollama_uses_model_store() {
+  local pid
+  pid="$(managed_ollama_pid)" || return 1
+  tr '\0' '\n' < "/proc/$pid/environ" |
+    grep -Fxq -- "OLLAMA_MODELS=$MODEL_DIR"
+}
+
+validate_model_dir() {
+  exists realpath || fail "realpath is required for path safety"
+  [[ "$MODEL_DIR" == /* && "$MODEL_DIR" != "/" && "$MODEL_DIR" != "/opt" ]] ||
+    fail "ZWSL_OLLAMA_MODELS must be a dedicated absolute directory"
+  [[ "$(realpath -m -- "$MODEL_DIR")" == "$MODEL_DIR" ]] ||
+    fail "Model storage path is non-canonical or contains a symlink"
+  [[ ! -e "$MODEL_DIR" || -d "$MODEL_DIR" ]] ||
+    fail "Model storage path exists but is not a directory"
+  [[ ! -e "$MODEL_DIR" || ( -O "$MODEL_DIR" && -w "$MODEL_DIR" ) ]] ||
+    fail "Existing model storage must be owned and writable by the current user"
+}
+
+prepare_model_dir() {
+  validate_model_dir
+  if [[ ! -d "$MODEL_DIR" ]]; then
+    if [[ "$MODEL_DIR" == "/opt/zeaz-storage/models" ]]; then
+      exists sudo || fail "sudo required to create default /opt model storage"
+      sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0700 "$MODEL_DIR"
+    else
+      local parent
+      parent="$(dirname -- "$MODEL_DIR")"
+      [[ -d "$parent" && -w "$parent" ]] ||
+        fail "Custom model storage parent must already exist and be writable"
+      install -d -m 0700 "$MODEL_DIR"
+    fi
+    note "ollama_storage=CREATED path=$MODEL_DIR"
+  else
+    note "ollama_storage=REUSED path=$MODEL_DIR"
+  fi
+  validate_model_dir
+}
+
+model_storage_status() {
+  note "ollama_storage_path=$MODEL_DIR"
+  if [[ -L "$MODEL_DIR" ]]; then
+    note "ollama_storage=INVALID_SYMLINK"
+  elif [[ -d "$MODEL_DIR" ]]; then
+    local kib
+    kib="$(du -sk -- "$MODEL_DIR" 2>/dev/null | awk '{print $1}')" || kib=""
+    note "ollama_storage=PRESENT size_kib=${kib:-UNKNOWN}"
+  else
+    note "ollama_storage=MISSING"
+  fi
+}
+
 status() {
   if exists cloudflared; then note "cloudflared=INSTALLED"; else note "cloudflared=MISSING"; fi
   if exists ollama; then note "ollama=INSTALLED"; else note "ollama=MISSING"; fi
   if exists zstd; then note "ollama_dependency_zstd=INSTALLED"; else note "ollama_dependency_zstd=MISSING"; fi
+  model_storage_status
   if ollama_healthy; then
+    if ollama_uses_model_store; then
+      note "ollama_storage_binding=PASS"
+    else
+      note "ollama_storage_binding=NOT_VERIFIED_OR_MISMATCH"
+    fi
     note "ollama_api=PASS origin=127.0.0.1:11434"
     curl --noproxy '*' --fail --silent --max-time 3 http://127.0.0.1:11434/api/tags |
       python3 -c 'import json,sys; data=json.load(sys.stdin); print("[cloudshell-recover] ollama_models="+str(len(data.get("models",[]))))' ||
@@ -114,7 +185,11 @@ install_ollama() {
   note "ollama=INSTALLED_NO_MODELS_PULLED"
 }
 start_ollama() {
-  if ollama_healthy; then note "SKIP: Ollama already responding"; return; fi
+  if ollama_healthy; then
+    ollama_uses_model_store || fail "Existing Ollama model store differs or process ownership unverified; will not restart it"
+    note "SKIP: Ollama already responding with expected model storage"
+    return
+  fi
   exists ollama || fail "Ollama not installed"
   exists ss || fail "ss is required to check port 11434"
   if ss -lnt | grep -Eq '[:.]11434[[:space:]]'; then
@@ -123,16 +198,38 @@ start_ollama() {
   [[ ! -L "$STATE" ]] || fail "State directory is a symlink"
   mkdir -p "$STATE"; chmod 700 "$STATE"
   note "Starting native Ollama on 127.0.0.1:11434"
-  nohup env OLLAMA_HOST=127.0.0.1:11434 ollama serve \
+  nohup env OLLAMA_MODELS="$MODEL_DIR" OLLAMA_HOST=127.0.0.1:11434 ollama serve \
     </dev/null >>"$STATE/ollama.log" 2>&1 &
-  printf '%s\n' "$!" >"$STATE/ollama.pid"
-  chmod 600 "$STATE/ollama.log" "$STATE/ollama.pid"
+  printf '%s\n' "$!" >"$MODEL_PIDFILE"
+  chmod 600 "$STATE/ollama.log" "$MODEL_PIDFILE"
   for _ in $(seq 1 25); do
     if ollama_healthy; then note "ollama_api=PASS"; return; fi
     sleep 1
   done
   fail "Ollama startup did not pass health; inspect private runtime log"
 }
+restore_model() {
+  # Explicit opt-in: never download model weights during routine repair/status.
+  [[ "${ZWSL_ALLOW_MODEL_DOWNLOAD:-0}" == 1 ]] ||
+    fail "Set ZWSL_ALLOW_MODEL_DOWNLOAD=1 to authorize the network/model download"
+  local model="${ZWSL_RECOVERY_MODEL:-}"
+  [[ -n "$model" && "$model" =~ ^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$ ]] ||
+    fail "Set a valid explicit ZWSL_RECOVERY_MODEL (example: qwen2.5-coder:7b)"
+  [[ -d "$MODEL_DIR" ]] || fail "Run make cloudshell-recover to prepare model storage first"
+  validate_model_dir
+  ollama_healthy || fail "Ollama API not running; run make cloudshell-recover"
+  ollama_uses_model_store || fail "Ollama process does not match expected model storage"
+  if ollama list | awk 'NR>1 {print $1}' | grep -Fxq -- "$model"; then
+    note "SKIP: model already installed: $model"
+    return
+  fi
+  note "Explicit model download approved: $model"
+  ollama pull "$model"
+  ollama list | awk 'NR>1 {print $1}' | grep -Fxq -- "$model" ||
+    fail "Model pull returned but model is absent from Ollama inventory"
+  note "model_restore=PASS model=$model"
+}
+
 check_tunnel_credentials() {
   exists cloudflared || fail "cloudflared not installed"
   exists python3 || fail "python3 missing"
@@ -200,14 +297,19 @@ case "$ACTION" in
   status) status ;;
   repair)
     require_cloudshell
+    prepare_model_dir
     install_cloudflared
     install_ollama
     start_ollama
     status
     ;;
+  model-restore)
+    require_cloudshell
+    restore_model
+    ;;
   tunnel-start)
     require_cloudshell
     start_tunnel
     ;;
-  *) fail "Usage: $0 {status|repair|tunnel-start}" ;;
+  *) fail "Usage: $0 {status|repair|model-restore|tunnel-start}" ;;
 esac
