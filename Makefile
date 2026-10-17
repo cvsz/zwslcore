@@ -1,9 +1,24 @@
 SHELL := /bin/bash
 
-.PHONY: cloudflare-doctor feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
+.PHONY: webhook-install webhook-start webhook-health webhook-route webhook-rollback cloudflare-doctor feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
 
 cloudshell:
 	bash scripts/cloudshell.sh
+
+webhook-install:
+	bash scripts/cloudshell-webhook.sh install
+
+webhook-start:
+	bash scripts/cloudshell-webhook.sh start
+
+webhook-health:
+	bash scripts/cloudshell-webhook.sh health
+
+webhook-route:
+	bash scripts/cloudshell-webhook.sh configure
+
+webhook-rollback:
+	bash scripts/cloudshell-webhook.sh rollback
 
 # Non-destructive capability inventory; Cloud Shell uses installed Ollama models.
 feature-preflight:
