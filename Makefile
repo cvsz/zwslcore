@@ -41,11 +41,11 @@ feature-verify:
 
 # Set ZCLOUD_HOSTNAME in the command environment; does not modify routing or policy.
 cloudflare-doctor:
-	@test -n "$ZCLOUD_HOSTNAME" || { echo "Set ZCLOUD_HOSTNAME first" >&2; exit 2; }
+	@test -n "$$ZCLOUD_HOSTNAME" || { echo "Set ZCLOUD_HOSTNAME first" >&2; exit 2; }
 	bash scripts/cloudflare-ssh-doctor.sh doctor
 
 cloudflare-preflight:
-	@test -n "$ZCLOUD_HOSTNAME" || { echo "Set ZCLOUD_HOSTNAME first" >&2; exit 2; }
+	@test -n "$$ZCLOUD_HOSTNAME" || { echo "Set ZCLOUD_HOSTNAME first" >&2; exit 2; }
 	ZWSL_CHECK_CLOUDFLARE=1 bash scripts/feature-install.sh preflight
 
 # Install only missing Open WebUI and local read-only MCP diagnostics.

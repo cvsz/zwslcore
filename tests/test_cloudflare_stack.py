@@ -18,7 +18,7 @@ class CloudflareStackTests(unittest.TestCase):
         self.assertNotIn("cloudflared tunnel run",text)
     def test_make_preserves_cloudflare_hostname(self):
         makefile=(ROOT/"Makefile").read_text()
-        self.assertIn('test -n "$ZCLOUD_HOSTNAME"',makefile)
+        self.assertIn('test -n "$$ZCLOUD_HOSTNAME"',makefile)
         for target in ("cloudflare-doctor","cloudflare-preflight"):
             result=subprocess.run(
                 ["make","--no-print-directory","-n",target],
