@@ -152,7 +152,24 @@ except (ValueError, UnicodeError):
     raise SystemExit("BLOCKED: invalid credential JSON")
 if not isinstance(credential, dict) or str(credential.get("TunnelID", "")).lower() != tid:
     raise SystemExit("BLOCKED: credential TunnelID mismatch")
-print("[cloudshell-recover] tunnel_credentials=PASS (existing only)")
+host = os.environ.get("ZCLOUD_HOSTNAME", "")
+lines = body.splitlines()
+routes = [index for index, line in enumerate(lines)
+          if line.strip() == f"- hostname: {host}"]
+if len(routes) != 1:
+    raise SystemExit("BLOCKED: expected one exact SSH hostname ingress")
+services = []
+for line in lines[routes[0] + 1:]:
+    stripped = line.strip()
+    if stripped.startswith("- hostname:") or stripped.startswith("- service:"):
+        break
+    if stripped.startswith("path:"):
+        raise SystemExit("BLOCKED: SSH ingress must not be path scoped")
+    if stripped.startswith("service:"):
+        services.append(stripped.split(":", 1)[1].strip())
+if services != ["ssh://127.0.0.1:22"]:
+    raise SystemExit("BLOCKED: SSH hostname is not mapped to local port 22")
+print("[cloudshell-recover] tunnel_credentials_and_ssh_ingress=PASS (existing only)")
 PY
   cloudflared tunnel --config "$CONFIG" ingress validate >/dev/null
 }
