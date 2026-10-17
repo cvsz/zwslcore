@@ -20,6 +20,17 @@ class FeatureInstallerTests(unittest.TestCase):
         self.assertNotIn("ollama pull", source)
         self.assertNotIn("docker compose up -d", source)
 
+    def test_cloudflare_requires_opt_in_and_explicit_hostname(self):
+        source = INSTALLER.read_text()
+        self.assertIn('ZWSL_CHECK_CLOUDFLARE:-0', source)
+        self.assertIn('ZCLOUD_HOSTNAME', source)
+        self.assertIn('bash "$ROOT/scripts/zwsl-cloudflare.sh" verify', source)
+
+    def test_reuses_existing_native_components(self):
+        source = INSTALLER.read_text()
+        self.assertIn('SKIP: native Open WebUI is already installed', source)
+        self.assertIn('SKIP: existing MCP installation', source)
+
     def test_optional_installers_not_started_automatically(self):
         source = INSTALLER.read_text()
         self.assertIn('INSTALL_WEBUI="${ZWSL_INSTALL_WEBUI:-0}"', source)
