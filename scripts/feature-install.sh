@@ -24,7 +24,9 @@ detect_profile() {
 }
 report() {
   local name="$1" check="$2"
-  if eval "$check" >/dev/null 2>&1; then note "PASS: $name"; return 0
+  local -a argv=()
+  read -r -a argv <<< "$check"
+  if "${argv[@]}" >/dev/null 2>&1; then note "PASS: $name"; return 0
   else note "UNAVAILABLE: $name"; return 1; fi
 }
 preflight() {
@@ -36,18 +38,18 @@ preflight() {
     git -C "$ROOT" status --short --branch || failed=1
   fi
   note "Feature inventory (UNAVAILABLE means an optional feature is not ready):"
-  report "AI CLI" "test -f '$ROOT/scripts/ai.sh'" || true
+  if [[ -f "$ROOT/scripts/ai.sh" ]]; then note "PASS: AI CLI"; else note "UNAVAILABLE: AI CLI"; fi
   report "Ollama installed" "command -v ollama" || true
   report "Ollama API responding" "curl -fsS --max-time 3 http://127.0.0.1:11434/api/version" || true
   if command -v ollama >/dev/null; then ollama list || true; fi
-  report "Open WebUI installed (native)" "test -x '$STORAGE/venvs/openwebui/bin/open-webui'" || true
+  if [[ -x "$STORAGE/venvs/openwebui/bin/open-webui" ]]; then note "PASS: Open WebUI installed (native)"; else note "UNAVAILABLE: Open WebUI installed (native)"; fi
   report "Open WebUI health" "curl -fsS --max-time 3 http://127.0.0.1:3000/health" || true
-  report "Local MCP server" "test -f '$HOME/.local/share/zwsl-remote-exec/server.py'" || true
+  if [[ -f "$HOME/.local/share/zwsl-remote-exec/server.py" ]]; then note "PASS: Local MCP server"; else note "UNAVAILABLE: Local MCP server"; fi
   report "Cloudflare CLI" "command -v cloudflared" || true
-  report "Cloudflare config" "test -f '$HOME/.cloudflared/config.yml'" || true
-  report "SSH listener" "ss -lnt | grep -Eq '[:.]22[[:space:]]'" || true
+  if [[ -f "$HOME/.cloudflared/config.yml" ]]; then note "PASS: Cloudflare config"; else note "UNAVAILABLE: Cloudflare config"; fi
+  if ss -lnt 2>/dev/null | grep -Eq '[:.]22[[:space:]]'; then note "PASS: SSH listener"; else note "UNAVAILABLE: SSH listener"; fi
   report "Docker Compose" "docker compose version" || true
-  report "PostgreSQL host listener" "ss -lnt | grep -Eq '[:.]5432[[:space:]]'" || true
+  if ss -lnt 2>/dev/null | grep -Eq '[:.]5432[[:space:]]'; then note "PASS: PostgreSQL host listener"; else note "UNAVAILABLE: PostgreSQL host listener"; fi
   if [[ "$CHECK_CLOUDFLARE" == 1 ]]; then
     [[ -n "$CLOUDFLARE_HOST" ]] || { note "Set ZCLOUD_HOSTNAME before checking Cloudflare"; failed=1; }
     if [[ -n "$CLOUDFLARE_HOST" ]]; then
