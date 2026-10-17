@@ -19,6 +19,7 @@ ollama_healthy() {
 status() {
   if exists cloudflared; then note "cloudflared=INSTALLED"; else note "cloudflared=MISSING"; fi
   if exists ollama; then note "ollama=INSTALLED"; else note "ollama=MISSING"; fi
+  if exists zstd; then note "ollama_dependency_zstd=INSTALLED"; else note "ollama_dependency_zstd=MISSING"; fi
   if ollama_healthy; then
     note "ollama_api=PASS origin=127.0.0.1:11434"
     curl --noproxy '*' --fail --silent --max-time 3 http://127.0.0.1:11434/api/tags |
@@ -80,9 +81,24 @@ install_cloudflared() {
   exists cloudflared || fail "cloudflared install did not expose an executable"
   note "cloudflared=INSTALLED_FROM_SIGNED_APT"
 }
+ensure_ollama_prerequisites() {
+  # The upstream Ollama installer requires zstd to unpack its Linux archive.
+  # Cloud Shell images may not include it; install only when unavailable.
+  if exists zstd; then
+    note "SKIP: zstd already installed"
+    return
+  fi
+  for exe in sudo apt-get; do exists "$exe" || fail "$exe is required to install zstd"; done
+  note "Installing missing Ollama archive dependency: zstd"
+  sudo apt-get update -qq
+  sudo apt-get install -y --no-install-recommends zstd
+  exists zstd || fail "zstd remains unavailable after apt installation"
+}
+
 install_ollama() {
   if exists ollama; then note "SKIP: Ollama installed"; return; fi
   for exe in curl sh mktemp; do exists "$exe" || fail "$exe is required"; done
+  ensure_ollama_prerequisites
   local tmp
   tmp="$(mktemp -d)"
   if ! curl --fail --silent --show-error --location --retry 2 --max-time 60 \
