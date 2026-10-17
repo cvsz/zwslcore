@@ -1,9 +1,18 @@
 SHELL := /bin/bash
 
-.PHONY: webhook-install webhook-start webhook-health webhook-route webhook-rollback cloudflare-doctor feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
+.PHONY: cloudflare-stack-preflight cloudflare-stack-configure cloudflare-stack-rollback webhook-install webhook-start webhook-health webhook-route webhook-rollback cloudflare-doctor feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
 
 cloudshell:
 	bash scripts/cloudshell.sh
+
+cloudflare-stack-preflight:
+	bash scripts/cloudflare-stack.sh preflight
+
+cloudflare-stack-configure:
+	bash scripts/cloudflare-stack.sh configure
+
+cloudflare-stack-rollback:
+	bash scripts/cloudflare-stack.sh rollback
 
 webhook-install:
 	bash scripts/cloudshell-webhook.sh install
