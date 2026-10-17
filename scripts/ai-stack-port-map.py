@@ -137,12 +137,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.action == "ingress-preview":
             print(ingress_preview(rows, domains(args.ssh_host, args.api_host, args.webui_host)), end="")
         elif args.action == "map":
-            hosts = (domains(args.ssh_host, args.api_host, args.webui_host)
-                     if args.ssh_host or args.api_host or args.webui_host else {})
-            print("SERVICE\tHOST:PORT\tCONTAINER:PORT\tPUBLIC HOST\tEXPOSURE")
+            hosts = {role: host for role, host in (
+                ("ssh", args.ssh_host), ("api", args.api_host), ("webui", args.webui_host)
+            ) if host}
+            if any(not HOSTNAME.fullmatch(host) for host in hosts.values()):
+                raise PortMapError("Invalid public hostname")
+            if len({host.lower() for host in hosts.values()}) != len(hosts):
+                raise PortMapError("Duplicate public hostnames")
+            print("SERVICE\\tHOST:PORT\\tCONTAINER:PORT\\tPUBLIC HOST\\tEXPOSURE")
             for row in rows:
                 role = row["hostname_role"]
-                public = hosts.get(role, "OPTIONAL" if role == "webui" else "PRIVATE")
+                public = ("PRIVATE" if role is None
+                          else hosts.get(role, "OPTIONAL" if role == "webui" else "UNASSIGNED"))
                 print(f"{row['name']}\t127.0.0.1:{row['host_port']}\t"
                       f"{row['service_port']}\t{public}\t{row['exposure']}")
         else:
