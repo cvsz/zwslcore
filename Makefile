@@ -1,9 +1,30 @@
 SHELL := /bin/bash
 
-.PHONY: cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
+.PHONY: feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
 
 cloudshell:
 	bash scripts/cloudshell.sh
+
+# Non-destructive capability inventory; Cloud Shell uses installed Ollama models.
+feature-preflight:
+	bash scripts/feature-install.sh preflight
+
+feature-install:
+	bash scripts/feature-install.sh install
+
+feature-verify:
+	bash scripts/feature-install.sh verify
+
+# Set ZCLOUD_HOSTNAME in the command environment; does not modify routing or policy.
+cloudflare-preflight:
+	@test -n "$ZCLOUD_HOSTNAME" || { echo "Set ZCLOUD_HOSTNAME first" >&2; exit 2; }
+	ZWSL_CHECK_CLOUDFLARE=1 bash scripts/feature-install.sh preflight
+
+# Install only missing Open WebUI and local read-only MCP diagnostics.
+# Prepare writable ZWSL_WEBUI_BASE (default /opt/zeaz-storage) beforehand.
+cloudshell-full-install:
+	ZWSL_PROFILE=cloudshell ZWSL_INSTALL_WEBUI=1 ZWSL_INSTALL_MCP=1 bash scripts/feature-install.sh preflight
+	ZWSL_PROFILE=cloudshell ZWSL_INSTALL_WEBUI=1 ZWSL_INSTALL_MCP=1 bash scripts/feature-install.sh install
 
 ai-help:
 	bash scripts/ai.sh help
@@ -18,6 +39,11 @@ ai-test:
 
 help:
 	@printf '%s\n' \
+	  'feature-preflight  inspect installed features before any changes' \
+	  'feature-install    install the selected environment profile' \
+	  'feature-verify     validate selected profile' \
+	  'cloudflare-preflight inspect existing SSH ingress; requires ZCLOUD_HOSTNAME' \
+	  'cloudshell-full-install install missing native WebUI and local read-only MCP' \
 	  'cloudshell    bootstrap Cloud Shell CLI-only profile (no Docker/PostgreSQL)' \
 	  'ai-help      show AI CLI help' \
 	  'ai-doctor    inspect AI CLI configuration' \
