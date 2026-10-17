@@ -33,7 +33,8 @@ class WebhookTests(unittest.TestCase):
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]
-            env = dict(os.environ, ZWSL_WEBHOOK_PORT=str(port), ZWSL_WEBHOOK_SECRET_FILE=str(key))
+            env = dict(os.environ, ZWSL_WEBHOOK_PORT=str(port), ZWSL_WEBHOOK_SECRET_FILE=str(key),
+                       ZWSL_WEBHOOK_REPLAY_DB=str(Path(directory) / "replay" / "events.sqlite3"))
             proc = subprocess.Popen(
                 [sys.executable, str(ROOT / "scripts/cloudshell-webhook.py")],
                 env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
