@@ -1,6 +1,15 @@
 SHELL := /bin/bash
 
-.PHONY: cloudflare-stack-preflight cloudflare-stack-configure cloudflare-stack-rollback webhook-install webhook-start webhook-health webhook-route webhook-rollback cloudflare-doctor feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
+.PHONY: cloudflare-migration-inspect cloudflare-migration-stage cloudflare-stack-preflight cloudflare-stack-configure cloudflare-stack-rollback webhook-install webhook-start webhook-health webhook-route webhook-rollback cloudflare-doctor feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
+
+# Safe migration preparation only: does not change the active tunnel, DNS, or Access.
+cloudflare-migration-inspect:
+	@test -n "$ZWSL_TARGET_TUNNEL_ID" && test -n "$ZCLOUD_HOSTNAME" || { echo "Set ZWSL_TARGET_TUNNEL_ID and ZCLOUD_HOSTNAME" >&2; exit 2; }
+	python3 scripts/cloudflare-tunnel-migrate.py inspect
+
+cloudflare-migration-stage:
+	@test -n "$ZWSL_TARGET_TUNNEL_ID" && test -n "$ZCLOUD_HOSTNAME" || { echo "Set ZWSL_TARGET_TUNNEL_ID and ZCLOUD_HOSTNAME" >&2; exit 2; }
+	python3 scripts/cloudflare-tunnel-migrate.py stage
 
 cloudshell:
 	bash scripts/cloudshell.sh
@@ -67,6 +76,8 @@ ai-test:
 
 help:
 	@printf '%s\n' \
+	  'cloudflare-migration-inspect inspect SSH source and destination tunnel without changes' \
+	  'cloudflare-migration-stage  stage a verified destination config without cutover' \
 	  'cloudflare-stack-preflight check WebUI health and ingress prerequisites' \
 	  'cloudflare-stack-configure add protected WebUI route with backup' \
 	  'cloudflare-stack-rollback restore previous ingress configuration' \
