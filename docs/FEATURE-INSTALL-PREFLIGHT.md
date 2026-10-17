@@ -2,6 +2,21 @@
 
 Run the preflight **before** any installation. The script discovers the active profile and reports available optional services without changing the system. It never deletes Ollama models, resets volumes, restarts the existing Cloudflare tunnel, or exposes a public endpoint.
 
+## Selective install and Cloudflare configuration validation
+
+Run the following checks before installing or changing services:
+
+```bash
+ZWSL_PROFILE=cloudshell ZWSL_CHECK_CLOUDFLARE=1 \
+  ZCLOUD_HOSTNAME=ssh.example.org bash scripts/feature-install.sh preflight
+
+# Install the missing optional components only, without starting them:
+ZWSL_PROFILE=cloudshell ZWSL_INSTALL_MCP=1 ZWSL_INSTALL_WEBUI=1 \
+  bash scripts/feature-install.sh install
+```
+
+The Cloudflare check validates the existing YAML and local SSH listener without updating DNS, creating or modifying Access policies, restarting the existing connector, or changing ingress routes. The real hostname is supplied at runtime, never committed. A successful local preflight is not evidence of Cloudflare Access enforcement or authenticated SSH end-to-end. Existing native Open WebUI and MCP installs are skipped (MCP syntax is rechecked). For Open WebUI install, prepare a writable data/storage directory and meet the Python version requirement.
+
 ## Google Cloud Shell (reuse installed models)
 
 ```bash
