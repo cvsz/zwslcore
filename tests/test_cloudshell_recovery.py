@@ -14,14 +14,16 @@ SCRIPT = ROOT / "scripts/cloudshell-recover.sh"
 
 
 class CloudShellRecoveryTests(unittest.TestCase):
-    def invoke(self, action, *, cloud_shell=False):
+    def invoke(self, action, *, cloud_shell=False, overrides=None):
         with tempfile.TemporaryDirectory() as tmp:
             env = dict(os.environ)
             env.update(HOME=tmp, XDG_STATE_HOME=tmp, ZCLOUD_CONFIG=str(Path(tmp) / "missing.yml"))
-            for key in ("CLOUD_SHELL", "DEVSHELL_PROJECT_ID", "ZWSL_ALLOW_NON_CLOUDSHELL", "ZCLOUD_HOSTNAME"):
+            for key in ("CLOUD_SHELL", "DEVSHELL_PROJECT_ID", "ZWSL_ALLOW_NON_CLOUDSHELL", "ZCLOUD_HOSTNAME", "OLLAMA_MODELS", "ZWSL_OLLAMA_MODELS", "ZWSL_ALLOW_MODEL_DOWNLOAD", "ZWSL_RECOVERY_MODEL"):
                 env.pop(key, None)
             if cloud_shell:
                 env["CLOUD_SHELL"] = "true"
+            if overrides:
+                env.update(overrides)
             return subprocess.run(["bash", str(SCRIPT), action], cwd=ROOT,
                                   env=env, capture_output=True, text=True, timeout=15)
 
@@ -35,6 +37,7 @@ class CloudShellRecoveryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("external_access_and_model_inference=NOT_VERIFIED", result.stdout)
         self.assertIn("tunnel_config=MISSING_OR_INVALID", result.stdout)
+        self.assertIn("ollama_storage_path=/opt/zeaz-storage/models", result.stdout)
 
     def test_repair_requires_cloud_shell(self):
         result = self.invoke("repair")
@@ -79,13 +82,65 @@ class CloudShellRecoveryTests(unittest.TestCase):
         self.assertIn("SKIP: cloudflared installed", source)
         self.assertIn("SKIP: Ollama installed", source)
         self.assertIn("SKIP: Ollama already responding", source)
+        self.assertIn('OLLAMA_MODELS="$MODEL_DIR" OLLAMA_HOST=127.0.0.1:11434', source)
+        self.assertIn('ollama_uses_model_store || fail', source)
         self.assertIn("https://pkg.cloudflare.com/cloudflared any main", source)
         self.assertIn("https://ollama.com/install.sh", source)
         self.assertIn("OLLAMA_HOST=127.0.0.1:11434", source)
         self.assertIn('bash "$ROOT/scripts/zcloud-tunnel.sh" start', source)
-        for forbidden in ("ollama pull", "tunnel route dns", "tunnel delete",
+        for forbidden in ("tunnel route dns", "tunnel delete",
                           "rm -rf ~/.cloudflared", "docker compose down", "systemctl restart ssh"):
             self.assertNotIn(forbidden, source)
+
+    def test_model_restore_requires_explicit_download_opt_in(self):
+        result = self.invoke("model-restore", cloud_shell=True,
+                             overrides={"ZWSL_RECOVERY_MODEL": "qwen2.5-coder:7b"})
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("ZWSL_ALLOW_MODEL_DOWNLOAD=1", result.stderr)
+
+    def test_model_restore_requires_explicit_model_name(self):
+        result = self.invoke("model-restore", cloud_shell=True,
+                             overrides={"ZWSL_ALLOW_MODEL_DOWNLOAD": "1"})
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("ZWSL_RECOVERY_MODEL", result.stderr)
+
+    def test_model_restore_rejects_invalid_model_name(self):
+        result = self.invoke("model-restore", cloud_shell=True,
+                             overrides={"ZWSL_ALLOW_MODEL_DOWNLOAD": "1",
+                                        "ZWSL_RECOVERY_MODEL": "model ; touch /tmp/unsafe"})
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("ZWSL_RECOVERY_MODEL", result.stderr)
+
+    def test_repair_rejects_symlinked_model_directory_before_package_install(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            target = base / "actual"
+            target.mkdir()
+            shortcut = base / "models"
+            shortcut.symlink_to(target, target_is_directory=True)
+            result = self.invoke("repair", cloud_shell=True,
+                                 overrides={"ZWSL_OLLAMA_MODELS": str(shortcut)})
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn("non-canonical or contains a symlink", result.stderr)
+            self.assertNotIn("Installing missing", result.stdout)
+
+    def test_status_reports_override_storage_without_mutation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "models"
+            store.mkdir()
+            result = self.invoke("status", overrides={"ZWSL_OLLAMA_MODELS": str(store)})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"ollama_storage_path={store}", result.stdout)
+            self.assertIn("ollama_storage=PRESENT size_kib=", result.stdout)
+            self.assertTrue(store.is_dir())
+
+    def test_restore_action_is_only_path_allowed_to_download_weights(self):
+        source = SCRIPT.read_text()
+        self.assertIn('ZWSL_ALLOW_MODEL_DOWNLOAD:-0', source)
+        self.assertIn('ollama pull "$model"', source)
+        self.assertIn("    restore_model\n", source)
+        self.assertNotIn('ollama pull', source.split('restore_model() {', 1)[0])
+        self.assertIn("    prepare_model_dir\n    install_cloudflared", source)
 
     def test_invalid_existing_tunnel_credentials_block_start(self):
         with tempfile.TemporaryDirectory() as tmp:
