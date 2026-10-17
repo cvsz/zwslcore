@@ -7,6 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "scripts" / "feature-install.sh"
 
 class FeatureInstallerTests(unittest.TestCase):
+    def test_make_targets_present(self):
+        makefile = (ROOT / "Makefile").read_text()
+        for target in ("feature-preflight", "feature-install", "feature-verify",
+                       "cloudflare-preflight", "cloudshell-full-install"):
+            self.assertIn(f"\n{target}:\n", makefile)
+        self.assertIn('ZWSL_INSTALL_WEBUI=1 ZWSL_INSTALL_MCP=1', makefile)
+        self.assertIn('ZWSL_CHECK_CLOUDFLARE=1', makefile)
+
     def test_bash_syntax(self):
         result = subprocess.run(["bash", "-n", str(INSTALLER)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
