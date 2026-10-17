@@ -80,3 +80,62 @@ make ai-test
 ```
 
 Protect any API credentials, never commit `.env`, and never disable SSH host key validation. Cloud Shell sessions and /opt storage are ephemeral.
+
+## Cloud Shell session recovery
+
+A new Cloud Shell VM may have SSH available but no cloudflared binary, native
+Ollama process, or Compose containers. That is not an instruction to run the
+WSL2/production installer or to manufacture a new Tunnel credential.
+
+Use the following opt-in recovery path from this branch after reviewing the
+repository checkout (do not reset or discard local changes):
+
+```bash
+cd ~/zwslcore
+make cloudshell-recover-status  # Non-mutating capability inventory
+make cloudshell-recover         # Explicit: install only missing tools; start Ollama on loopback
+make models                     # Uses existing Docker container or native Ollama
+```
+
+`cloudshell-recover` installs missing cloudflared from Cloudflare's stable
+signed APT repository and missing Ollama using its official Linux installer.
+It reuses installed tools and an already healthy Ollama instance. Ollama is
+started locally at `127.0.0.1:11434` when needed, without pulling a model.
+Installing Ollama may require sudo and uses disk/network resources. The
+command does not create `.env.production`, install PostgreSQL, start Compose,
+or publish Open WebUI/Provider/Ollama.
+
+Starting the existing locally managed Tunnel is a **separate operation**.
+Only after the prior Cloudflare Access policy, SSH authorized keys, source
+Tunnel ID, and external client authentication have been verified, run:
+
+```bash
+ZCLOUD_HOSTNAME=ssh.example.com make cloudshell-tunnel-start
+```
+
+This validates the private existing `~/.cloudflared/config.yml` and matching
+credential JSON, exact SSH hostname mapped to `ssh://127.0.0.1:22`, then
+reuses the existing managed tunnel lifecycle. It does not regenerate a
+credential, switch Tunnel IDs, modify DNS/Access, or forcibly restart an
+unknown connector. A separate destination Tunnel on a different origin is
+not interchangeable with the locally configured Tunnel.
+
+**Failure interpretation:**
+- `MISSING: cloudflared` — restore CLI with `make cloudshell-recover`.
+- Native Ollama missing or port 11434 not responding — recover runtime, then
+  check `make models`. If no model is installed, provisioning is a separate
+  deliberate operator action; never silently pull multi-gigabyte models.
+- `make production-up` reports missing `.env.production` — expected release
+  gate, not a Cloud Shell recovery issue.
+- Absent `zwslcore-ollama` Docker container is normal for this native
+  recovery path.
+- Missing/private credential mismatch prevents starting a connector;
+  restore the original file through an authorized secret-management channel.
+- Cloud Shell VM and private IP are ephemeral; external WARP/SSH/Access and
+  model inference remain unverified until independently tested.
+
+Rollback: `bash scripts/zcloud-tunnel.sh stop` stops only its own managed
+supervisor. Stop only the `ollama.pid` instance owned by this recovery
+session after verifying process identity. Do not delete model files or tunnel
+credentials to roll back a tool installation. Existing live services are not
+restarted by routine status checks.
