@@ -6,6 +6,7 @@ import json
 import os
 import time
 import sqlite3
+import socket
 import stat
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -76,6 +77,11 @@ class ReplayStore:
                 return inserted.rowcount == 1
 
 class Handler(BaseHTTPRequestHandler):
+    def setup(self):
+        super().setup()
+        # Bound incomplete requests and stalled clients.
+        self.connection.settimeout(10.0)
+
     def do_GET(self):
         if self.path != "/health":
             return self.reply(404, {"error": "not_found"})
@@ -97,7 +103,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(401, {"error": "invalid_timestamp"})
         if abs(time.time() - sent_at) > 300 or not (1 <= len(event_id) <= 128) or not all(c.isascii() and (c.isalnum() or c in "-_") for c in event_id):
             return self.reply(401, {"error": "invalid_timestamp_or_event"})
-        body = self.rfile.read(length)
+        try:
+            body = self.rfile.read(length)
+        except (TimeoutError, socket.timeout, ConnectionError, OSError):
+            return self.reply(408, {"error": "body_read_timeout"})
+        if len(body) != length:
+            return self.reply(400, {"error": "incomplete_body"})
         supplied = self.headers.get("X-ZWSL-Signature", "")
         if not supplied.startswith("sha256="):
             return self.reply(401, {"error": "unauthorized"})
