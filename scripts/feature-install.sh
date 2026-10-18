@@ -11,6 +11,7 @@ CHECK_CLOUDFLARE="${ZWSL_CHECK_CLOUDFLARE:-0}"
 CLOUDFLARE_HOST="${ZCLOUD_HOSTNAME:-}"
 MODEL_POLICY="${ZWSL_MODEL_POLICY:-reuse}"
 STORAGE="${ZWSL_WEBUI_BASE:-/opt/zeaz-storage}"
+MCP_HOME="${ZWSL_MCP_HOME:-$HOME/.local/share/zwsl-remote-exec}"
 require() { command -v "$1" >/dev/null 2>&1 || { echo "MISSING: $1" >&2; return 1; }; }
 note() { printf '[zwslcore] %s\n' "$*"; }
 detect_profile() {
@@ -44,7 +45,7 @@ preflight() {
   if command -v ollama >/dev/null; then ollama list || true; fi
   if [[ -x "$STORAGE/venvs/openwebui/bin/open-webui" ]]; then note "PASS: Open WebUI installed (native)"; else note "UNAVAILABLE: Open WebUI installed (native)"; fi
   report "Open WebUI health" "curl -fsS --max-time 3 http://127.0.0.1:3000/health" || true
-  if [[ -f "$HOME/.local/share/zwsl-remote-exec/server.py" ]]; then note "PASS: Local MCP server"; else note "UNAVAILABLE: Local MCP server"; fi
+  if [[ -f "$MCP_HOME/server.py" && -f "$MCP_HOME/paths.json" && -x "$MCP_HOME/.venv/bin/python" ]]; then note "PASS: Local MCP server"; else note "UNAVAILABLE: Local MCP server"; fi
   report "Cloudflare CLI" "command -v cloudflared" || true
   if [[ -f "$HOME/.cloudflared/config.yml" ]]; then note "PASS: Cloudflare config"; else note "UNAVAILABLE: Cloudflare config"; fi
   if ss -lnt 2>/dev/null | grep -Eq '[:.]22[[:space:]]'; then note "PASS: SSH listener"; else note "UNAVAILABLE: SSH listener"; fi
@@ -107,7 +108,7 @@ case "$MODE" in
       make -C "$ROOT" ai-test
       if [[ "$INSTALL_MCP" == 1 ]]; then
         [[ -f "$ROOT/scripts/install-zwsl-remote-exec.sh" ]] || { note "Missing optional MCP installer"; exit 1; }
-        if [[ -f "$HOME/.local/share/zwsl-remote-exec/server.py" && -x "$HOME/.local/share/zwsl-remote-exec/.venv/bin/python" ]]; then
+        if [[ -f "$MCP_HOME/server.py" && -f "$MCP_HOME/paths.json" && -x "$MCP_HOME/.venv/bin/python" ]]; then
           note "SKIP: existing MCP installation; checking it"
           bash "$ROOT/scripts/install-zwsl-remote-exec.sh" check
         else
