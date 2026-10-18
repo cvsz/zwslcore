@@ -38,7 +38,7 @@ hostname = os.environ["ZCLOUD_HOSTNAME"]
 port = os.environ["ZCLOUD_SSH_PORT"]
 state = Path(os.environ["ZCLOUD_STATE"])
 lines = config.read_text().splitlines(keepends=True)
-matching = [i for i, line in enumerate(lines) if line.strip() == f"hostname: {hostname}"]
+matching = [i for i, line in enumerate(lines) if line.strip() == f"- hostname: {hostname}"]
 if len(matching) != 1:
     raise SystemExit("Expected exactly one matching hostname entry")
 index = matching[0]
