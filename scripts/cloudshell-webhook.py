@@ -79,7 +79,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path != "/health":
             return self.reply(404, {"error": "not_found"})
-        return self.reply(200, {"status": "healthy"})
+        return self.reply(200, {"status": "healthy", "service": "zwslcore-signed-webhook", "version": 1})
     def do_POST(self):
         if self.path not in ("/webhook", "/webhook/"):
             return self.reply(404, {"error": "not_found"})
