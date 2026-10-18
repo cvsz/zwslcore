@@ -105,7 +105,7 @@ class PrivateOllamaTests(unittest.TestCase):
             {"choices": [None]}, {"choices": [{"message": None}]},
             {"choices": [{"message": {"content": None}}]},
             {"choices": [{"message": {"content": ""}}]},
-            {"choices": [{"message": {"content": "  \\t"}}]},
+            {"choices": [{"message": {"content": "   "}}]},
         )
 
         class Opener:
