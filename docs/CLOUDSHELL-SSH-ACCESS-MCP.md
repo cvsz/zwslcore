@@ -42,7 +42,14 @@ bash scripts/install-zwsl-remote-exec.sh install
 bash scripts/install-zwsl-remote-exec.sh check
 ```
 
-This installs a **stdio-only, read-only** MCP server into the user home directory, not into the repository. Its tools inspect user/kernel information, repository Git status, listening sockets, and Cloudflare ingress validation. They do not accept arbitrary commands or mutate files. Dependencies require a network connection and the MCP SDK version range stated in the installer. Production installations should pin and audit a concrete tested version.
+This installs a **stdio-only, read-only** MCP server into the user home directory, not into the repository.
+Set `ZWSL_MCP_HOME` to use a different private installation directory.
+At installation the generated server records only the current checkout path,
+the `ZCLOUD_CONFIG` path, and the discovered `cloudflared` executable in
+owner-only `paths.json` (no secrets or `.env` content).
+The feature-aware installer detects an existing installation at that same path.
+Diagnostics set `GIT_OPTIONAL_LOCKS=0`, cap captured output at 8,000 bytes
+while streaming, and enforce a 10-second subprocess deadline. Its tools inspect user/kernel information, repository Git status, listening sockets, and Cloudflare ingress validation. They do not accept arbitrary commands or mutate files. Dependencies require a network connection and the MCP SDK version range stated in the installer. Production installations should pin and audit a concrete tested version.
 
 ChatGPT does not gain remote-shell execution merely by installing a server on Cloud Shell. An authenticated and supported MCP transport plus workspace permissions must be configured separately; do not publish an unauthenticated MCP endpoint or tunnel credentials. A working external SSH test is independent from ChatGPT tool availability.
 
