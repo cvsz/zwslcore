@@ -85,9 +85,13 @@ def fetch_json(url: str, timeout: int = 10) -> dict:
 
 def check_model(ip: str, model: str) -> None:
     data = fetch_json(f"http://{ip}:11434/api/tags")
-    names = {x.get("name") for x in data.get("models", []) if isinstance(x, dict)}
-    if model not in names:
-        raise Failed(f"Ollama reachable, but requested model is not available: {model}")
+    models = data.get("models")
+    if not isinstance(models, list):
+        raise Failed("Ollama returned an invalid model inventory")
+    names = {entry["name"] for entry in models
+             if isinstance(entry, dict) and isinstance(entry.get("name"), str) and entry["name"]}
+    if not isinstance(model, str) or not model.strip() or model not in names:
+        raise Failed("Ollama reachable, but requested model is not available")
     print(f"OLLAMA_MODEL=PASS model={model}")
 
 
@@ -177,9 +181,16 @@ def infer(ip: str, model: str) -> None:
         if len(raw) > 1024 * 1024:
             raise Failed("Inference response too large")
         response_data = json.loads(raw)
-        choices = response_data.get("choices") or []
-        if not choices or not isinstance(choices[0].get("message", {}).get("content"), str):
-            raise Failed("No message returned from inference")
+        if not isinstance(response_data, dict):
+            raise Failed("Invalid inference response object")
+        choices = response_data.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            raise Failed("No valid choices returned from inference")
+        message = choices[0].get("message")
+        if (not isinstance(message, dict)
+                or not isinstance(message.get("content"), str)
+                or not message["content"].strip()):
+            raise Failed("Inference returned no nonempty assistant content")
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError,
             OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise Failed(f"OpenAI-compatible inference failed: {type(exc).__name__}") from exc
