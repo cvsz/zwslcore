@@ -1,5 +1,7 @@
 """Fail-closed Cloud Shell private Ollama/WARP route regression tests."""
 import importlib.util
+import io
+import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
 import threading
@@ -77,6 +79,57 @@ class PrivateOllamaTests(unittest.TestCase):
              patch.object(module, "run", side_effect=lambda *a, **kw: next(replies)) as run:
             module.sync_route(self.args(True))
         self.assertEqual(run.call_count, 4)
+
+    def test_model_inventory_rejects_malformed_or_empty_responses(self):
+        bad_inventories = (
+            {}, {"models": None}, {"models": "test-model"}, {"models": {}},
+            {"models": []}, {"models": [{}]}, {"models": [{"name": ""}]},
+        )
+        for inventory in bad_inventories:
+            with self.subTest(inventory=inventory), \
+                 patch.object(module, "fetch_json", return_value=inventory), \
+                 self.assertRaises(module.Failed):
+                module.check_model(IP, "test-model")
+
+    def test_model_inventory_accepts_actual_model_only(self):
+        inventory = {"models": [{"name": "test-model"}, {"name": None}]}
+        with patch.object(module, "fetch_json", return_value=inventory):
+            module.check_model(IP, "test-model")
+            with self.assertRaises(module.Failed):
+                module.check_model(IP, "")
+
+    def test_inference_rejects_false_positive_responses(self):
+        malformed_responses = (
+            None, [], {}, {"choices": None}, {"choices": []},
+            {"choices": "unexpected"}, {"choices": [{}]},
+            {"choices": [None]}, {"choices": [{"message": None}]},
+            {"choices": [{"message": {"content": None}}]},
+            {"choices": [{"message": {"content": ""}}]},
+            {"choices": [{"message": {"content": "  \\t"}}]},
+        )
+
+        class Opener:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def open(self, request, timeout):
+                return io.BytesIO(json.dumps(self.payload).encode())
+
+        for payload in malformed_responses:
+            with self.subTest(payload=payload), \
+                 patch.object(module, "private_opener", return_value=Opener(payload)), \
+                 self.assertRaises(module.Failed):
+                module.infer(IP, "test-model")
+
+    def test_inference_accepts_nonempty_chat_response(self):
+        class Opener:
+            def open(self, request, timeout):
+                return io.BytesIO(
+                    b'{"choices":[{"message":{"role":"assistant","content":"OK"}}]}'
+                )
+
+        with patch.object(module, "private_opener", return_value=Opener()):
+            module.infer(IP, "test-model")
 
     def test_private_opener_disables_proxy_configuration(self):
         build = urllib.request.build_opener
