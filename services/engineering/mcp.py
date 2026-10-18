@@ -127,11 +127,21 @@ class StdioMCPSession:
         self._buffer = bytearray()
         self._stderr_tail = bytearray()
         self._stderr_thread: threading.Thread | None = None
+        self._stderr_stop = threading.Event()
 
     def _drain_stderr(self, fd: int) -> None:
-        """Continuously drain stderr so a chatty server can never block on a full pipe."""
+        """Drain stderr so a chatty server can never block on a full pipe.
+
+        The read is wrapped in a selector with a timeout so shutdown can wake
+        the drainer even when a descendant process inherited the stderr pipe
+        and would otherwise keep os.read() blocked without EOF.
+        """
+        selector = selectors.DefaultSelector()
         try:
-            while True:
+            selector.register(fd, selectors.EVENT_READ)
+            while not self._stderr_stop.is_set():
+                if not selector.select(timeout=0.2):
+                    continue
                 chunk = os.read(fd, 4096)
                 if not chunk:
                     return
@@ -139,6 +149,8 @@ class StdioMCPSession:
                 del self._stderr_tail[:-STDERR_TAIL_BYTES]
         except (OSError, ValueError):
             return
+        finally:
+            selector.close()
 
     def __enter__(self) -> StdioMCPSession:
         if not self.config.enabled:
@@ -176,6 +188,7 @@ class StdioMCPSession:
         assert self.process.stderr is not None
         self._buffer.clear()
         self._stderr_tail.clear()
+        self._stderr_stop.clear()
         self._stderr_thread = threading.Thread(
             target=self._drain_stderr,
             args=(self.process.stderr.fileno(),),
@@ -232,9 +245,19 @@ class StdioMCPSession:
         thread = self._stderr_thread
         self._stderr_thread = None
         if thread is not None:
-            thread.join(timeout=1.0)
-            # Only close stderr once the drain thread is done with the descriptor.
-            if not thread.is_alive() and process.stderr is not None:
+            # Wake the drainer even when a descendant still holds the stderr
+            # pipe open; the descriptor close below is the last-resort
+            # unblock for a thread that misses the stop event.
+            self._stderr_stop.set()
+            thread.join(timeout=2.0)
+            fd = process.stderr.fileno() if process.stderr is not None else None
+            if thread.is_alive() and fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                thread.join(timeout=2.0)
+            elif not thread.is_alive() and process.stderr is not None:
                 try:
                     process.stderr.close()
                 except OSError:

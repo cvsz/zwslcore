@@ -162,14 +162,20 @@ def restore_backup(backup: str | Path, target: str | Path | None = None) -> Path
     backup_path = Path(backup).expanduser().resolve()
     manifest = _load_manifest(backup_path)
     if target is None:
-        target_path = Path(tempfile.mkdtemp(prefix="zwslcore-restore-"))
+        target_path = Path(tempfile.mkdtemp(prefix="zwslcore-restore-")).resolve()
     else:
         target_path = Path(target).expanduser().resolve()
-        # Reject before creating anything so a refused restore never writes into the backup.
-        if target_path == backup_path or backup_path in target_path.parents:
-            raise RestoreError("restore target must be outside the backup directory")
-        if target_path.exists() and any(target_path.iterdir()):
-            raise RestoreError("restore target must be a new or empty directory")
+    # Reject before anything is verified or copied so a refused restore never
+    # writes into the backup. The containment check applies to both
+    # target-selection paths because a custom TMPDIR can point inside the
+    # backup and make the automatically chosen staging directory unsafe.
+    if target_path == backup_path or backup_path in target_path.parents:
+        if target is None:
+            shutil.rmtree(target_path, ignore_errors=True)
+        raise RestoreError("restore target must be outside the backup directory")
+    if target is not None and target_path.exists() and any(target_path.iterdir()):
+        raise RestoreError("restore target must be a new or empty directory")
+    if target is not None:
         target_path.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(target_path, 0o700)
     try:

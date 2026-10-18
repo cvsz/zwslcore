@@ -3,11 +3,30 @@ from __future__ import annotations
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import unittest
 from pathlib import Path
 
 from services.engineering.mcp import MCPError, MCPServerConfig, StdioMCPSession
+
+DESCENDANT_STDERR_SERVER = textwrap.dedent(
+    """
+    import json, subprocess, sys
+    # Spawn a child that inherits stderr and outlives the parent server, so
+    # the stderr pipe never reaches EOF when the server is terminated.
+    subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(5)"],
+        stderr=None,
+    )
+    request = json.loads(sys.stdin.readline())
+    reply = {"jsonrpc": "2.0", "id": request["id"], "result": {}}
+    sys.stdout.write(json.dumps(reply) + "\\n")
+    sys.stdout.flush()
+    sys.stdin.readline()
+    sys.exit(0)
+    """
+)
 
 PARTIAL_LINE_SERVER = textwrap.dedent(
     """
@@ -84,6 +103,20 @@ class MCPSessionRobustnessTests(unittest.TestCase):
             self.assertTrue(process.stdin.closed)
             self.assertTrue(process.stdout.closed)
             self.assertTrue(process.stderr.closed)
+
+    def test_stderr_drainer_exits_when_descendant_holds_the_pipe(self):
+        # A descendant that inherits stderr (and outlives its parent) keeps
+        # the pipe open, so shutdown must wake the drainer instead of waiting
+        # for an EOF that never arrives.
+        with tempfile.TemporaryDirectory() as directory:
+            config = self._config(directory, DESCENDANT_STDERR_SERVER, timeout=5.0)
+            first = time.monotonic()
+            with StdioMCPSession(config):
+                pass
+            elapsed = time.monotonic() - first
+            drainer = [t for t in threading.enumerate() if t.name.startswith("mcp-stderr-")]
+            self.assertFalse(drainer)
+            self.assertLess(elapsed, 8.0)
 
 
 if __name__ == "__main__":
