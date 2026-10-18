@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "cloudshell": [
+      {
+        "name": "ssh",
+        "host_port": 22,
+        "service_port": 22,
+        "protocol": "ssh",
+        "exposure": "access",
+        "hostname_role": "ssh",
+        "required": true,
+        "check": "tcp"
+      },
+      {
+        "name": "provider",
+        "host_port": 8080,
+        "service_port": 8080,
+        "protocol": "http",
+        "exposure": "access+bearer",
+        "hostname_role": "api",
+        "required": true,
+        "check": "provider"
+      },
+      {
+        "name": "open-webui",
+        "host_port": 3000,
+        "service_port": 3000,
+        "protocol": "http",
+        "exposure": "access+webui-auth",
+        "hostname_role": "webui",
+        "required": false,
+        "check": "/health"
+      },
+      {
+        "name": "ollama",
+        "host_port": 11434,
+        "service_port": 11434,
+        "protocol": "http",
+        "exposure": "private",
+        "hostname_role": null,
+        "required": true,
+        "check": "/api/version"
+      },
+      {
+        "name": "signed-webhook",
+        "host_port": 8765,
+        "service_port": 8765,
+        "protocol": "http",
+        "exposure": "private",
+        "hostname_role": null,
+        "required": false,
+        "check": "/health"
+      }
+    ],
+    "compose": [
+      {
+        "name": "ssh",
+        "host_port": 22,
+        "service_port": 22,
+        "protocol": "ssh",
+        "exposure": "access",
+        "hostname_role": "ssh",
+        "required": false,
+        "check": "tcp"
+      },
+      {
+        "name": "provider",
+        "host_port": 8080,
+        "service_port": 8080,
+        "protocol": "http",
+        "exposure": "access+bearer",
+        "hostname_role": "api",
+        "required": true,
+        "check": "provider"
+      },
+      {
+        "name": "open-webui",
+        "host_port": 3000,
+        "service_port": 8080,
+        "protocol": "http",
+        "exposure": "access+webui-auth",
+        "hostname_role": "webui",
+        "required": true,
+        "check": "/health"
+      },
+      {
+        "name": "ollama",
+        "host_port": 11434,
+        "service_port": 11434,
+        "protocol": "http",
+        "exposure": "private",
+        "hostname_role": null,
+        "required": true,
+        "check": "/api/version"
+      },
+      {
+        "name": "litellm",
+        "host_port": 4000,
+        "service_port": 4000,
+        "protocol": "http",
+        "exposure": "private",
+        "hostname_role": null,
+        "required": true,
+        "check": "/health/readiness"
+      }
+    ]
+  }
+}
