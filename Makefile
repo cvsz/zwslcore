@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
+.PHONY: cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-reconcile engineer-recover engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
 
 cloudshell:
 	bash scripts/cloudshell.sh
