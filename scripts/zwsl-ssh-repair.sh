@@ -44,7 +44,11 @@ block = ("Host " + alias + "\n"
          + "    StrictHostKeyChecking yes\n")
 if exact:
     begin = exact[0]
-    end = min([i for i, _ in heads if i > begin] + [len(lines)])
+    # Both Host and Match begin new OpenSSH configuration sections.
+    # Never consume a following Match stanza when replacing this one Host.
+    boundaries = [i for i, line in enumerate(lines) if i > begin
+                  and re.match(r"^\s*(?:Host|Match)\s+", line, re.I)]
+    end = min(boundaries + [len(lines)])
     lines[begin:end] = [block]
 else:
     lines.append("\n" + block)
