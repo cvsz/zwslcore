@@ -88,11 +88,11 @@ class CliTests(unittest.TestCase):
         script = root / "scripts" / "ai.sh"
         script.write_bytes(SCRIPT.read_bytes())
         (root / ".env").write_text(
-            'AI_API_URL="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"\\n'
-            'AI_MODEL="gemini-3.8-flash"\\n'
-            'GEMINI_API_KEY="test-secret"\\n'
-            'AI_API_KEY="${GEMINI_API_KEY}"\\n'
-            'APP_URL=<http://127.0.0.1:3000>\\n'
+            'AI_API_URL="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"\n'
+            'AI_MODEL="gemini-3.8-flash"\n'
+            'GEMINI_API_KEY="test-secret"\n'
+            'AI_API_KEY="${GEMINI_API_KEY}"\n'
+            'APP_URL=<http://127.0.0.1:3000>\n'
         )
         (root / ".env").chmod(0o600)
         env = dict(self.env)
