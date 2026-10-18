@@ -46,11 +46,23 @@ class CliTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.env = dict(os.environ, XDG_STATE_HOME=self.temp.name,
+        # Run every CLI case against an isolated checkout copy so the
+        # developer's repository .env (allowlisted keys) can never influence
+        # the test run, and drop real AI settings from the environment.
+        self.checkout = Path(self.temp.name) / "checkout"
+        (self.checkout / "scripts").mkdir(parents=True)
+        self.script = self.checkout / "scripts" / "ai.sh"
+        self.script.write_bytes(SCRIPT.read_bytes())
+        self.script.chmod(0o755)
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("AI_") and k not in
+               ("GEMINI_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY",
+                "PROVIDER_CLIENT_KEY", "OPENAI_API_KEY")}
+        self.env = dict(env, XDG_STATE_HOME=self.temp.name,
             AI_API_URL=f"http://127.0.0.1:{self.server.server_port}/v1/chat/completions",
             AI_API_KEY="test-token", AI_MODEL="zeaz-auto")
     def run_cli(self,*args):
-        return subprocess.run(["bash",str(SCRIPT),*args],env=self.env,
+        return subprocess.run(["bash",str(self.script),*args],env=self.env,
             capture_output=True,text=True,timeout=20)
     def test_offline_selftest(self):
         result=self.run_cli("selftest")
@@ -82,52 +94,91 @@ class CliTests(unittest.TestCase):
         self.assertIn("symlink",result.stderr.lower())
 
     def test_dotenv_gemini_configuration(self):
-        # The repository .env is shared, so test with a private script copy.
-        root = Path(self.temp.name) / "checkout"
-        (root / "scripts").mkdir(parents=True)
-        script = root / "scripts" / "ai.sh"
-        script.write_bytes(SCRIPT.read_bytes())
-        (root / ".env").write_text(
+        # The isolated checkout has no repository .env, so provide a private one.
+        (self.checkout / ".env").write_text(
             'AI_API_URL="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"\n'
             'AI_MODEL="gemini-3.8-flash"\n'
             'GEMINI_API_KEY="test-secret"\n'
             'AI_API_KEY="${GEMINI_API_KEY}"\n'
             'APP_URL=<http://127.0.0.1:3000>\n'
         )
-        (root / ".env").chmod(0o600)
+        (self.checkout / ".env").chmod(0o600)
         env = dict(self.env)
         for key in ("AI_API_URL", "AI_MODEL", "AI_API_KEY", "GEMINI_API_KEY"):
             env.pop(key, None)
-        result = subprocess.run(["bash", str(script), "doctor"], env=env,
+        result = subprocess.run(["bash", str(self.script), "doctor"], env=env,
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("gemini-3.8-flash", result.stdout)
         self.assertIn("Credential configured: True", result.stdout)
         self.assertNotIn("test-secret", result.stdout)
 
+    def test_dotenv_never_leaks_key_to_untrusted_url(self):
+        # A provider domain only matches when it is the parsed hostname,
+        # not when it hides inside the path or query of an untrusted URL.
+        (self.checkout / ".env").write_text(
+            'AI_API_URL="https://attacker.example/?next=generativelanguage.googleapis.com"\n'
+            'GEMINI_API_KEY="test-secret"\n'
+        )
+        (self.checkout / ".env").chmod(0o600)
+        env = dict(self.env)
+        for key in ("AI_API_URL", "AI_API_KEY", "GEMINI_API_KEY"):
+            env.pop(key, None)
+        result = subprocess.run(["bash", str(self.script), "doctor"], env=env,
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Credential configured: False", result.stdout)
+        self.assertNotIn("test-secret", result.stdout)
+
+    def test_dotenv_loads_provider_client_key(self):
+        (self.checkout / ".env").write_text(
+            'PROVIDER_CLIENT_KEY="test-provider-token"\n'
+        )
+        (self.checkout / ".env").chmod(0o600)
+        env = dict(self.env)
+        for key in ("AI_API_KEY", "PROVIDER_CLIENT_KEY"):
+            env.pop(key, None)
+        result = subprocess.run(["bash", str(self.script), "doctor"], env=env,
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Credential configured: True", result.stdout)
+        self.assertNotIn("test-provider-token", result.stdout)
+
+    def test_dotenv_preserves_explicit_empty_override(self):
+        # An explicitly empty AI_API_KEY disables the provider-specific
+        # credentials fallback from the repository .env.
+        (self.checkout / ".env").write_text(
+            'AI_API_URL="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"\n'
+            'GEMINI_API_KEY="test-secret"\n'
+        )
+        (self.checkout / ".env").chmod(0o600)
+        env = dict(self.env)
+        for key in ("AI_API_URL", "GEMINI_API_KEY",
+                    "PROVIDER_CLIENT_KEY", "OPENAI_API_KEY"):
+            env.pop(key, None)
+        # Explicitly empty (not absent) API key must suppress the fallback.
+        env["AI_API_KEY"] = ""
+        result = subprocess.run(["bash", str(self.script), "doctor"], env=env,
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Credential configured: False", result.stdout)
+        self.assertNotIn("test-secret", result.stdout)
+
     def test_dotenv_does_not_execute_commands(self):
-        root = Path(self.temp.name) / "checkout"
-        (root / "scripts").mkdir(parents=True)
-        script = root / "scripts" / "ai.sh"
-        script.write_bytes(SCRIPT.read_bytes())
-        marker = root / "executed"
-        (root / ".env").write_text(f'AI_MODEL="$(touch {marker})"\\n')
-        (root / ".env").chmod(0o600)
+        marker = self.checkout / "executed"
+        (self.checkout / ".env").write_text(f'AI_MODEL="$(touch {marker})"\\n')
+        (self.checkout / ".env").chmod(0o600)
         env = dict(self.env)
         env.pop("AI_MODEL", None)
-        result = subprocess.run(["bash", str(script), "doctor"], env=env,
+        result = subprocess.run(["bash", str(self.script), "doctor"], env=env,
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(marker.exists())
 
     def test_dotenv_rejects_insecure_permissions(self):
-        root = Path(self.temp.name) / "checkout"
-        (root / "scripts").mkdir(parents=True)
-        script = root / "scripts" / "ai.sh"
-        script.write_bytes(SCRIPT.read_bytes())
-        (root / ".env").write_text('AI_MODEL="test"\\n')
-        (root / ".env").chmod(0o644)
-        result = subprocess.run(["bash", str(script), "doctor"], env=self.env,
+        (self.checkout / ".env").write_text('AI_MODEL="test"\\n')
+        (self.checkout / ".env").chmod(0o644)
+        result = subprocess.run(["bash", str(self.script), "doctor"], env=self.env,
                                 capture_output=True, text=True, timeout=20)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("chmod 600", result.stderr)

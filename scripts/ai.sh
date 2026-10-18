@@ -22,8 +22,8 @@ def load_dotenv():
     if stat.S_IMODE(path.stat().st_mode) & 0o077:
         sys.exit("Insecure .env permissions: run chmod 600 .env")
     allowed = {"AI_API_URL", "AI_MODEL", "AI_API_KEY", "GEMINI_API_KEY",
-               "OPENROUTER_API_KEY", "GROQ_API_KEY", "AI_TIMEOUT",
-               "AI_SESSION", "AI_SYSTEM_PROMPT"}
+               "OPENROUTER_API_KEY", "GROQ_API_KEY", "PROVIDER_CLIENT_KEY",
+               "AI_TIMEOUT", "AI_SESSION", "AI_SYSTEM_PROMPT"}
     with path.open(encoding="utf-8") as stream:
         for number, raw in enumerate(stream, 1):
             line = raw.strip()
@@ -41,14 +41,20 @@ def load_dotenv():
             if value.startswith("${") and value.endswith("}") and re.fullmatch(r'\$\{[A-Za-z_][A-Za-z0-9_]*\}', value):
                 value = os.environ.get(value[2:-1], "")
             os.environ[key] = value
-    if not os.environ.get("AI_API_KEY"):
-        url = os.environ.get("AI_API_URL", "")
-        if "generativelanguage.googleapis.com" in url:
-            os.environ["AI_API_KEY"] = os.environ.get("GEMINI_API_KEY", "")
-        elif "openrouter.ai" in url:
-            os.environ["AI_API_KEY"] = os.environ.get("OPENROUTER_API_KEY", "")
-        elif "api.groq.com" in url:
-            os.environ["AI_API_KEY"] = os.environ.get("GROQ_API_KEY", "")
+    # Fill AI_API_KEY only when the process did not receive one, and compare
+    # the parsed endpoint hostname against known provider domains. Substring
+    # matching against the full URL would leak provider keys to a crafted URL
+    # such as https://attacker.example/?next=generativelanguage.googleapis.com.
+    provider_keys = {
+        "generativelanguage.googleapis.com": "GEMINI_API_KEY",
+        "openrouter.ai": "OPENROUTER_API_KEY",
+        "api.groq.com": "GROQ_API_KEY",
+    }
+    if "AI_API_KEY" not in os.environ:
+        hostname = urllib.parse.urlsplit(os.environ.get("AI_API_URL", "")).hostname or ""
+        source = provider_keys.get(hostname)
+        if source:
+            os.environ["AI_API_KEY"] = os.environ.get(source, "")
 
 load_dotenv()
 
