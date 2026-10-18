@@ -9,7 +9,14 @@ make webhook-start    # foreground; separate Cloud Shell terminal
 make webhook-health   # second terminal
 ```
 
-The local receiver binds `127.0.0.1:8765`. It accepts `POST /webhook` with JSON objects up to 64 KiB. The sender must supply:
+The local receiver binds `127.0.0.1:8765`.
+The health endpoint returns a receiver-specific JSON identity
+(`status=healthy`, `service=zwslcore-signed-webhook`, `version=1`).
+`make webhook-health` and the opt-in route installer verify that identity,
+rather than accepting any HTTP 200 from an unrelated service.
+Set `ZCLOUD_SSH_PORT` consistently with your existing SSH ingress port
+(default `22`); a custom port such as `2222` is supported without changing
+the managed SSH origin. It accepts `POST /webhook` with JSON objects up to 64 KiB. The sender must supply:
 - `X-ZWSL-Timestamp`: Unix epoch seconds (maximum clock skew 300 seconds)
 - `X-ZWSL-Event-ID`: a unique, unguessable event identifier (alphanumeric, underscore or hyphen)
 - `X-ZWSL-Signature`: `sha256=` plus hex HMAC-SHA256 of `timestamp + "." + event_id + "." + raw_body`
