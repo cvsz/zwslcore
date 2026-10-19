@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import ipaddress
@@ -92,22 +91,39 @@ class InMemoryRateLimiter:
         self.window_seconds = window_seconds
         self.clock = clock
         self._events: dict[str, deque[float]] = defaultdict(deque)
+        self._next_sweep = self.clock() + window_seconds
+
+    def _sweep(self, now: float) -> None:
+        """Drop buckets whose events have all expired.
+
+        Buckets are keyed on client-supplied credentials before authentication,
+        so without this an attacker rotating the Authorization header grows the
+        table without bound.
+        """
+        if now < self._next_sweep:
+            return
+        cutoff = now - self.window_seconds
+        stale = [key for key, events in self._events.items() if not events or events[-1] <= cutoff]
+        for key in stale:
+            del self._events[key]
+        self._next_sweep = now + self.window_seconds
 
     async def allow(self, bucket: str) -> tuple[bool, int]:
         if self.limit <= 0:
             return True, 0
-        
+
         now = self.clock()
+        self._sweep(now)
         events = self._events[bucket]
         cutoff = now - self.window_seconds
-        
+
         while events and events[0] <= cutoff:
             events.popleft()
-        
+
         remaining = max(0, self.limit - len(events))
         if not remaining:
             return False, 0
-        
+
         events.append(now)
         return True, remaining - 1
 

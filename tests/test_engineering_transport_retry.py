@@ -79,7 +79,7 @@ class ProviderTransportRetryTests(unittest.TestCase):
         request = urllib.request.Request("http://127.0.0.1:8080/health/ready")
 
         with patch(
-            "urllib.request.urlopen",
+            "services.engineering.runtime._open_no_redirect",
             return_value=FakeResponse({"status": "ready"}),
         ):
             client._request_json(request, attempts=1, request_id=request_id)
@@ -88,7 +88,7 @@ class ProviderTransportRetryTests(unittest.TestCase):
 
         unsafe_request = urllib.request.Request("http://127.0.0.1:8080/health/ready")
         with patch(
-            "urllib.request.urlopen",
+            "services.engineering.runtime._open_no_redirect",
             return_value=FakeResponse({"status": "ready"}),
         ):
             client._request_json(unsafe_request, attempts=1, request_id="api_key=private")
@@ -106,7 +106,7 @@ class ProviderTransportRetryTests(unittest.TestCase):
                 raise ConnectionResetError(104, "Connection reset by peer")
             return FakeResponse({"status": "ready"})
 
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen), patch("time.sleep"):
+        with patch("services.engineering.runtime._open_no_redirect", side_effect=fake_urlopen), patch("time.sleep"):
             value = client._request_json(request, attempts=3, timeout=1)
 
         self.assertEqual(value, {"status": "ready"})
@@ -117,7 +117,7 @@ class ProviderTransportRetryTests(unittest.TestCase):
         request = urllib.request.Request("http://127.0.0.1:8080/health/ready")
         for body in (b"{invalid", b"[]"):
             with self.subTest(body=body), patch(
-                "urllib.request.urlopen", return_value=io.BytesIO(body)
+                "services.engineering.runtime._open_no_redirect", return_value=io.BytesIO(body)
             ):
                 with self.assertRaises(ProviderTransportError):
                     client._request_json(request, attempts=1, timeout=1)
@@ -133,7 +133,7 @@ class ProviderTransportRetryTests(unittest.TestCase):
                 raise urllib.error.HTTPError(req.full_url, 503, "unavailable", {}, io.BytesIO(b"busy"))
             return FakeResponse({"status": "ready"})
 
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen), patch("time.sleep"):
+        with patch("services.engineering.runtime._open_no_redirect", side_effect=fake_urlopen), patch("time.sleep"):
             value = client._request_json(request, attempts=2, timeout=1)
 
         self.assertEqual(value, {"status": "ready"})
@@ -143,7 +143,7 @@ class ProviderTransportRetryTests(unittest.TestCase):
         client = ProviderClient()
         request = urllib.request.Request("http://127.0.0.1:8080/health/ready")
         with patch(
-            "urllib.request.urlopen",
+            "services.engineering.runtime._open_no_redirect",
             side_effect=urllib.error.HTTPError(
                 request.full_url, 503, "unavailable", {}, io.BytesIO(b"api_key=private-value")
             ),
@@ -180,7 +180,7 @@ class ProviderTransportRetryTests(unittest.TestCase):
         request = urllib.request.Request("http://127.0.0.1:8080/health/ready")
 
         with patch(
-            "urllib.request.urlopen",
+            "services.engineering.runtime._open_no_redirect",
             side_effect=ConnectionResetError(104, "Connection reset by peer"),
         ), patch("time.sleep"):
             with self.assertRaisesRegex(ProviderTransportError, "after 3 attempt"):

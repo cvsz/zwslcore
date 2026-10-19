@@ -31,8 +31,25 @@ from .validation import evaluate_validation, validate_mode
 from .worktree import WorktreeManager
 
 
+MAX_PROVIDER_RESPONSE_BYTES = 16 * 1024 * 1024
+
+
 class ProviderTransportError(RuntimeError):
     pass
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects: urllib would otherwise forward the Authorization header."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler())
+
+
+def _open_no_redirect(request: urllib.request.Request, timeout: float | None = None):
+    return _NO_REDIRECT_OPENER.open(request, timeout=timeout)
 
 
 class ProviderClient:
@@ -67,8 +84,13 @@ class ProviderClient:
 
         for attempt in range(1, attempts + 1):
             try:
-                with urllib.request.urlopen(request, timeout=timeout_value) as response:
-                    value = json.load(response)
+                with _open_no_redirect(request, timeout=timeout_value) as response:
+                    raw = response.read(MAX_PROVIDER_RESPONSE_BYTES + 1)
+                if len(raw) > MAX_PROVIDER_RESPONSE_BYTES:
+                    raise ProviderTransportError(
+                        f"provider response exceeds the size limit for {request.full_url}"
+                    )
+                value = json.loads(raw)
                 if not isinstance(value, dict):
                     raise ProviderTransportError(
                         f"provider returned a non-object JSON response for {request.full_url}"
