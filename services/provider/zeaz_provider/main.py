@@ -34,8 +34,10 @@ from .security import (
     RateLimitBackendError,
     RedisRateLimiter,
     TrustedProxyPolicy,
+    allow_rate_limit_buckets,
     client_bucket,
     request_id,
+    request_rate_buckets,
     verify_client_key,
 )
 from .streaming import (
@@ -103,6 +105,11 @@ async def request_boundary(request: Request, call_next):
         request.headers.get("x-api-key"),
         peer,
     )
+    limit_buckets = request_rate_buckets(
+        request.headers.get("authorization"),
+        request.headers.get("x-api-key"),
+        peer,
+    )
     acquired = await request.app.state.concurrency_limiter.try_acquire()
     finalized = False
     backend_failed = False
@@ -149,7 +156,10 @@ async def request_boundary(request: Request, call_next):
             )
         else:
             try:
-                allowed, remaining = await request.app.state.rate_limiter.allow(bucket)
+                allowed, remaining = await allow_rate_limit_buckets(
+                    request.app.state.rate_limiter,
+                    limit_buckets,
+                )
             except RateLimitBackendError:
                 allowed, remaining = False, 0
                 backend_failed = True
