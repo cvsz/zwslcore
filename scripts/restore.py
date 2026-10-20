@@ -33,13 +33,21 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _read_digest(path: Path) -> str:
+    """Return the first token of a checksum sidecar, rejecting empty files cleanly."""
+    tokens = path.read_text(encoding="utf-8").split()
+    if not tokens:
+        raise RestoreError(f"checksum file is empty: {path.name}")
+    return tokens[0]
+
+
 def _load_manifest(backup: Path) -> dict[str, Any]:
     manifest_path = backup / "manifest.json"
     checksum_path = backup / "manifest.sha256"
     if not manifest_path.is_file() or not checksum_path.is_file():
         raise RestoreError("backup manifest or checksum is missing")
     encoded = manifest_path.read_bytes()
-    expected = checksum_path.read_text(encoding="utf-8").split()[0]
+    expected = _read_digest(checksum_path)
     if hashlib.sha256(encoded).hexdigest() != expected:
         raise RestoreError("backup manifest checksum failed")
     manifest = json.loads(encoded)
@@ -66,6 +74,8 @@ def _verify_and_copy_files(backup: Path, target: Path, manifest: dict[str, Any])
     content = backup / "content"
     results: dict[str, Any] = {}
     for raw, metadata in manifest["files"].items():
+        if not isinstance(metadata, dict):
+            raise RestoreError(f"backup manifest entry is not an object: {raw!r}")
         relative = _safe_relative(raw)
         source = content.joinpath(*relative.parts)
         try:
@@ -130,7 +140,7 @@ def _verify_evidence(root: Path) -> dict[str, Any]:
         sidecar = evidence.with_name("evidence.sha256")
         if not sidecar.is_file():
             raise RestoreError(f"restored evidence checksum is missing: {evidence.relative_to(evidence_root)}")
-        if _sha256(evidence) != sidecar.read_text(encoding="utf-8").split()[0]:
+        if _sha256(evidence) != _read_digest(sidecar):
             raise RestoreError(f"restored evidence checksum failed: {evidence.relative_to(evidence_root)}")
         checked += 1
     return {"bundles": checked, "checksums_passed": checked}
@@ -152,14 +162,19 @@ def restore_backup(backup: str | Path, target: str | Path | None = None) -> Path
     backup_path = Path(backup).expanduser().resolve()
     manifest = _load_manifest(backup_path)
     if target is None:
-        target_path = Path(tempfile.mkdtemp(prefix="zwslcore-restore-"))
+        target_path = Path(tempfile.mkdtemp(prefix="zwslcore-restore-")).resolve()
     else:
         target_path = Path(target).expanduser().resolve()
+    # A custom TMPDIR can place the automatically-created staging directory
+    # inside the backup, so enforce containment for both target-selection paths.
+    if target_path == backup_path or backup_path in target_path.parents:
+        if target is None:
+            shutil.rmtree(target_path, ignore_errors=True)
+        raise RestoreError("restore target must be outside the backup directory")
+    if target is not None:
         if target_path.exists() and any(target_path.iterdir()):
             raise RestoreError("restore target must be a new or empty directory")
         target_path.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if target_path == backup_path or backup_path in target_path.parents:
-        raise RestoreError("restore target must be outside the backup directory")
     os.chmod(target_path, 0o700)
     try:
         copied = _verify_and_copy_files(backup_path, target_path, manifest)
@@ -245,7 +260,16 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = restore_backup(args.backup, args.target)
-    except (RestoreError, OSError, ValueError, sqlite3.Error, json.JSONDecodeError) as exc:
+    except (
+        RestoreError,
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        sqlite3.Error,
+        json.JSONDecodeError,
+    ) as exc:
         print(f"restore failed: {exc}", file=sys.stderr)
         return 2
     report = json.loads((result / "restore-report.json").read_text(encoding="utf-8"))

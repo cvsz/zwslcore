@@ -11,7 +11,6 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
 import tomllib
@@ -138,7 +137,7 @@ def _runtime_metadata() -> dict[str, Any]:
         "zwslcore-ollama",
         "zwslcore-litellm",
         "zwslcore-provider",
-        "zwslcore-open-webui",
+        "zwslcore-webui",
     ):
         result = subprocess.run(
             ["docker", "inspect", "--format", "{{.Config.Image}} {{.Image}} {{.State.Running}}", name],
@@ -167,7 +166,10 @@ def _validate_evidence_tree(path: Path) -> None:
         sidecar = evidence.with_name("evidence.sha256")
         if not sidecar.exists():
             raise BackupError(f"evidence checksum is missing: {evidence.relative_to(path)}")
-        expected = sidecar.read_text(encoding="utf-8").split()[0]
+        tokens = sidecar.read_text(encoding="utf-8").split()
+        if not tokens:
+            raise BackupError(f"evidence checksum is empty: {evidence.relative_to(path)}")
+        expected = tokens[0]
         if _sha256(evidence) != expected:
             raise BackupError(f"evidence checksum failed: {evidence.relative_to(path)}")
 
@@ -283,7 +285,7 @@ def create_backup(
     include_webui_volume: bool = False,
     recreate_webui_data: bool = False,
     gpg_recipient: str = "",
-    webui_container: str = "zwslcore-open-webui",
+    webui_container: str = "zwslcore-webui",
 ) -> Path:
     if include_webui_volume and recreate_webui_data:
         raise BackupError("choose either encrypted Open WebUI capture or the recreate policy")
@@ -449,7 +451,7 @@ def main() -> int:
         help="record that Open WebUI user data is intentionally recreatable and excluded",
     )
     parser.add_argument("--gpg-recipient", default="")
-    parser.add_argument("--webui-container", default="zwslcore-open-webui")
+    parser.add_argument("--webui-container", default="zwslcore-webui")
     args = parser.parse_args()
     try:
         result = create_backup(

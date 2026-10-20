@@ -9,7 +9,7 @@ This installer provisions a Windows host from PowerShell through a complete zwsl
 - Windows Subsystem for Linux
 - Virtual Machine Platform
 - current WSL package/kernel
-- WSL2 as the default engine
+- selected Ubuntu distribution converted to WSL2 without changing the global default version or distribution
 - Ubuntu 26.04 when it is present in `wsl --list --online`
 
 ### Ubuntu
@@ -35,20 +35,12 @@ This installer provisions a Windows host from PowerShell through a complete zwsl
 
 Docker is installed from Docker's official Ubuntu APT repository.
 
-### Host PostgreSQL prerequisite
-
-LiteLLM's admin dashboard requires a host PostgreSQL database named `litellm`.
-It is not installed by the bootstrap scripts; set it up on the WSL host first:
-
-```bash
-sudo apt install postgresql
-sudo -u postgres psql -c "CREATE ROLE litellm LOGIN PASSWORD 'REPLACE_ME_DATABASE_PASSWORD';"
-sudo -u postgres psql -c "CREATE DATABASE litellm OWNER litellm;"
-```
-
-Use the same password as `LITELLM_DB_PASSWORD` in `.env`. `make install`
-verifies database reachability before starting the stack. See
-[Host PostgreSQL setup](../README.md#host-postgresql-setup).
+PostgreSQL is provided by the Compose stack on a private network with no
+published host port. `make install` creates the required credentials in the
+private `.env`, starts PostgreSQL, and waits for its health check before
+starting LiteLLM. If migrating an existing WSL host database, run
+`make postgres-migrate-docker`; it verifies a backup and preserves the source
+cluster for rollback.
 
 ## Full install
 
@@ -113,6 +105,8 @@ Ollama      http://localhost:11434
 ## Safety and rollback
 
 - The installer does not unregister or delete existing WSL distributions.
+- It preserves existing `/etc/wsl.conf` settings, WSL global defaults, and an explicitly configured Linux default user.
+- Existing conflicting Docker/Podman packages cause bootstrap to stop for operator review; the script does not remove them automatically.
 - It does not delete Docker images, containers, volumes, or model data.
 - AI service ports remain loopback-only by default.
 - Provider keys remain in the ignored local `.env`.
@@ -141,6 +135,6 @@ The repository pins default images to stable releases and allows deliberate over
 
 - Ollama: `0.35.1`
 - LiteLLM: `v1.104.0`
-- Open WebUI: `v0.11.4`
+- Open WebUI: `v0.12.3` (pinned by digest)
 
 The installer upgrades only known old mutable defaults such as `:latest` and `:main`; explicit custom image values are preserved.

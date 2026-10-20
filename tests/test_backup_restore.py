@@ -99,6 +99,23 @@ class BackupRestoreTests(unittest.TestCase):
                     )
             self.assertFalse((root / "must-not-exist").exists())
 
+    def test_backup_rejects_empty_evidence_checksum_without_traceback(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source, _, _, _ = self._source(root)
+            sidecar = next((source / "evidence").rglob("evidence.sha256"))
+            sidecar.write_text("", encoding="utf-8")
+
+            with patch("scripts.backup._runtime_metadata", return_value={"python": "test", "containers": {}}):
+                with self.assertRaisesRegex(BackupError, "evidence checksum is empty"):
+                    create_backup(
+                        source_root=source,
+                        repository_root=REPOSITORY,
+                        output=root / "must-not-exist",
+                    )
+
+            self.assertFalse((root / "must-not-exist").exists())
+
     def test_webui_user_data_capture_requires_explicit_encryption_recipient(self):
         with tempfile.TemporaryDirectory() as td:
             source, _, _, _ = self._source(Path(td))
