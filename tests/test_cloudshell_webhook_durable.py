@@ -21,6 +21,40 @@ SERVER = ROOT / "scripts" / "cloudshell-webhook.py"
 
 
 class DurableReplayTests(unittest.TestCase):
+    def test_refuses_symlinked_ancestor_for_replay_database(self):
+        spec = importlib.util.spec_from_file_location("webhook_symlink_db_test", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            target = root / "redirect-target"
+            target.mkdir()
+            link = root / "redirect"
+            link.symlink_to(target, target_is_directory=True)
+
+            with self.assertRaisesRegex(RuntimeError, "symlink components"):
+                module.ReplayStore(link / "state" / "events.sqlite3", b"a" * 32)
+
+            self.assertFalse((target / "state").exists())
+
+    def test_refuses_symlinked_ancestor_for_secret_file(self):
+        spec = importlib.util.spec_from_file_location("webhook_symlink_secret_test", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            target = root / "redirect-target"
+            target.mkdir()
+            secret = target / "secret"
+            secret.write_text("a" * 64)
+            secret.chmod(0o600)
+            link = root / "redirect"
+            link.symlink_to(target, target_is_directory=True)
+            module.SECRET_FILE = link / "secret"
+
+            with self.assertRaisesRegex(RuntimeError, "symlink components"):
+                module.load_secret()
+
     def test_replay_survives_restart_and_concurrent_delivery(self):
         with tempfile.TemporaryDirectory() as folder:
             key = Path(folder) / "secret"
@@ -48,7 +82,9 @@ class DurableReplayTests(unittest.TestCase):
                     with opener.open(request, timeout=5) as response:
                         return response.status
                 except urllib.error.HTTPError as error:
-                    return error.code
+                    status_code = error.code
+                    error.close()
+                    return status_code
 
             def start():
                 process = subprocess.Popen([sys.executable, str(SERVER)], env=env,

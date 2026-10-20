@@ -8,7 +8,9 @@ PORT="${ZWSL_WEBHOOK_PORT:-8765}"
 CONFIG="${ZCLOUD_CONFIG:-$HOME/.cloudflared/config.yml}"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/zwslcore-webhook"
 KEY="${ZWSL_WEBHOOK_SECRET_FILE:-$HOME/.config/zwslcore/webhook.key}"
-[[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT >= 1024 && PORT < 65536 )) || { echo "Invalid port" >&2; exit 2; }
+[[ "$PORT" =~ ^[0-9]{1,5}$ ]] || { echo "Invalid port" >&2; exit 2; }
+PORT_NUMBER=$((10#$PORT))
+(( PORT_NUMBER >= 1024 && PORT_NUMBER <= 65535 )) || { echo "Invalid port" >&2; exit 2; }
 case "${1:-help}" in
   install)
     mkdir -p "$(dirname "$KEY")" "$STATE"

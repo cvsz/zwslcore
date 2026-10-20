@@ -24,6 +24,17 @@ class WebhookTests(unittest.TestCase):
         p = subprocess.run(["bash", "-n", str(ROOT / "scripts/cloudshell-webhook.sh")], capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stderr)
 
+    def test_launcher_validates_ports_as_decimal(self):
+        script = str(ROOT / "scripts/cloudshell-webhook.sh")
+        env = dict(os.environ, ZWSL_WEBHOOK_PORT="01024")
+        accepted = subprocess.run(["bash", script, "help"], env=env, capture_output=True, text=True)
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+        env["ZWSL_WEBHOOK_PORT"] = "01023"
+        rejected = subprocess.run(["bash", script, "help"], env=env, capture_output=True, text=True)
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("Invalid port", rejected.stderr)
+
     def test_signed_delivery_and_replay_end_to_end(self):
         with tempfile.TemporaryDirectory() as directory:
             secret = "a" * 64
@@ -37,7 +48,7 @@ class WebhookTests(unittest.TestCase):
                        ZWSL_WEBHOOK_REPLAY_DB=str(Path(directory) / "replay" / "events.sqlite3"))
             proc = subprocess.Popen(
                 [sys.executable, str(ROOT / "scripts/cloudshell-webhook.py")],
-                env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
             base = f"http://127.0.0.1:{port}"
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -47,7 +58,9 @@ class WebhookTests(unittest.TestCase):
                     with opener.open(req, timeout=2) as res:
                         return res.status
                 except urllib.error.HTTPError as err:
-                    return err.code
+                    status_code = err.code
+                    err.close()
+                    return status_code
             try:
                 for _ in range(60):
                     if proc.poll() is not None:

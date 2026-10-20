@@ -18,7 +18,21 @@ SECRET_FILE = Path(os.environ.get("ZWSL_WEBHOOK_SECRET_FILE", str(Path.home()/".
 REPLAY_DB = Path(os.environ.get("ZWSL_WEBHOOK_REPLAY_DB", str(Path.home()/".local/state/zwslcore-webhook/replay.sqlite3")))
 REPLAY_TTL_SECONDS = 600
 
+def reject_symlink_components(path: Path):
+    candidate = Path(path)
+    if ".." in candidate.parts:
+        raise RuntimeError("Webhook paths must not contain parent traversal")
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    current = Path(candidate.anchor)
+    for component in candidate.parts[1:]:
+        current = current / component
+        if current.is_symlink():
+            raise RuntimeError("Webhook paths must not contain symlink components")
+
+
 def load_secret():
+    reject_symlink_components(SECRET_FILE)
     if SECRET_FILE.is_symlink() or not SECRET_FILE.is_file() or SECRET_FILE.stat().st_mode & 0o077:
         raise RuntimeError("Webhook secret missing or permissions too broad")
     secret = SECRET_FILE.read_bytes().strip()
@@ -33,10 +47,10 @@ class ReplayStore:
     def __init__(self, path: Path, secret: bytes):
         self.path = path
         self.secret = secret
+        reject_symlink_components(path)
         parent = path.parent
-        if parent.is_symlink():
-            raise RuntimeError("Replay state directory must not be a symlink")
         parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        reject_symlink_components(path)
         info = parent.stat()
         if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
             raise RuntimeError("Replay state directory must be owner-only")
@@ -53,6 +67,7 @@ class ReplayStore:
         self._check_file()
 
     def _check_file(self):
+        reject_symlink_components(self.path)
         if self.path.is_symlink() or not self.path.is_file():
             raise RuntimeError("Replay database missing or replaced")
         info = self.path.stat()
@@ -60,6 +75,7 @@ class ReplayStore:
             raise RuntimeError("Replay database permissions must be private")
 
     def _connect(self):
+        reject_symlink_components(self.path)
         database = sqlite3.connect(self.path, timeout=5.0)
         if not self.path.is_symlink():
             os.chmod(self.path, 0o600)
