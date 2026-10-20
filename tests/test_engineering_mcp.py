@@ -146,6 +146,16 @@ class MCPStdioTests(unittest.TestCase):
             with self.assertRaisesRegex(MCPError, "method not found"):
                 session.request("unknown/method", {})
 
+    def test_close_releases_process_pipe_descriptors(self):
+        session = StdioMCPSession(self.config())
+        session.__enter__()
+        process = session.process
+        self.assertIsNotNone(process)
+        session.close()
+        self.assertTrue(process.stdin.closed)
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
+
 
 if __name__ == "__main__":
     unittest.main()
