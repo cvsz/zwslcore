@@ -108,6 +108,42 @@ sys.stdout.buffer.write(b'container PostgreSQL archive fixture')
         self.assertEqual(output.read_bytes(), b"operator data")
         self.assertFalse(self.argv_log.exists())
 
+    def test_symlinked_custom_destination_and_parent_are_rejected(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        destination_link = self.root / "backup-link"
+        destination_link.symlink_to(outside / "backup.dump")
+        result = self.run_backup(destination_link)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlink path components", result.stderr)
+        self.assertFalse((outside / "backup.dump").exists())
+
+        parent_link = self.root / "parent-link"
+        parent_link.symlink_to(outside, target_is_directory=True)
+        result = self.run_backup(parent_link / "nested.dump")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlink path components", result.stderr)
+        self.assertFalse((outside / "nested.dump").exists())
+
+    def test_default_backup_directory_rejects_symlink(self):
+        fake_home = self.root / "home"
+        (fake_home / ".zwslcore" / "backups").mkdir(parents=True)
+        outside = self.root / "outside-default"
+        outside.mkdir()
+        (fake_home / ".zwslcore" / "backups" / "postgres").symlink_to(
+            outside, target_is_directory=True
+        )
+        result = subprocess.run(
+            ["python3", str(SCRIPT), "--env-file", str(self.env_file)],
+            env=dict(self.env, HOME=str(fake_home)),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("private and contain no symlinks", result.stderr)
+        self.assertEqual(list(outside.iterdir()), [])
+
     def test_symlink_and_open_environment_files_are_rejected(self):
         symlink = self.root / "env-link"
         symlink.symlink_to(self.env_file)

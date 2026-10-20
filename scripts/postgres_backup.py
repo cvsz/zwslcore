@@ -16,7 +16,10 @@ import tempfile
 from datetime import datetime, timezone
 from urllib.parse import unquote, urlsplit
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from postgres_preflight import database_target
+from services.engineering.secure_storage import ensure_private_directory, reject_symlink_components
 
 
 def _private_env(path: Path) -> dict[str, str]:
@@ -67,13 +70,18 @@ def _connection(values: dict[str, str]) -> tuple[str, int, str, str, str]:
 
 def _destination(path: Path | None) -> Path:
     if path is None:
-        directory = Path.home() / ".zwslcore" / "backups" / "postgres"
-        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if stat.S_IMODE(directory.stat().st_mode) & 0o077:
-            raise ValueError("PostgreSQL backup directory permissions are too open; run chmod 700")
+        try:
+            directory = ensure_private_directory(Path.home() / ".zwslcore" / "backups" / "postgres")
+        except PermissionError as exc:
+            raise ValueError("PostgreSQL backup directory must be private and contain no symlinks") from exc
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         path = directory / f"litellm-{stamp}-{secrets.token_hex(3)}.dump"
-    path = path.expanduser()
+    else:
+        path = Path(os.path.abspath(path.expanduser()))
+        try:
+            reject_symlink_components(path)
+        except PermissionError as exc:
+            raise ValueError("backup destination must not contain symlink path components") from exc
     if path.exists() or path.is_symlink():
         raise FileExistsError("refusing to overwrite an existing backup destination")
     if not path.parent.is_dir():
