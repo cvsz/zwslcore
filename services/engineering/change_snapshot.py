@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .secure_storage import ensure_private_directory
 from .worktree import WorktreeManager
 
 DEFAULT_ROOT = Path.home() / ".zwslcore" / "snapshots"
@@ -30,8 +31,7 @@ class ChangeSnapshotStore:
         root: str | Path = DEFAULT_ROOT,
         worktrees: WorktreeManager | None = None,
     ) -> None:
-        self.root = Path(root).expanduser().resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.root = ensure_private_directory(root).resolve()
         self.worktrees = worktrees or WorktreeManager()
 
     def capture(self, task_id: str, worktree: str | Path) -> dict[str, Any]:
@@ -48,7 +48,7 @@ class ChangeSnapshotStore:
 
         digest = _sha256(patch)
         directory = self.root / task_id
-        directory.mkdir(parents=True, exist_ok=True)
+        ensure_private_directory(directory)
         patch_path = directory / "change.patch"
         meta_path = directory / "snapshot.json"
         self._atomic_write(patch_path, patch)

@@ -48,6 +48,17 @@ Managed worktrees:
 
     ~/.zwslcore/worktrees/
 
+The state directory is created with mode `0700`; the SQLite database and WAL
+sidecars are owner-only (`0600`). Existing databases owned by the current user
+are tightened to `0600` before opening. The configured state directory must be
+owned by the current user and must not be writable by group or other users.
+Symlinked databases are rejected. For a custom `--db` path, use a dedicated
+directory that satisfies these ownership and permission requirements.
+
+The evidence, undo-snapshot, and managed-worktree roots are also restricted to
+the current user with mode `0700`; task subdirectories and worktree roots use
+the same restriction. Existing zwslcore-owned roots are tightened when opened.
+
 ## Model
 
 By default `ZEAZ_ENGINEERING_MODEL=auto`. Before constructing the Provider client, the control plane ranks the configured local aliases by hardware fit, zero-cost class, context capacity and structured-output support. On CPU-constrained hosts this normally selects `zeaz-fast`; higher-memory/GPU hosts may prefer a larger local alias. Set `ZEAZ_ENGINEERING_MODEL` to an explicit Provider alias to override automatic selection.

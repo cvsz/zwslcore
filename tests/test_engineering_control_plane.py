@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -16,6 +18,7 @@ from services.engineering.models import Checkpoint, EngineeringTask, TaskStatus
 from services.engineering.review import SecurityGate, StaticReviewer
 from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
+from services.engineering.secure_storage import ensure_private_directory
 from services.engineering.store import SQLiteEngineeringStore
 from services.engineering.worktree import WorktreeManager
 
@@ -53,6 +56,63 @@ class ProviderStructuredOutputTests(unittest.TestCase):
 
 
 class StoreTests(unittest.TestCase):
+    def test_new_store_uses_private_directory_database_and_wal_files(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state"
+            path = state / "engineering.db"
+            previous_umask = os.umask(0o022)
+            try:
+                SQLiteEngineeringStore(path)
+                connection = sqlite3.connect(path)
+                try:
+                    connection.execute("PRAGMA journal_mode=WAL")
+                    connection.execute("CREATE TABLE permission_probe (value TEXT)")
+                    connection.execute("INSERT INTO permission_probe VALUES ('private')")
+                    self.assertEqual(stat.S_IMODE(state.stat().st_mode), 0o700)
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+                    for suffix in ("-wal", "-shm"):
+                        sidecar = Path(f"{path}{suffix}")
+                        self.assertEqual(stat.S_IMODE(sidecar.stat().st_mode), 0o600)
+                finally:
+                    connection.close()
+            finally:
+                os.umask(previous_umask)
+
+    def test_store_refuses_group_or_world_writable_state_directory(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state"
+            state.mkdir(mode=0o700)
+            state.chmod(0o777)
+            with self.assertRaisesRegex(PermissionError, "must be owned.*not writable"):
+                SQLiteEngineeringStore(state / "engineering.db")
+            self.assertFalse((state / "engineering.db").exists())
+
+    def test_store_refuses_database_symlink_without_touching_target(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            state = root / "state"
+            state.mkdir(mode=0o700)
+            target = root / "outside.db"
+            target.write_bytes(b"preserve")
+            (state / "engineering.db").symlink_to(target)
+            with self.assertRaises(PermissionError):
+                SQLiteEngineeringStore(state / "engineering.db")
+            self.assertEqual(target.read_bytes(), b"preserve")
+
+    def test_store_rejects_symlinked_ancestor_without_creating_redirected_database(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            actual = root / "actual"
+            actual.mkdir()
+            alias = root / "alias"
+            alias.symlink_to(actual, target_is_directory=True)
+
+            with self.assertRaisesRegex(PermissionError, "symlinked storage path component"):
+                SQLiteEngineeringStore(alias / "state" / "engineering.db")
+
+            self.assertFalse((actual / "state").exists())
+
+
     def test_unversioned_database_is_initialized_to_current_schema(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "state.db"
@@ -96,6 +156,40 @@ class StoreTests(unittest.TestCase):
             store.save_checkpoint(Checkpoint(task_id=task.id, phase="PLAN", payload={"ok": True}))
             self.assertEqual(store.get_task(task.id).status, TaskStatus.PLANNING)
             self.assertEqual(store.latest_checkpoint(task.id).payload, {"ok": True})
+
+
+class SecureStorageTests(unittest.TestCase):
+    def test_existing_owned_data_directory_is_tightened(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "data"
+            path.mkdir(mode=0o700)
+            path.chmod(0o755)
+            self.assertEqual(ensure_private_directory(path), path)
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
+
+    def test_data_directory_symlink_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "target"
+            target.mkdir(mode=0o700)
+            link = root / "link"
+            link.symlink_to(target, target_is_directory=True)
+            with self.assertRaises(PermissionError):
+                ensure_private_directory(link)
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o700)
+
+    def test_data_directory_rejects_symlinked_ancestor_without_creating_redirected_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            actual = root / "actual"
+            actual.mkdir()
+            alias = root / "alias"
+            alias.symlink_to(actual, target_is_directory=True)
+
+            with self.assertRaisesRegex(PermissionError, "symlinked storage path component"):
+                ensure_private_directory(alias / "evidence")
+
+            self.assertFalse((actual / "evidence").exists())
 
 
 class SnapshotTests(unittest.TestCase):
@@ -150,6 +244,8 @@ class WorktreeTests(unittest.TestCase):
             subprocess.run(["git", "-C", str(repo), "commit", "-m", "base"], check=True, capture_output=True)
             manager = WorktreeManager(wt)
             target, branch = manager.create(repo, "task-1", "fix test")
+            self.assertEqual(stat.S_IMODE(wt.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o700)
             self.assertTrue(manager._marker(target).exists())
             self.assertFalse((target / ".zwslcore-managed").exists())
             status = subprocess.run(
