@@ -132,6 +132,7 @@ services:
       CORS_ALLOW_ORIGIN: ${OPENWEBUI_CORS_ALLOW_ORIGIN:-http://localhost:3000;http://127.0.0.1:3000}
     volumes:
       - open-webui-data:/app/backend/data
+      - ./webui/custom.css:/app/build/static/custom.css:ro
     ports:
       # Loopback by default; operators may opt into LAN access via .env.
       - "${OPENWEBUI_BIND_ADDRESS:-127.0.0.1}:${OPENWEBUI_PORT:-3000}:8080"
