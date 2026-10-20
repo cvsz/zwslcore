@@ -18,9 +18,10 @@ OPENWEBUI_PORT="$(dotenv_get "$ENV_FILE" OPENWEBUI_PORT 3000)"
 
 containers=(
   zwslcore-ollama
+  zwslcore-postgres
   zwslcore-litellm
   zwslcore-provider
-  zwslcore-open-webui
+  zwslcore-webui
 )
 
 container_healthy() {

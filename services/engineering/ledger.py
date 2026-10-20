@@ -3,6 +3,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import stat
 import tempfile
 import time
 from contextlib import contextmanager
@@ -12,6 +13,7 @@ from typing import Any
 
 from .evidence import redact_sensitive_text
 from .loop import WorkItem, WorkKind
+from .secure_storage import reject_symlink_components
 
 
 class ContinuousLedgerError(RuntimeError):
@@ -23,13 +25,39 @@ class JsonContinuousLedger:
 
     def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path or Path.home() / ".zwslcore" / "state" / "continuous.json")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        reject_symlink_components(self.path.parent)
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        reject_symlink_components(self.path.parent)
+        parent = self.path.parent.lstat()
+        if (
+            not stat.S_ISDIR(parent.st_mode)
+            or parent.st_uid != os.geteuid()
+            or stat.S_IMODE(parent.st_mode) & 0o022
+        ):
+            raise PermissionError(
+                f"continuous ledger directory must be owned by the current user and not writable by other users: {self.path.parent}"
+            )
+        if self.path.exists() or self.path.is_symlink():
+            current = self.path.lstat()
+            if not stat.S_ISREG(current.st_mode) or current.st_uid != os.geteuid():
+                raise PermissionError(
+                    f"continuous ledger must be a regular file owned by the current user: {self.path}"
+                )
+            if stat.S_IMODE(current.st_mode) & 0o077:
+                os.chmod(self.path, 0o600)
 
     @contextmanager
     def _exclusive(self) -> Iterator[None]:
         lock_path = self.path.with_name(f"{self.path.name}.write.lock")
-        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        fd = os.open(
+            lock_path,
+            os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
         try:
+            lock_stat = os.fstat(fd)
+            if not stat.S_ISREG(lock_stat.st_mode) or lock_stat.st_uid != os.geteuid():
+                raise ContinuousLedgerError("continuous ledger lock must be a regular file owned by the current user")
             os.fchmod(fd, 0o600)
             fcntl.flock(fd, fcntl.LOCK_EX)
             yield

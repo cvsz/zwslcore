@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import json
 import os
@@ -10,6 +9,8 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
+
+from .secure_storage import ensure_private_directory
 
 from .models import EngineeringTask
 from .store import SQLiteEngineeringStore
@@ -55,8 +56,7 @@ class EvidenceExporter:
         root: str | Path | None = None,
     ) -> None:
         self.store = store
-        self.root = Path(root or Path.home() / ".zwslcore" / "evidence")
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.root = ensure_private_directory(root or Path.home() / ".zwslcore" / "evidence")
 
     def export(self, task: EngineeringTask) -> tuple[Path, str]:
         bundle = self._bundle(task)
@@ -64,7 +64,7 @@ class EvidenceExporter:
         digest = _sha256_bytes(encoded)
 
         target_dir = self.root / task.id
-        target_dir.mkdir(parents=True, exist_ok=True)
+        ensure_private_directory(target_dir)
         target = target_dir / "evidence.json"
         checksum = target_dir / "evidence.sha256"
         self._atomic_write(target, encoded)

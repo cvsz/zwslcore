@@ -4,13 +4,16 @@ import re
 import subprocess
 from pathlib import Path
 
+from .secure_storage import ensure_private_directory
+
 
 class WorktreeManager:
     """Ownership-aware isolated Git worktrees under ~/.zwslcore/worktrees."""
 
     def __init__(self, base_dir: str | Path | None = None) -> None:
-        self.base_dir = Path(base_dir or Path.home() / ".zwslcore" / "worktrees").resolve()
-        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.base_dir = ensure_private_directory(
+            base_dir or Path.home() / ".zwslcore" / "worktrees"
+        ).resolve()
 
     @staticmethod
     def safe_branch_name(task_id: str, slug: str = "") -> str:
@@ -23,13 +26,16 @@ class WorktreeManager:
         repo = Path(repository).resolve()
         self._assert_git_repo(repo)
         branch = self.safe_branch_name(task_id, slug)
-        target = (self.base_dir / re.sub(r"[^A-Za-z0-9._-]+", "-", task_id)).resolve()
+        target = self.base_dir / re.sub(r"[^A-Za-z0-9._-]+", "-", task_id)
         target.relative_to(self.base_dir)
 
+        if target.is_symlink():
+            raise RuntimeError(f"refusing symlinked worktree path: {target}")
         marker = self._marker(target)
         if target.exists():
             if not marker.exists():
                 raise RuntimeError(f"refusing unmanaged existing path: {target}")
+            ensure_private_directory(target)
             return target, branch
 
         subprocess.run(
@@ -38,7 +44,9 @@ class WorktreeManager:
             capture_output=True,
             text=True,
         )
+        target.chmod(0o700)
         marker.write_text(task_id + "\n", encoding="utf-8")
+        marker.chmod(0o600)
         return target, branch
 
     def remove(self, repository: str | Path, target: str | Path) -> None:

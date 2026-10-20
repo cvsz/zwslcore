@@ -8,19 +8,43 @@ ENV_FILE="$ROOT/.env"
 
 # shellcheck source=scripts/lib/env.sh
 source "$ROOT/scripts/lib/env.sh"
-OLLAMA_PORT="$(dotenv_get "$ENV_FILE" OLLAMA_PORT 11434)"
 LITELLM_PORT="$(dotenv_get "$ENV_FILE" LITELLM_PORT 4000)"
 PROVIDER_PORT="$(dotenv_get "$ENV_FILE" PROVIDER_PORT 8080)"
-OPENWEBUI_PORT="$(dotenv_get "$ENV_FILE" OPENWEBUI_PORT 3000)"
 PROVIDER_CLIENT_KEY="$(dotenv_get "$ENV_FILE" PROVIDER_CLIENT_KEY)"
 LITELLM_MASTER_KEY="$(dotenv_get "$ENV_FILE" LITELLM_MASTER_KEY)"
+AUTH_DIR="$(mktemp -d "${TMPDIR:-/tmp}/zwslcore-smoke.XXXXXX")"
+chmod 700 "$AUTH_DIR"
+trap 'rm -rf -- "$AUTH_DIR"' EXIT
+LITELLM_AUTH_FILE="$AUTH_DIR/litellm.header"
+PROVIDER_AUTH_FILE="$AUTH_DIR/provider.header"
+write_curl_auth_header "$LITELLM_AUTH_FILE" "$LITELLM_MASTER_KEY"
+write_curl_auth_header "$PROVIDER_AUTH_FILE" "$PROVIDER_CLIENT_KEY"
 
-curl -fsS --max-time 20   -H "Authorization: Bearer ${LITELLM_MASTER_KEY}"   "http://127.0.0.1:${LITELLM_PORT:-4000}/v1/models"   | python3 -c 'import json,sys; data=json.load(sys.stdin); assert any(m.get("id") == "zeaz-coder" for m in data.get("data", []))'
+if ! models_json="$(curl -fsS --max-time 20 \
+  -H "@$LITELLM_AUTH_FILE" \
+  "http://127.0.0.1:${LITELLM_PORT:-4000}/v1/models")"; then
+  echo "[FAIL] LiteLLM model catalog unavailable; check PostgreSQL connectivity with make doctor." >&2
+  exit 1
+fi
+printf '%s\n' "$models_json" | python3 -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+except (json.JSONDecodeError, UnicodeDecodeError):
+    raise SystemExit("[FAIL] LiteLLM returned an invalid model catalog.")
+if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+    raise SystemExit("[FAIL] LiteLLM model catalog has an invalid response shape.")
+if not any(isinstance(model, dict) and model.get("id") == "zeaz-coder" for model in data["data"]):
+    raise SystemExit("[FAIL] LiteLLM model catalog is missing zeaz-coder.")
+print("[PASS] LiteLLM model catalog")
+'
 
 litellm_payload='{"model":"zeaz-coder","messages":[{"role":"user","content":"Reply exactly OK"}],"temperature":0,"max_tokens":8}'
 litellm_response="$(
   curl -fsS --max-time 180 \
-    -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
+    -H "@$LITELLM_AUTH_FILE" \
     -H "Content-Type: application/json" \
     -d "$litellm_payload" \
     "http://127.0.0.1:${LITELLM_PORT:-4000}/v1/chat/completions"
@@ -38,7 +62,7 @@ PY
 
 payload='{"model":"zeaz-fast","messages":[{"role":"user","content":"Reply exactly OK"}],"temperature":0,"max_tokens":32}'
 response="$(
-  curl -fsS --max-time 180     -H "Authorization: Bearer ${PROVIDER_CLIENT_KEY}"     -H "Content-Type: application/json"     -d "$payload"     "http://127.0.0.1:${PROVIDER_PORT:-8080}/v1/chat/completions"
+  curl -fsS --max-time 180 -H "@$PROVIDER_AUTH_FILE" -H "Content-Type: application/json" -d "$payload" "http://127.0.0.1:${PROVIDER_PORT:-8080}/v1/chat/completions"
 )"
 
 python3 - "$response" <<'PY'
@@ -60,7 +84,7 @@ PY
 structured_payload='{"model":"zeaz-fast","messages":[{"role":"user","content":"Return a JSON object with status exactly OK."}],"temperature":0,"max_tokens":64,"response_format":{"type":"json_schema","json_schema":{"name":"status_response","strict":true,"schema":{"type":"object","additionalProperties":false,"required":["status"],"properties":{"status":{"type":"string","enum":["OK"]}}}}}}'
 structured_response="$(
   curl -fsS --max-time 180 \
-    -H "Authorization: Bearer ${PROVIDER_CLIENT_KEY}" \
+    -H "@$PROVIDER_AUTH_FILE" \
     -H "Content-Type: application/json" \
     -d "$structured_payload" \
     "http://127.0.0.1:${PROVIDER_PORT:-8080}/v1/chat/completions"

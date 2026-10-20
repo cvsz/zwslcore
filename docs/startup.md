@@ -71,7 +71,7 @@ See [profiles](profiles.md) and the [implementation checklist](../IMPLEMENTATION
 
 ## 5. Development baseline
 
-Copy `.env.example` to a local ignored `.env`. Add real code, tests, build tooling, security checks, and deterministic dependency installation.
+Copy `.env.example` to a local ignored `.env` and run `chmod 600 .env`; tools such as the AI CLI require owner-only permissions on that file. Add real code, tests, build tooling, security checks, and deterministic dependency installation.
 
 Do not remove inherited security checks merely to simplify CI.
 

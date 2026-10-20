@@ -4,15 +4,18 @@ import dataclasses
 import json
 import os
 import selectors
+import signal
 import subprocess
+import threading
 import time
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 DEFAULT_CONFIG = Path.home() / ".zwslcore" / "mcp" / "servers.json"
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 MAX_MESSAGE_BYTES = 2 * 1024 * 1024
+STDERR_TAIL_BYTES = 4096
+READ_CHUNK_BYTES = 64 * 1024
 
 
 class MCPError(RuntimeError):
@@ -122,8 +125,34 @@ class StdioMCPSession:
         self.process: subprocess.Popen[bytes] | None = None
         self._next_id = 1
         self._selector: selectors.BaseSelector | None = None
+        self._buffer = bytearray()
+        self._stderr_tail = bytearray()
+        self._stderr_thread: threading.Thread | None = None
+        self._stderr_stop = threading.Event()
 
-    def __enter__(self) -> "StdioMCPSession":
+    def _drain_stderr(self, fd: int) -> None:
+        """Drain stderr without blocking shutdown when a descendant holds the pipe."""
+        selector = selectors.DefaultSelector()
+        try:
+            selector.register(fd, selectors.EVENT_READ)
+            while not self._stderr_stop.is_set():
+                if not selector.select(timeout=0.2):
+                    continue
+                chunk = os.read(fd, 4096)
+                if not chunk:
+                    return
+                self._stderr_tail.extend(chunk)
+                del self._stderr_tail[:-STDERR_TAIL_BYTES]
+        except (OSError, ValueError):
+            return
+        finally:
+            selector.close()
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+    def __enter__(self) -> StdioMCPSession:
         if not self.config.enabled:
             raise MCPError(f"MCP server {self.config.name!r} is disabled")
 
@@ -151,11 +180,24 @@ class StdioMCPSession:
                 env=base_env,
                 shell=False,
                 bufsize=0,
+                start_new_session=True,
             )
         except OSError as exc:
             raise MCPError(f"unable to start MCP server {self.config.name!r}: {exc}") from exc
 
         assert self.process.stdout is not None
+        assert self.process.stderr is not None
+        self._buffer.clear()
+        self._stderr_tail.clear()
+        self._stderr_stop.clear()
+        stderr_fd = os.dup(self.process.stderr.fileno())
+        self._stderr_thread = threading.Thread(
+            target=self._drain_stderr,
+            args=(stderr_fd,),
+            name=f"mcp-stderr-{self.config.name}",
+            daemon=True,
+        )
+        self._stderr_thread.start()
         self._selector = selectors.DefaultSelector()
         self._selector.register(self.process.stdout, selectors.EVENT_READ)
 
@@ -188,31 +230,111 @@ class StdioMCPSession:
             selector.close()
         if process is None:
             return
-        if process.poll() is None:
-            process.terminate()
+        # Each session owns a process group so helper processes cannot outlive
+        # the MCP server and retain pipes or continue background work.
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            process.poll()  # Reap the server so an exited parent does not pin the group.
             try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=2)
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=2)
+        # Release the pipe file descriptors; Popen does not close them on its own.
+        for stream in (process.stdin, process.stdout):
+            if stream is not None:
+                try:
+                    stream.close()
+                except OSError:
+                    pass
+        thread = self._stderr_thread
+        self._stderr_thread = None
+        if thread is not None:
+            self._stderr_stop.set()
+            thread.join(timeout=1.0)
+        if process.stderr is not None:
+            try:
+                process.stderr.close()
+            except OSError:
+                pass
+        self._buffer.clear()
 
-    def _send(self, payload: dict[str, Any]) -> None:
+    def _send(self, payload: dict[str, Any], deadline: float | None = None) -> None:
         if self.process is None or self.process.stdin is None:
             raise MCPError("MCP session is not connected")
         raw = json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n"
         if len(raw) > MAX_MESSAGE_BYTES:
             raise MCPError("MCP request exceeds message size limit")
+        deadline = deadline or time.monotonic() + self.config.timeout_seconds
+        fd = self.process.stdin.fileno()
+        was_blocking = os.get_blocking(fd)
+        writer = selectors.DefaultSelector()
         try:
-            self.process.stdin.write(raw)
-            self.process.stdin.flush()
+            os.set_blocking(fd, False)
+            writer.register(fd, selectors.EVENT_WRITE)
+            offset = 0
+            while offset < len(raw):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not writer.select(timeout=remaining):
+                    raise MCPError(f"MCP server {self.config.name!r} request timed out while writing")
+                try:
+                    written = os.write(fd, raw[offset : offset + READ_CHUNK_BYTES])
+                except BlockingIOError:
+                    continue
+                if written <= 0:
+                    raise MCPError(f"MCP server {self.config.name!r} stdin closed while writing")
+                offset += written
+        except MCPError:
+            raise
         except (BrokenPipeError, OSError) as exc:
             raise MCPError(f"MCP server {self.config.name!r} stdin failed: {exc}") from exc
+        finally:
+            writer.close()
+            try:
+                os.set_blocking(fd, was_blocking)
+            except OSError:
+                pass
 
     def _read_message(self, deadline: float) -> dict[str, Any]:
         if self.process is None or self.process.stdout is None or self._selector is None:
             raise MCPError("MCP session is not connected")
 
+        fd = self.process.stdout.fileno()
         while True:
+            # Consume any complete line already buffered before waiting on the pipe.
+            newline = self._buffer.find(b"\n")
+            if newline != -1:
+                raw = bytes(self._buffer[:newline])
+                del self._buffer[: newline + 1]
+                if len(raw) > MAX_MESSAGE_BYTES:
+                    raise MCPError("MCP response exceeds message size limit")
+                try:
+                    value = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(value, dict):
+                    return value
+                continue
+            if len(self._buffer) > MAX_MESSAGE_BYTES:
+                raise MCPError("MCP response exceeds message size limit")
+
+            # Wait with the deadline, then read only what is available. A blocking
+            # readline() here would ignore the deadline whenever a server sends a
+            # partial line and then stalls.
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise MCPError(f"MCP server {self.config.name!r} response timed out")
@@ -220,40 +342,31 @@ class StdioMCPSession:
             if not events:
                 raise MCPError(f"MCP server {self.config.name!r} response timed out")
 
-            raw = self.process.stdout.readline(MAX_MESSAGE_BYTES + 1)
-            if not raw:
-                stderr = b""
-                if self.process.stderr is not None:
-                    try:
-                        stderr = self.process.stderr.read(4096)
-                    except OSError:
-                        pass
-                detail = stderr.decode("utf-8", errors="replace").strip()
+            chunk = os.read(fd, READ_CHUNK_BYTES)
+            if not chunk:
+                thread = self._stderr_thread
+                if thread is not None:
+                    thread.join(timeout=0.2)
+                detail = bytes(self._stderr_tail).decode("utf-8", errors="replace").strip()
                 raise MCPError(
                     f"MCP server {self.config.name!r} closed stdout"
-                    + (f": {detail[:1000]}" if detail else "")
+                    + (f": {detail[-1000:]}" if detail else "")
                 )
-            if len(raw) > MAX_MESSAGE_BYTES:
-                raise MCPError("MCP response exceeds message size limit")
-            try:
-                value = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(value, dict):
-                return value
+            self._buffer.extend(chunk)
 
     def request(self, method: str, params: dict[str, Any] | None = None) -> Any:
         request_id = self._next_id
         self._next_id += 1
+        deadline = time.monotonic() + self.config.timeout_seconds
         self._send(
             {
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "method": method,
                 "params": params or {},
-            }
+            },
+            deadline,
         )
-        deadline = time.monotonic() + self.config.timeout_seconds
         while True:
             message = self._read_message(deadline)
             if message.get("id") != request_id:

@@ -11,7 +11,6 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
 import tomllib
@@ -25,6 +24,7 @@ sys.path.insert(0, str(ROOT))
 from services.engineering.lease import SQLiteRunnerLease
 from services.engineering.ledger import JsonContinuousLedger
 from services.engineering.models import TaskStatus
+from services.engineering.secure_storage import ensure_private_directory, reject_symlink_components
 from services.engineering.store import SQLiteEngineeringStore
 
 
@@ -138,7 +138,7 @@ def _runtime_metadata() -> dict[str, Any]:
         "zwslcore-ollama",
         "zwslcore-litellm",
         "zwslcore-provider",
-        "zwslcore-open-webui",
+        "zwslcore-webui",
     ):
         result = subprocess.run(
             ["docker", "inspect", "--format", "{{.Config.Image}} {{.Image}} {{.State.Running}}", name],
@@ -167,7 +167,10 @@ def _validate_evidence_tree(path: Path) -> None:
         sidecar = evidence.with_name("evidence.sha256")
         if not sidecar.exists():
             raise BackupError(f"evidence checksum is missing: {evidence.relative_to(path)}")
-        expected = sidecar.read_text(encoding="utf-8").split()[0]
+        tokens = sidecar.read_text(encoding="utf-8").split()
+        if not tokens:
+            raise BackupError(f"evidence checksum is empty: {evidence.relative_to(path)}")
+        expected = tokens[0]
         if _sha256(evidence) != expected:
             raise BackupError(f"evidence checksum failed: {evidence.relative_to(path)}")
 
@@ -283,7 +286,7 @@ def create_backup(
     include_webui_volume: bool = False,
     recreate_webui_data: bool = False,
     gpg_recipient: str = "",
-    webui_container: str = "zwslcore-open-webui",
+    webui_container: str = "zwslcore-webui",
 ) -> Path:
     if include_webui_volume and recreate_webui_data:
         raise BackupError("choose either encrypted Open WebUI capture or the recreate policy")
@@ -297,18 +300,26 @@ def create_backup(
         raise BackupError("engineering.db and continuous.json must both exist before backup")
 
     if output:
-        target = Path(output).expanduser().resolve()
+        requested_target = Path(os.path.abspath(Path(output).expanduser()))
+        try:
+            reject_symlink_components(requested_target)
+        except PermissionError as exc:
+            raise BackupError("backup destination must not contain symlink path components") from exc
+        target = requested_target
         backup_parent = target.parent
     else:
-        backup_parent = source / "backups"
+        try:
+            backup_parent = ensure_private_directory(source / "backups")
+        except PermissionError as exc:
+            raise BackupError("default backup directory must be a private, non-symlink directory") from exc
         stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         target = backup_parent / f"zwslcore-{stamp}-{uuid.uuid4().hex[:8]}"
     if target.exists():
         raise BackupError(f"backup destination already exists: {target}")
     if source == target:
         raise BackupError("backup destination cannot replace the source state root")
-    backup_parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    os.chmod(backup_parent, 0o700)
+    if output:
+        backup_parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=".zwslcore-backup-", dir=backup_parent))
     os.chmod(stage, 0o700)
     content = stage / "content"
@@ -449,7 +460,7 @@ def main() -> int:
         help="record that Open WebUI user data is intentionally recreatable and excluded",
     )
     parser.add_argument("--gpg-recipient", default="")
-    parser.add_argument("--webui-container", default="zwslcore-open-webui")
+    parser.add_argument("--webui-container", default="zwslcore-webui")
     args = parser.parse_args()
     try:
         result = create_backup(

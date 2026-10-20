@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
+.PHONY: cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up postgres-backup postgres-migrate-docker ci
 
 cloudshell:
 	bash scripts/cloudshell.sh
@@ -14,6 +14,7 @@ ai-doctor:
 ai-test:
 	bash -n scripts/ai.sh
 	bash scripts/ai.sh selftest
+	python3 -m unittest tests.test_ai_cli -v
 	bash -n scripts/cloudshell.sh
 
 help:
@@ -27,6 +28,8 @@ help:
 	  'wait-runtime  wait for stable runtime health' \
 	  'doctor        verify runtime health' \
 	  'smoke         verify authenticated model inference' \
+	  'postgres-backup create a private verified PostgreSQL backup' \
+	  'postgres-migrate-docker migrate local LiteLLM data into Compose PostgreSQL' \
 	  'capacity      report disk and Docker storage pressure' \
 	  'models        list local Ollama models' \
 	  'models-manifest capture or compare local model identities' \
@@ -147,9 +150,16 @@ provider-lock-check:
 cloudflare-up:
 	bash scripts/cloudflare-up.sh
 
+postgres-backup:
+	python3 scripts/postgres_backup.py --env-file .env
+
+postgres-migrate-docker:
+	python3 scripts/postgres_migrate_docker.py .env
+
 ci: validate-template
-	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
+	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py scripts/postgres_preflight.py scripts/postgres_backup.py scripts/postgres_migrate_docker.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
 	python3 -m compileall -q services/provider/zeaz_provider services/engineering scripts/engineer.py
+	bash tests/test_env_loader.sh
 	python3 -m unittest discover -s tests -v
 	bash -n scripts/install.sh
 	bash -n scripts/doctor.sh

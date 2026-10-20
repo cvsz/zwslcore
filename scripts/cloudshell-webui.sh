@@ -34,7 +34,8 @@ case "${1:-}" in
     ;;
   start)
     [[ -x "$VENV/bin/open-webui" ]] || { echo "Run install first" >&2; exit 1; }
-    export DATA_DIR="$DATA" WEBUI_SECRET_KEY="$(cat "$DATA/secret")"
+    webui_secret="$(cat "$DATA/secret")"
+    export DATA_DIR="$DATA" WEBUI_SECRET_KEY="$webui_secret"
     export OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://127.0.0.1:11434}"
     export ENABLE_SIGNUP="${ENABLE_SIGNUP:-false}"
     export WEBUI_AUTH="${WEBUI_AUTH:-true}"

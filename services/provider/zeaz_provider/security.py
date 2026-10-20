@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import ipaddress
@@ -20,6 +19,7 @@ _SECRET = re.compile(
     re.IGNORECASE,
 )
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+MAX_TRACKED_RATE_LIMIT_BUCKETS = 10_000
 
 
 def redact(value: str, limit: int = 2048) -> str:
@@ -35,6 +35,13 @@ def request_id(value: str | None) -> str:
 def client_bucket(authorization: str | None, api_key: str | None, peer: str) -> str:
     identity = api_key or authorization or peer
     return hashlib.sha256(identity.encode()).hexdigest()
+
+
+def request_rate_buckets(authorization: str | None, api_key: str | None, peer: str) -> tuple[str, ...]:
+    """Apply limits to both the resolved peer and its credential identity."""
+    peer_bucket = hashlib.sha256(peer.encode()).hexdigest()
+    identity_bucket = client_bucket(authorization, api_key, peer)
+    return tuple(dict.fromkeys((peer_bucket, identity_bucket)))
 
 
 def client_key_digest(value: str) -> bytes:
@@ -87,32 +94,77 @@ class RateLimitBackend(Protocol):
 
 
 class InMemoryRateLimiter:
-    def __init__(self, limit: int, window_seconds: float = 60.0, *, clock=time.monotonic):
+    def __init__(
+        self,
+        limit: int,
+        window_seconds: float = 60.0,
+        *,
+        clock=time.monotonic,
+        max_buckets: int = MAX_TRACKED_RATE_LIMIT_BUCKETS,
+    ):
+        if type(max_buckets) is not int or max_buckets < 1:
+            raise ValueError("max_buckets must be a positive integer")
         self.limit = limit
         self.window_seconds = window_seconds
         self.clock = clock
+        self.max_buckets = max_buckets
         self._events: dict[str, deque[float]] = defaultdict(deque)
+        self._next_sweep = self.clock() + window_seconds
+
+    def _sweep(self, now: float) -> None:
+        """Drop buckets whose events have all expired.
+
+        Buckets are keyed on client-supplied credentials before authentication,
+        so without this an attacker rotating the Authorization header grows the
+        table without bound.
+        """
+        if now < self._next_sweep:
+            return
+        cutoff = now - self.window_seconds
+        stale = [key for key, events in self._events.items() if not events or events[-1] <= cutoff]
+        for key in stale:
+            del self._events[key]
+        self._next_sweep = now + self.window_seconds
 
     async def allow(self, bucket: str) -> tuple[bool, int]:
         if self.limit <= 0:
             return True, 0
-        
+
         now = self.clock()
-        events = self._events[bucket]
+        self._sweep(now)
+        events = self._events.get(bucket)
+        if events is None:
+            if len(self._events) >= self.max_buckets:
+                return False, 0
+            events = self._events[bucket]
         cutoff = now - self.window_seconds
-        
+
         while events and events[0] <= cutoff:
             events.popleft()
-        
+
         remaining = max(0, self.limit - len(events))
         if not remaining:
             return False, 0
-        
+
         events.append(now)
         return True, remaining - 1
 
     async def close(self) -> None:
         return None
+
+
+async def allow_rate_limit_buckets(
+    backend: RateLimitBackend,
+    buckets: tuple[str, ...],
+) -> tuple[bool, int]:
+    """Require every applicable bucket and report the strictest remaining quota."""
+    remaining = []
+    for bucket in buckets:
+        allowed, count = await backend.allow(bucket)
+        if not allowed:
+            return False, 0
+        remaining.append(count)
+    return True, min(remaining, default=0)
 
 
 _REDIS_ALLOW_SCRIPT = """

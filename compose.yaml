@@ -28,6 +28,27 @@ services:
       start_period: 20s
     networks: [ai]
 
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873}
+    container_name: zwslcore-postgres
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?POSTGRES_SUPERUSER_PASSWORD must be set}
+      LITELLM_DB_PASSWORD: ${LITELLM_DB_PASSWORD:?LITELLM_DB_PASSWORD must be set}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks: [ai]
+
   litellm:
     image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.104.2@sha256:3d88bd757134a00e8c00237b85a021ab1f6d54abb9c1df750f411dbe7256a500}
     container_name: zwslcore-litellm
@@ -36,6 +57,8 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
     env_file:
       - ${ZW_ENV_FILE:-.env}
@@ -43,10 +66,6 @@ services:
       - ./config/litellm.yaml:/app/config.yaml:ro
     ports:
       - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
-    extra_hosts:
-      # Pinned bridge IP verified on this host's zwslcore-ai network.
-      # Override with host-gateway where the daemon supports it.
-      - "host.docker.internal:${HOST_DOCKER_INTERNAL_IP:-172.18.0.1}"
     healthcheck:
       test:
         ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=5)"]
@@ -63,10 +82,9 @@ services:
     container_name: zwslcore-provider
     restart: unless-stopped
     logging: *default-logging
+    # Local Ollama routes stay available when the optional LiteLLM/PostgreSQL path is down.
     depends_on:
       ollama:
-        condition: service_healthy
-      litellm:
         condition: service_healthy
     env_file:
       - ${ZW_ENV_FILE:-.env}
@@ -96,8 +114,8 @@ services:
     networks: [ai]
 
   open-webui:
-    image: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.11.4@sha256:9591b13f13843c7721c2b8eaf7382846c81b3ffe126526d1888d1fed50c6a33f}
-    container_name: zwslcore-open-webui
+    image: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.12.3@sha256:a537bbe1e6b428820f52ed4a029d7fff97062e24d5cf32c365fba36fd0542def}
+    container_name: zwslcore-webui
     restart: unless-stopped
     logging: *default-logging
     depends_on:
@@ -114,6 +132,7 @@ services:
       CORS_ALLOW_ORIGIN: ${OPENWEBUI_CORS_ALLOW_ORIGIN:-http://localhost:3000;http://127.0.0.1:3000}
     volumes:
       - open-webui-data:/app/backend/data
+      - ./webui/custom.css:/app/build/static/custom.css:ro
     ports:
       # Loopback by default; operators may opt into LAN access via .env.
       - "${OPENWEBUI_BIND_ADDRESS:-127.0.0.1}:${OPENWEBUI_PORT:-3000}:8080"
@@ -133,4 +152,5 @@ networks:
 
 volumes:
   ollama-data:
+  postgres-data:
   open-webui-data:

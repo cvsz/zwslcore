@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,6 +41,8 @@ class ChangeSnapshotTests(unittest.TestCase):
             self.assertEqual(created["state"], "applied")
             self.assertGreater(created["patch_bytes"], 0)
             self.assertEqual(len(created["patch_sha256"]), 64)
+            self.assertEqual(stat.S_IMODE(snapshots.root.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE((snapshots.root / "task_roundtrip").stat().st_mode), 0o700)
 
             undone = snapshots.undo("task_roundtrip", worktree)
             self.assertEqual(undone["state"], "undone")
