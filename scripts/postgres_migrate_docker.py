@@ -102,6 +102,14 @@ def _container_table_count(env_file: Path) -> int:
         raise RuntimeError("Docker PostgreSQL returned an invalid table count") from exc
 
 
+def _require_new_migration_target(exists: bool) -> None:
+    if exists:
+        raise RuntimeError(
+            f"target database {TARGET_DATABASE!r} already exists; "
+            "refusing to reuse it because matching table counts do not verify its contents"
+        )
+
+
 def _ensure_superuser_password(env_file: Path, values: dict[str, str]) -> tuple[str, dict[str, str]]:
     if values.get("POSTGRES_SUPERUSER_PASSWORD"):
         return env_file.read_text(encoding="utf-8"), values
@@ -175,30 +183,24 @@ def migrate(env_file: Path) -> tuple[Path, str, int]:
     )
     if exists.returncode:
         raise RuntimeError("could not inspect the Docker PostgreSQL target")
-    if exists.stdout.strip():
-        target_tables = _container_table_count(env_file)
-        if target_tables != source_tables:
-            raise RuntimeError(
-                f"target database {TARGET_DATABASE!r} already exists with {target_tables} tables; "
-                "refusing to overwrite it"
-            )
-    else:
-        created = _compose(
-            env_file, "exec", "--no-TTY", "postgres", "createdb", "--username", "postgres",
-            "--owner", "litellm", TARGET_DATABASE,
+    _require_new_migration_target(bool(exists.stdout.strip()))
+
+    created = _compose(
+        env_file, "exec", "--no-TTY", "postgres", "createdb", "--username", "postgres",
+        "--owner", "litellm", TARGET_DATABASE,
+    )
+    if created.returncode:
+        raise RuntimeError("could not create the isolated migration database")
+    restore = _compose(
+        env_file, "exec", "--no-TTY", "postgres", "pg_restore", "--no-owner", "--no-acl",
+        "--exit-on-error", "--username", "litellm", "--dbname", TARGET_DATABASE,
+        input_bytes=backup_path.read_bytes(),
+    )
+    if restore.returncode:
+        raise RuntimeError(
+            f"restore failed; the isolated target database {TARGET_DATABASE!r} is retained for review"
         )
-        if created.returncode:
-            raise RuntimeError("could not create the isolated migration database")
-        restore = _compose(
-            env_file, "exec", "--no-TTY", "postgres", "pg_restore", "--no-owner", "--no-acl",
-            "--exit-on-error", "--username", "litellm", "--dbname", TARGET_DATABASE,
-            input_bytes=backup_path.read_bytes(),
-        )
-        if restore.returncode:
-            raise RuntimeError(
-                f"restore failed; the isolated target database {TARGET_DATABASE!r} is retained for review"
-            )
-        target_tables = _container_table_count(env_file)
+    target_tables = _container_table_count(env_file)
     if target_tables != source_tables:
         raise RuntimeError(
             f"table-count verification failed (source={source_tables}, target={target_tables}); "

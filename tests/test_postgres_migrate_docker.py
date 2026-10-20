@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 
 from scripts.postgres_migrate_docker import (
     _ensure_superuser_password,
+    _require_new_migration_target,
     _replace_database_url,
     _url_for_docker,
 )
@@ -45,6 +46,13 @@ class PostgreSQLDockerMigrationTests(unittest.TestCase):
             rollback_content, values = _ensure_superuser_password(env_file, {})
             self.assertIn("POSTGRES_SUPERUSER_PASSWORD=", rollback_content)
             self.assertEqual(values["POSTGRES_SUPERUSER_PASSWORD"], rollback_content.split("POSTGRES_SUPERUSER_PASSWORD=", 1)[1].strip())
+
+    def test_existing_target_is_rejected_even_when_table_count_could_match(self):
+        with self.assertRaisesRegex(RuntimeError, "matching table counts do not verify its contents"):
+            _require_new_migration_target(True)
+
+    def test_absent_target_can_be_created_for_restore(self):
+        _require_new_migration_target(False)
 
 
 if __name__ == "__main__":
