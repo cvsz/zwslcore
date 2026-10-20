@@ -3,7 +3,13 @@
 ## Local setup
 
 1. Clone the repository.
-2. Copy `.env.example` to an ignored `.env` and populate local-only values.
+2. Copy `.env.example` to an ignored `.env` and populate local-only values. The AI CLI (`scripts/ai.sh`)
+   loads an allowlisted set of AI settings from this ignored `.env`, so create it with owner-only permissions:
+
+   ```bash
+   cp .env.example .env
+   chmod 600 .env
+   ```
 3. Install the selected runtime and dependencies.
 4. Replace placeholder Makefile targets with real project commands.
 5. Run:
