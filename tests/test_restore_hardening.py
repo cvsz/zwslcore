@@ -29,6 +29,22 @@ class RestoreHardeningTests(unittest.TestCase):
                 restore_backup(backup, backup / "nested-target")
             self.assertEqual(sorted(path.name for path in backup.iterdir()), before)
 
+    def test_symlink_target_is_rejected_without_touching_its_destination(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backup = _minimal_backup(root)
+            destination = root / "existing-empty-directory"
+            destination.mkdir(mode=0o755)
+            target = root / "restore-target"
+            target.symlink_to(destination, target_is_directory=True)
+
+            with self.assertRaisesRegex(RestoreError, "symlink path components"):
+                restore_backup(backup, target)
+
+            self.assertTrue(target.is_symlink())
+            self.assertEqual(list(destination.iterdir()), [])
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o755)
+
     def test_automatic_target_inside_custom_tmpdir_backup_is_removed_and_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             backup = _minimal_backup(Path(directory))

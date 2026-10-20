@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.backup import BACKUP_SCHEMA, RPO_TARGET_HOURS, RTO_TARGET_MINUTES
+from services.engineering.secure_storage import reject_symlink_components
 
 
 class RestoreError(RuntimeError):
@@ -162,9 +163,16 @@ def restore_backup(backup: str | Path, target: str | Path | None = None) -> Path
     backup_path = Path(backup).expanduser().resolve()
     manifest = _load_manifest(backup_path)
     if target is None:
-        target_path = Path(tempfile.mkdtemp(prefix="zwslcore-restore-")).resolve()
+        requested_target = Path(tempfile.mkdtemp(prefix="zwslcore-restore-"))
     else:
-        target_path = Path(target).expanduser().resolve()
+        requested_target = Path(target).expanduser()
+    try:
+        reject_symlink_components(requested_target)
+    except PermissionError as exc:
+        if target is None:
+            shutil.rmtree(requested_target, ignore_errors=True)
+        raise RestoreError("restore target must not contain symlink path components") from exc
+    target_path = requested_target.resolve()
     # A custom TMPDIR can place the automatically-created staging directory
     # inside the backup, so enforce containment for both target-selection paths.
     if target_path == backup_path or backup_path in target_path.parents:
