@@ -4,6 +4,7 @@ import dataclasses
 import json
 import os
 import selectors
+import signal
 import subprocess
 import threading
 import time
@@ -179,6 +180,7 @@ class StdioMCPSession:
                 env=base_env,
                 shell=False,
                 bufsize=0,
+                start_new_session=True,
             )
         except OSError as exc:
             raise MCPError(f"unable to start MCP server {self.config.name!r}: {exc}") from exc
@@ -228,13 +230,30 @@ class StdioMCPSession:
             selector.close()
         if process is None:
             return
-        if process.poll() is None:
-            process.terminate()
+        # Each session owns a process group so helper processes cannot outlive
+        # the MCP server and retain pipes or continue background work.
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            process.poll()  # Reap the server so an exited parent does not pin the group.
             try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=2)
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=2)
         # Release the pipe file descriptors; Popen does not close them on its own.
         for stream in (process.stdin, process.stdout):
             if stream is not None:
@@ -254,17 +273,41 @@ class StdioMCPSession:
                 pass
         self._buffer.clear()
 
-    def _send(self, payload: dict[str, Any]) -> None:
+    def _send(self, payload: dict[str, Any], deadline: float | None = None) -> None:
         if self.process is None or self.process.stdin is None:
             raise MCPError("MCP session is not connected")
         raw = json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n"
         if len(raw) > MAX_MESSAGE_BYTES:
             raise MCPError("MCP request exceeds message size limit")
+        deadline = deadline or time.monotonic() + self.config.timeout_seconds
+        fd = self.process.stdin.fileno()
+        was_blocking = os.get_blocking(fd)
+        writer = selectors.DefaultSelector()
         try:
-            self.process.stdin.write(raw)
-            self.process.stdin.flush()
+            os.set_blocking(fd, False)
+            writer.register(fd, selectors.EVENT_WRITE)
+            offset = 0
+            while offset < len(raw):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not writer.select(timeout=remaining):
+                    raise MCPError(f"MCP server {self.config.name!r} request timed out while writing")
+                try:
+                    written = os.write(fd, raw[offset : offset + READ_CHUNK_BYTES])
+                except BlockingIOError:
+                    continue
+                if written <= 0:
+                    raise MCPError(f"MCP server {self.config.name!r} stdin closed while writing")
+                offset += written
+        except MCPError:
+            raise
         except (BrokenPipeError, OSError) as exc:
             raise MCPError(f"MCP server {self.config.name!r} stdin failed: {exc}") from exc
+        finally:
+            writer.close()
+            try:
+                os.set_blocking(fd, was_blocking)
+            except OSError:
+                pass
 
     def _read_message(self, deadline: float) -> dict[str, Any]:
         if self.process is None or self.process.stdout is None or self._selector is None:
@@ -314,15 +357,16 @@ class StdioMCPSession:
     def request(self, method: str, params: dict[str, Any] | None = None) -> Any:
         request_id = self._next_id
         self._next_id += 1
+        deadline = time.monotonic() + self.config.timeout_seconds
         self._send(
             {
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "method": method,
                 "params": params or {},
-            }
+            },
+            deadline,
         )
-        deadline = time.monotonic() + self.config.timeout_seconds
         while True:
             message = self._read_message(deadline)
             if message.get("id") != request_id:
