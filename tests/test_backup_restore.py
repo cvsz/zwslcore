@@ -84,6 +84,21 @@ class BackupRestoreTests(unittest.TestCase):
                 restore_backup(backup_path, root / "bad-restore")
             self.assertTrue((source / "state/engineering.db").exists())
 
+    def test_backup_rejects_symlink_destination_without_writing_through_it(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source, _, _, _ = self._source(root)
+            outside = root / "outside-backup"
+            destination = root / "backup-link"
+            destination.symlink_to(outside, target_is_directory=True)
+
+            with patch("scripts.backup._runtime_metadata", return_value={"python": "test", "containers": {}}):
+                with self.assertRaisesRegex(BackupError, "symlink path components"):
+                    create_backup(source_root=source, repository_root=REPOSITORY, output=destination)
+
+            self.assertTrue(destination.is_symlink())
+            self.assertFalse(outside.exists())
+
     def test_backup_refuses_active_engineering_task(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

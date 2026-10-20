@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT))
 from services.engineering.lease import SQLiteRunnerLease
 from services.engineering.ledger import JsonContinuousLedger
 from services.engineering.models import TaskStatus
+from services.engineering.secure_storage import ensure_private_directory, reject_symlink_components
 from services.engineering.store import SQLiteEngineeringStore
 
 
@@ -299,18 +300,26 @@ def create_backup(
         raise BackupError("engineering.db and continuous.json must both exist before backup")
 
     if output:
-        target = Path(output).expanduser().resolve()
+        requested_target = Path(os.path.abspath(Path(output).expanduser()))
+        try:
+            reject_symlink_components(requested_target)
+        except PermissionError as exc:
+            raise BackupError("backup destination must not contain symlink path components") from exc
+        target = requested_target
         backup_parent = target.parent
     else:
-        backup_parent = source / "backups"
+        try:
+            backup_parent = ensure_private_directory(source / "backups")
+        except PermissionError as exc:
+            raise BackupError("default backup directory must be a private, non-symlink directory") from exc
         stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         target = backup_parent / f"zwslcore-{stamp}-{uuid.uuid4().hex[:8]}"
     if target.exists():
         raise BackupError(f"backup destination already exists: {target}")
     if source == target:
         raise BackupError("backup destination cannot replace the source state root")
-    backup_parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    os.chmod(backup_parent, 0o700)
+    if output:
+        backup_parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=".zwslcore-backup-", dir=backup_parent))
     os.chmod(stage, 0o700)
     content = stage / "content"
