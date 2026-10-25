@@ -4,6 +4,7 @@ USER 0:0
 WORKDIR /app
 ENV VIRTUAL_ENV=/opt/venv
 RUN python -m venv "$VIRTUAL_ENV"
+RUN python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' > /opt/python-build-version
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY pyproject.toml requirements.lock ./
@@ -24,6 +25,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 COPY --from=build /opt/venv /opt/venv
+COPY --from=build /opt/python-build-version /opt/python-build-version
+RUN ["/usr/bin/python", "-c", "from pathlib import Path; import sys; expected=Path('/opt/python-build-version').read_text().strip(); actual=f'{sys.version_info.major}.{sys.version_info.minor}'; assert actual == expected, f'Python minor mismatch: builder={expected}, runtime={actual}'"]
 COPY --from=build /app/config ./config
 
 USER 65532:65532
