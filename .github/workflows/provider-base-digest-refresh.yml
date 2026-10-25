@@ -1,0 +1,49 @@
+name: Provider Base Image Digest Refresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provider-base-digest-refresh
+  cancel-in-progress: false
+
+jobs:
+  propose-digest-update:
+    name: Propose reviewed Provider base-image digest updates
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Refresh immutable Chainguard Python digests
+        uses: chainguard-dev/digestabot@33d0b78e580aa0c83fe188eb3dfad6611b662479 # v1.3.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          working-dir: services/provider
+          include-files: "Dockerfile*"
+          branch-for-pr: update-provider-image-digests
+          title-for-pr: "chore(security): refresh pinned Provider base image digests"
+          description-for-pr: |
+            Automated proposal to refresh the tag+digest references in services/provider/Dockerfile.
+
+            Required before merge:
+            - Provider Supply Chain must pass the blocking Grype HIGH/CRITICAL gate.
+            - CI must prove the builder/runtime Python environment and hash-locked dependencies remain compatible.
+            - Verify the exact image digest's Chainguard signature and SBOM/provenance.
+            - Obtain independent review and verify commit-signature policy.
+
+            This workflow only proposes a digest change. It does not merge, publish a release, or deploy.
+          labels-for-pr: ""
+          use-gitsign: true
