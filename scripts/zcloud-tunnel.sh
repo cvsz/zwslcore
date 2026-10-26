@@ -39,7 +39,8 @@ preflight() {
   local name
   name="$(sed -n 's/^[[:space:]]*tunnel:[[:space:]]*//p' "$CONFIG" | head -1)"
   [[ -n "$name" ]] || { echo "Config missing tunnel ID" >&2; return 1; }
-  if [[ -n "$ZCLOUD_TUNNEL_ID" && "$name" != "$ZCLOUD_TUNNEL_ID" ]]; then
+  local expected_tunnel_id="${ZCLOUD_TUNNEL_ID:-}"
+  if [[ -n "$expected_tunnel_id" && "$name" != "$expected_tunnel_id" ]]; then
     echo "Tunnel ID mismatch; refusing to start" >&2; return 1
   fi
 }
