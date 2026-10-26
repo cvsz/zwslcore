@@ -80,8 +80,8 @@ check_credentials_file() {
   credentials="${credentials%"${credentials##*[![:space:]]}"}"
   credentials="${credentials%\"}"
   credentials="${credentials#\"}"
-  credentials="${credentials%\'}"
-  credentials="${credentials#\'}"
+  credentials="${credentials%'}"
+  credentials="${credentials#'}"
   [[ -n "$credentials" ]] || fail "Config must declare credentials-file"
   [[ "$credentials" != *$'\n'* && "$credentials" != *$'\r'* ]] || fail "Invalid credentials-file path"
   if [[ "$credentials" != /* ]]; then
@@ -121,13 +121,13 @@ config_checks() {
   name="$(sed -n 's/^[[:space:]]*tunnel:[[:space:]]*//p' "$CONFIG" | head -n 1)"
   name="${name%\"}"
   name="${name#\"}"
-  name="${name%\'}"
-  name="${name#\'}"
+  name="${name%'}"
+  name="${name#'}"
   [[ "$name" == "$TUNNEL_ID" ]] || fail "Config tunnel ID does not match ZCLOUD_TUNNEL_ID"
   [[ -x "$CLOUDFLARED" && ! -L "$CLOUDFLARED" ]] || fail "Verified cloudflared binary is not executable"
   "$CLOUDFLARED" tunnel --config "$CONFIG" ingress validate >/dev/null ||
     fail "ingress validation failed"
-  route_output="@@("$CLOUDFLARED" tunnel --config "$CONFIG" ingress rule "https://$HOSTNAME_VALUE" 2>&1)" ||
+  route_output="$("$CLOUDFLARED" tunnel --config "$CONFIG" ingress rule "https://$HOSTNAME_VALUE" 2>&1)" ||
     fail "Unable to determine the ingress rule for ZCLOUD_HOSTNAME"
   grep -Fq 'ssh://127.0.0.1:22' <<< "$route_output" ||
     fail "ZCLOUD_HOSTNAME does not route to ssh://127.0.0.1:22"
