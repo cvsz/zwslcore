@@ -86,3 +86,21 @@ Cloudflare Access and SSH access alone do not grant ChatGPT-in-Chat an SSH execu
 - Access denied for unauthorized identity; authorized Cloudflare login works
 - SSH host-key and public-key authentication succeed from a trusted client
 - Stop/restart/rollback tested on the target; no production claim without these results
+
+
+## Recovery after a Cloud Shell VM reset
+
+The recovery script deliberately has no project-specific tunnel UUID or hostname defaults. From the repository root, set the values for the tunnel you intend to manage:
+
+    export ZCLOUD_TUNNEL_ID="YOUR_TUNNEL_UUID"
+    export ZCLOUD_HOSTNAME="tunnel.example.com"
+    export ZCLOUD_CONFIG="$HOME/.cloudflared/config.yml"
+    export ZCLOUD_CLOUDFLARED="$HOME/bin/cloudflared"
+
+    bash scripts/zcloud-recovery.sh install
+    bash scripts/zcloud-recovery.sh recover
+    bash scripts/zcloud-recovery.sh verify
+
+The install action downloads the versioned Cloudflare release and verifies the pinned SHA-256 before installing. When upgrading cloudflared, update the version-specific URL and checksum together through review. The recover action fails closed unless the config and credentials are regular non-symlink files owned by the current user with restrictive permissions, the configured hostname resolves to the intended SSH ingress (ssh://127.0.0.1:22), and local SSH is listening. The lifecycle manager is invoked through Bash and receives the same verified binary path.
+
+Do not run repair-dns as a health check. It changes DNS only after the operator confirms the explicitly configured hostname and tunnel UUID interactively.
