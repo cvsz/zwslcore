@@ -5,6 +5,7 @@ umask 077
 
 NAME="${ZCLOUD_TUNNEL_NAME:-zcloud-tunnel}"
 CONFIG="${ZCLOUD_CONFIG:-$HOME/.cloudflared/config.yml}"
+CLOUDFLARED="${ZCLOUD_CLOUDFLARED:-$(command -v cloudflared 2>/dev/null || true)}"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/zwslcore-cloudflared"
 PIDFILE="$STATE/supervisor.pid"
 LOGFILE="$STATE/connector.log"
@@ -26,7 +27,7 @@ supervisor_pid() {
   printf '%s\n' "$pid"
 }
 preflight() {
-  command -v cloudflared >/dev/null || { echo "cloudflared not installed" >&2; return 1; }
+  [[ -n "$CLOUDFLARED" && -x "$CLOUDFLARED" ]] || { echo "cloudflared executable not found; set ZCLOUD_CLOUDFLARED or install it in PATH" >&2; return 1; }
   [[ -f "$CONFIG" && ! -L "$CONFIG" ]] || { echo "Config missing or symlink: $CONFIG" >&2; return 1; }
   local perms
   perms="$(stat -c %a "$CONFIG")"
@@ -34,11 +35,11 @@ preflight() {
     echo "Config permissions expose credentials or origin metadata; require mode 0600" >&2
     return 1
   fi
-  cloudflared tunnel --config "$CONFIG" ingress validate >/dev/null
+  "$CLOUDFLARED" tunnel --config "$CONFIG" ingress validate >/dev/null
   local name
   name="$(sed -n 's/^[[:space:]]*tunnel:[[:space:]]*//p' "$CONFIG" | head -1)"
   [[ -n "$name" ]] || { echo "Config missing tunnel ID" >&2; return 1; }
-  if [[ -n "${ZCLOUD_TUNNEL_ID:-}" && "$name" != "$ZCLOUD_TUNNEL_ID" ]]; then
+  if [[ -n "$ZCLOUD_TUNNEL_ID" && "$name" != "$ZCLOUD_TUNNEL_ID" ]]; then
     echo "Tunnel ID mismatch; refusing to start" >&2; return 1
   fi
 }
@@ -57,7 +58,7 @@ run_supervisor() {
   }
   trap cleanup TERM INT EXIT
   while :; do
-    cloudflared tunnel --config "$CONFIG" run >>"$LOGFILE" 2>&1 &
+    "$CLOUDFLARED" tunnel --config "$CONFIG" run >>"$LOGFILE" 2>&1 &
     child="$!"
     wait "$child" || true
     child=""
