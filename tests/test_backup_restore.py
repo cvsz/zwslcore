@@ -22,7 +22,7 @@ class BackupRestoreTests(unittest.TestCase):
     def _source(self, root: Path) -> tuple[Path, SQLiteEngineeringStore, JsonContinuousLedger, str]:
         source = root / "source"
         state = source / "state"
-        state.mkdir(parents=True)
+        state.mkdir(parents=True, mode=0o700)
         store = SQLiteEngineeringStore(state / "engineering.db")
         task = EngineeringTask(title="backup fixture", status=TaskStatus.SUCCEEDED)
         store.save_task(task)
