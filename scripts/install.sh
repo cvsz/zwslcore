@@ -279,6 +279,38 @@ for model in "${SELECTED[@]}"; do
   fi
 done
 
+# --- Import local GGUF models into Ollama ---
+GGUF_MODEL_DIR="$(dotenv_get "$ENV_FILE" ZEAZ_GGUF_MODEL_DIR "")"
+GGUF_FAST_MODEL="$(dotenv_get "$ENV_FILE" ZEAZ_GGUF_FAST_MODEL "")"
+GGUF_CODER_MODEL="$(dotenv_get "$ENV_FILE" ZEAZ_GGUF_CODER_MODEL "")"
+if [[ -n "$GGUF_MODEL_DIR" && -d "$GGUF_MODEL_DIR" ]]; then
+  WORKDIR="$(mktemp -d)"
+  trap 'rm -rf "$WORKDIR"' EXIT
+  for gguf in "$GGUF_FAST_MODEL" "$GGUF_CODER_MODEL"; do
+    [[ -z "$gguf" || ! -f "$GGUF_MODEL_DIR/$gguf" ]] && continue
+    alias_name="zwslcore-${gguf%.gguf}"
+    modelfile="$WORKDIR/Modelfile.${gguf%.gguf}"
+    case "$gguf" in
+      *1.5b*) cp "$ROOT/models/Modelfile.gguf-fast" "$modelfile" ;;
+      *7b*)   cp "$ROOT/models/Modelfile.gguf-coder" "$modelfile" ;;
+      *)      cp "$ROOT/models/Modelfile.gguf-fast" "$modelfile" ;;
+    esac
+    # Rewrite Modelfile FROM path to absolute host path for docker cp
+    sed -i "s|FROM ./|FROM /tmp/zwslcore-gguf/|" "$modelfile"
+    docker exec zwslcore-ollama mkdir -p /tmp/zwslcore-gguf
+    docker cp "$GGUF_MODEL_DIR/$gguf" "zwslcore-ollama:/tmp/zwslcore-gguf/$gguf"
+    docker cp "$modelfile" "zwslcore-ollama:/tmp/Modelfile.${gguf%.gguf}"
+    if ! docker exec zwslcore-ollama ollama list | awk 'NR>1 {print $1}' | grep -qx "$alias_name"; then
+      log "Importing GGUF model $gguf as $alias_name"
+      docker exec zwslcore-ollama ollama create "$alias_name" -f "/tmp/Modelfile.${gguf%.gguf}"
+    else
+      log "GGUF model $alias_name already present in Ollama"
+    fi
+  done
+else
+  log "ZEAZ_GGUF_MODEL_DIR not set or directory missing; skipping GGUF import"
+fi
+
 log "Re-validating runtime configuration"
 docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" config --quiet
 
