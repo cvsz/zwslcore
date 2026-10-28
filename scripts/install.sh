@@ -279,6 +279,47 @@ for model in "${SELECTED[@]}"; do
   fi
 done
 
+# --- Download MiniMax-H3 GGUF models from Hugging Face ---
+# MiniMax-H3 is an Image-Text-to-Video model (20B params), used with
+# stable-diffusion.cpp. Not part of the Ollama chat API.
+MINIMAX_H3_MODEL_DIR="$(dotenv_get "$ENV_FILE" ZEAZ_MINIMAX_H3_MODEL_DIR "")"
+MINIMAX_H3_DENOISER="$(dotenv_get "$ENV_FILE" ZEAZ_MINIMAX_H3_DENOISER "")"
+MINIMAX_H3_TEXT_ENCODER="$(dotenv_get "$ENV_FILE" ZEAZ_MINIMAX_H3_TEXT_ENCODER "")"
+MINIMAX_H3_VIDEO_VAE="$(dotenv_get "$ENV_FILE" ZEAZ_MINIMAX_H3_VIDEO_VAE "")"
+MINIMAX_H3_AUDIO_VAE="$(dotenv_get "$ENV_FILE" ZEAZ_MINIMAX_H3_AUDIO_VAE "")"
+
+if [[ -n "$MINIMAX_H3_MODEL_DIR" && -n "$MINIMAX_H3_DENOISER" && -n "$MINIMAX_H3_TEXT_ENCODER" ]]; then
+  mkdir -p "$MINIMAX_H3_MODEL_DIR"
+  HF_BASE="https://huggingface.co/unsloth/MiniMax-H3-GGUF/resolve/main"
+  COMFY_BASE="https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main"
+
+  download_file() {
+    local url="$1" dest="$2"
+    if [[ -f "$dest" ]]; then
+      log "MiniMax-H3: $(basename "$dest") already present, skipping."
+      return 0
+    fi
+    log "MiniMax-H3: downloading $(basename "$dest")"
+    curl -L --fail --retry 3 --retry-delay 5 -C - -o "$dest" "$url" || {
+      log "MiniMax-H3: WARNING - failed to download $(basename "$dest")"
+      return 1
+    }
+  }
+
+  download_file "$HF_BASE/$MINIMAX_H3_DENOISER" "$MINIMAX_H3_MODEL_DIR/$MINIMAX_H3_DENOISER"
+  download_file "$HF_BASE/$MINIMAX_H3_TEXT_ENCODER" "$MINIMAX_H3_MODEL_DIR/$MINIMAX_H3_TEXT_ENCODER"
+
+  # VAEs from Comfy-Org/MiniMax-H3 (optional, needed for actual video generation)
+  if [[ -n "$MINIMAX_H3_VIDEO_VAE" ]]; then
+    download_file "$COMFY_BASE/$MINIMAX_H3_VIDEO_VAE" "$MINIMAX_H3_MODEL_DIR/$MINIMAX_H3_VIDEO_VAE"
+  fi
+  if [[ -n "$MINIMAX_H3_AUDIO_VAE" ]]; then
+    download_file "$COMFY_BASE/$MINIMAX_H3_AUDIO_VAE" "$MINIMAX_H3_MODEL_DIR/$MINIMAX_H3_AUDIO_VAE"
+  fi
+else
+  log "MiniMax-H3: ZEAZ_MINIMAX_H3_MODEL_DIR not set; skipping download."
+fi
+
 log "Re-validating runtime configuration"
 docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" config --quiet
 
