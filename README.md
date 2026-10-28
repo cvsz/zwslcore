@@ -32,9 +32,8 @@ Windows 11
 └── WSL2 Ubuntu 26.04
     └── zwslcore
         ├── Ollama
-        │   ├── qwen2.5-coder:3b
-        │   ├── qwen2.5-coder:7b
-        │   └── qwen3:8b
+        │   ├── zwslcore-qwen-1.5b-q4km  (GGUF)
+        │   └── zwslcore-qwen-7b-q4km    (GGUF)
         ├── LiteLLM
         ├── zwslcore Provider Gateway
         │   ├── zeaz-fast

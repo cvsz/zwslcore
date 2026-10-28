@@ -44,7 +44,34 @@ To use another quantized artifact, override the model variables in the untracked
 
 Do not invent model tags. Confirm that a tag exists in the model registry before changing it.
 
-## Runtime settings
+## GGUF local models
+
+zwslcore can import GGUF-format model files directly into Ollama instead of pulling from the Ollama registry. GGUF models are useful when running quantized models that are not published as Ollama tags, or when models are transferred between air-gapped systems.
+
+### Configuration
+
+In `.env` (untracked):
+
+    ZEAZ_GGUF_MODEL_DIR=/home/cvsz/zcoder/models
+    ZEAZ_GGUF_FAST_MODEL=qwen-1.5b-q4km.gguf
+    ZEAZ_GGUF_CODER_MODEL=qwen-7b-q4km.gguf
+
+The installer imports each `.gguf` file as an Ollama model named `zwslcore-<filename-without-extension>` using a `Modelfile` from `models/`. The resulting Ollama aliases are referenced by:
+
+    ZEAZ_FAST_MODEL=zwslcore-qwen-1.5b-q4km
+    ZEAZ_CODER_MODEL=zwslcore-qwen-7b-q4km
+    ZEAZ_REASONING_MODEL=zwslcore-qwen-7b-q4km
+    ZEAZ_LOCAL_MODEL=zwslcore-qwen-7b-q4km
+
+GGUF import happens in `scripts/install.sh` after Ollama pulls complete, and can also be triggered manually with `scripts/create-local-models.sh`.
+
+### Obtaining GGUF models
+
+Copy `.gguf` files from SERVER_CORE:
+
+    ssh -p 2223 cvsz@192.168.1.85:/home/cvsz/zcoder/models/
+
+### Runtime settings
 
 The installer manages:
 
