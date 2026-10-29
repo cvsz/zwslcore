@@ -23,8 +23,8 @@ if [[ "$actual_pip_tools" != "$expected_pip_tools" ]]; then
 fi
 
 python_minor="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-if [[ "$python_minor" != "3.14" ]]; then
-  echo "The Provider lock targets Python 3.14; use Python 3.14 to compile or check it" >&2
+if [[ "$python_minor" != "3.15" ]]; then
+  echo "The Provider lock targets Python 3.15; use Python 3.15 to compile or check it" >&2
   exit 2
 fi
 
@@ -34,7 +34,7 @@ cp "$provider_dir/pyproject.toml" "$tmp_dir/pyproject.toml"
 if [[ -f "$provider_dir/requirements.lock" ]]; then
   cp "$provider_dir/requirements.lock" "$tmp_dir/requirements.lock"
 fi
-export CUSTOM_COMPILE_COMMAND='pip-compile --all-build-deps --allow-unsafe --generate-hashes --output-file=requirements.lock pyproject.toml'
+export CUSTOM_COMPILE_COMMAND='pip-compile --all-build-deps --allow-unsafe --generate-hashes --no-emit-index-url --no-emit-options --no-index --output-file=requirements.lock --strip-extras pyproject.toml'
 upgrade_args=()
 if [[ "$mode" == "update" ]]; then
   upgrade_args+=(--upgrade)
@@ -64,7 +64,7 @@ if [[ "$mode" == "update" ]]; then
 fi
 
 if ! cmp -s "$provider_dir/requirements.lock" "$tmp_dir/requirements.lock"; then
-  echo "Provider dependency lock drift detected. Run 'make provider-lock' with Python 3.14 and pip-tools $expected_pip_tools." >&2
+  echo "Provider dependency lock drift detected. Run 'make provider-lock' with Python 3.15 and pip-tools $expected_pip_tools." >&2
   diff -u "$provider_dir/requirements.lock" "$tmp_dir/requirements.lock" || true
   exit 1
 fi

@@ -85,3 +85,11 @@ def emit_request_audit(
         "rate_limited": rate_limited,
     }
     _LOGGER.info(json.dumps(event, separators=(",", ":"), sort_keys=True))
+
+
+__all__ = [
+    "audit_path",
+    "audit_method",
+    "audit_error_class",
+    "emit_request_audit",
+]

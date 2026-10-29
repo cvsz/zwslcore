@@ -7,7 +7,7 @@ import ipaddress
 import re
 import time
 import uuid
-from collections import defaultdict, deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -87,28 +87,41 @@ class RateLimitBackend(Protocol):
 
 
 class InMemoryRateLimiter:
+    MAX_BUCKETS = 10_000
+
     def __init__(self, limit: int, window_seconds: float = 60.0, *, clock=time.monotonic):
         self.limit = limit
         self.window_seconds = window_seconds
         self.clock = clock
-        self._events: dict[str, deque[float]] = defaultdict(deque)
+        self._events: OrderedDict[str, deque[float]] = OrderedDict()
 
     async def allow(self, bucket: str) -> tuple[bool, int]:
         if self.limit <= 0:
             return True, 0
-        
+
         now = self.clock()
+
+        # Evict oldest bucket if we're at capacity and bucket is new
+        if bucket not in self._events and len(self._events) >= self.MAX_BUCKETS:
+            self._events.popitem(last=False)
+
         events = self._events[bucket]
         cutoff = now - self.window_seconds
-        
+
         while events and events[0] <= cutoff:
             events.popleft()
-        
+
+        # Clean up empty buckets
+        if not events and bucket in self._events:
+            del self._events[bucket]
+
         remaining = max(0, self.limit - len(events))
         if not remaining:
             return False, 0
-        
+
         events.append(now)
+        # Mark as recently used
+        self._events.move_to_end(bucket)
         return True, remaining - 1
 
     async def close(self) -> None:
@@ -171,3 +184,17 @@ class RedisRateLimiter:
 
     async def close(self) -> None:
         await self.client.aclose()
+
+
+__all__ = [
+    "redact",
+    "request_id",
+    "client_bucket",
+    "client_key_digest",
+    "verify_client_key",
+    "TrustedProxyPolicy",
+    "RateLimitBackendError",
+    "RateLimitBackend",
+    "InMemoryRateLimiter",
+    "RedisRateLimiter",
+]
