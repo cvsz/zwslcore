@@ -12,6 +12,13 @@ services:
     container_name: zwslcore-ollama
     restart: unless-stopped
     logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          memory: 1G
     ports:
       - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
     environment:
@@ -33,6 +40,13 @@ services:
     container_name: zwslcore-litellm
     restart: unless-stopped
     logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+        reservations:
+          memory: 512M
     depends_on:
       ollama:
         condition: service_healthy
@@ -63,6 +77,13 @@ services:
     container_name: zwslcore-provider
     restart: unless-stopped
     logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     depends_on:
       ollama:
         condition: service_healthy
@@ -100,6 +121,13 @@ services:
     container_name: zwslcore-open-webui
     restart: unless-stopped
     logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     depends_on:
       provider:
         condition: service_healthy

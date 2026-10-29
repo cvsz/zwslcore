@@ -64,7 +64,7 @@ if [[ "$mode" == "update" ]]; then
 fi
 
 if ! cmp -s "$provider_dir/requirements.lock" "$tmp_dir/requirements.lock"; then
-  echo "Provider dependency lock drift detected. Run 'make provider-lock' with Python 3.14 and pip-tools $expected_pip_tools." >&2
+  echo "Provider dependency lock drift detected. Run 'make provider-lock' with Python 3.15 and pip-tools $expected_pip_tools." >&2
   diff -u "$provider_dir/requirements.lock" "$tmp_dir/requirements.lock" || true
   exit 1
 fi

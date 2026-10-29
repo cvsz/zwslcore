@@ -71,6 +71,13 @@ jobs:
             exit 1
           fi
 
+      - name: Secret scanning (TruffleHog)
+        uses: trufflesecurity/trufflehog@v3.86.1
+        with:
+          path: ./
+          only_verified: false
+          fail: true
+
       - name: Validate YAML syntax
         shell: bash
         run: |

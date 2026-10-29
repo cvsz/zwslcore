@@ -55,3 +55,5 @@ tmp/
 # Operator-local generated skill catalogs (downloaded libraries, not repo content)
 .agents/skills/cvsz-*/
 .agents/skills/.cvsz-skill-catalog.json
+*.egg-info/
+tmp_out/

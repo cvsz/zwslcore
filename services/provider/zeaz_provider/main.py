@@ -45,6 +45,23 @@ from .streaming import (
     rewrite_sse_model,
 )
 
+__all__ = [
+    "app",
+    "run",
+    "authenticate",
+    "body",
+    "SAMPLING_VALID_RANGES",
+]
+
+
+# Sampling parameter valid ranges (OpenAI/Anthropic-compatible)
+SAMPLING_VALID_RANGES: dict[str, tuple[float, float]] = {
+    "temperature": (0.0, 2.0),
+    "top_p": (0.0, 1.0),
+    "presence_penalty": (-2.0, 2.0),
+    "frequency_penalty": (-2.0, 2.0),
+}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -349,6 +366,14 @@ async def body(request: Request) -> dict[str, Any]:
             raise HTTPException(status_code=400, detail=f"{field_name} must be an array")
     if "input" in value and not isinstance(value["input"], (str, list)):
         raise HTTPException(status_code=400, detail="input must be a string or array")
+    # Validate sampling parameter ranges
+    for param, (min_val, max_val) in SAMPLING_VALID_RANGES.items():
+        if param in value:
+            val = value[param]
+            if type(val) not in (int, float) or isinstance(val, bool):
+                raise HTTPException(status_code=400, detail=f"Invalid {param}")
+            if not (min_val <= float(val) <= max_val):
+                raise HTTPException(status_code=400, detail=f"{param} must be between {min_val} and {max_val}")
     return value
 
 
