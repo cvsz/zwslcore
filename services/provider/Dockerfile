@@ -1,4 +1,4 @@
-FROM cgr.dev/chainguard/python:latest-dev@sha256:c07959e43e3edece176d20c32428a53014379790169af4ea5de1dc47277eba75 AS build
+FROM cgr.dev/chainguard/python:latest-dev@sha256:ec39ad2cb02f38c50386430050ab993439336154cfd8e9d42e815e316a91a9d1 AS build
 
 USER 0:0
 WORKDIR /app
@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r requireme
 
 COPY config ./config
 
-FROM cgr.dev/chainguard/python:latest@sha256:3f411b4aac1ed9cd6c9dec1486f92a8898737d9d6f95488dd727ca7d6f5254ee
+FROM cgr.dev/chainguard/python:latest@sha256:29ba28eeb37d00fba93ad2667fdae3ba6aa5b823c587be27ff481e20d1e95e2a
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -27,6 +27,7 @@ WORKDIR /app
 COPY --from=build /opt/venv /opt/venv
 COPY --from=build /opt/python-build-version /opt/python-build-version
 RUN ["/usr/bin/python", "-c", "from pathlib import Path; import sys; expected=Path('/opt/python-build-version').read_text().strip(); actual=f'{sys.version_info.major}.{sys.version_info.minor}'; assert actual == expected, f'Python minor mismatch: builder={expected}, runtime={actual}'"]
+RUN ["/opt/venv/bin/python", "-c", "import zeaz_provider; from zeaz_provider.main import app; assert app.title == 'zwslcore Provider'"]
 COPY --from=build /app/config ./config
 
 USER 65532:65532
