@@ -38,6 +38,12 @@ jobs:
             sh -lc 'python -m pip install --disable-pip-version-check "pip-tools==7.6.1" && pip-compile --quiet --no-config --allow-unsafe --strip-extras --generate-hashes --reuse-hashes --all-build-deps --resolver=backtracking --no-emit-index-url --no-emit-options --upgrade-package pydantic --upgrade-package pydantic-core --output-file=requirements.lock pyproject.toml'
           cp services/provider/requirements.lock artifacts/requirements.lock
           sha256sum artifacts/requirements.lock > artifacts/requirements.lock.sha256
+          split -b 3000 -d -a 3 artifacts/requirements.lock /tmp/provider-lock-chunk-
+          for chunk in /tmp/provider-lock-chunk-*; do
+            printf 'LOCK_B64_CHUNK_%s:' "${chunk##*-}"
+            base64 -w0 "$chunk"
+            printf '\n'
+          done
 
       - name: Upload review-only lock candidate
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4.6.2
