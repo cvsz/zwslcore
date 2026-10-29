@@ -44,7 +44,7 @@ jobs:
           docker run --rm \
             -v "$PWD:/workspace" \
             -w /workspace \
-            python:3.14.7-slim-bookworm@sha256:82bc3c539b8813ada9d68c63b40158fa002f7f33de9bf3312a3dfdc0620dff56 \
+            python:3.15-slim-bookworm@sha256:4e03260adeeebafccd084f3584e6b84823aba5651cfb53ef8a078ed441ddf9cd \
             sh -lc 'python -m pip install --disable-pip-version-check "pip-tools==7.6.1" && bash scripts/provider-lock.sh check'
           cp .env.example .env
           docker compose --env-file .env config --quiet
@@ -58,7 +58,7 @@ jobs:
           docker run --rm \
             -v "$PWD/services/provider:/src" \
             -w /src \
-            python:3.14.7-slim-bookworm@sha256:82bc3c539b8813ada9d68c63b40158fa002f7f33de9bf3312a3dfdc0620dff56 \
+            python:3.15-slim-bookworm@sha256:4e03260adeeebafccd084f3584e6b84823aba5651cfb53ef8a078ed441ddf9cd \
             sh -lc 'python -m pip install --disable-pip-version-check --require-hashes -r requirements.lock && python -m pip install --no-cache-dir --no-build-isolation --no-deps . && python -m unittest discover -s tests -v && python -c "import zeaz_provider; from zeaz_provider.main import app; print(app.title)"'
           rm -f .env
 
