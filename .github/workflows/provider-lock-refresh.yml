@@ -1,0 +1,48 @@
+name: Provider Lock Refresh Candidate
+
+on:
+  pull_request:
+    paths:
+      - "services/provider/pyproject.toml"
+      - "services/provider/requirements.lock"
+      - ".github/workflows/provider-lock-refresh.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provider-lock-refresh-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    name: Generate a review-only hashed lock candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Refresh only Pydantic and its core wheel hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace/services/provider \
+            python:3.14.7-slim-bookworm@sha256:82bc3c539b8813ada9d68c63b40158fa002f7f33de9bf3312a3dfdc0620dff56 \
+            sh -lc 'python -m pip install --disable-pip-version-check "pip-tools==7.6.1" && pip-compile --quiet --no-config --allow-unsafe --strip-extras --generate-hashes --reuse-hashes --all-build-deps --resolver=backtracking --no-emit-index-url --no-emit-options --upgrade-package pydantic --upgrade-package pydantic-core --output-file=requirements.lock pyproject.toml'
+          cp services/provider/requirements.lock artifacts/requirements.lock
+          sha256sum artifacts/requirements.lock > artifacts/requirements.lock.sha256
+
+      - name: Upload review-only lock candidate
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4.6.2
+        with:
+          name: provider-lock-refresh-candidate
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
