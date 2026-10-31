@@ -8,6 +8,9 @@
 *.pem
 *.key
 
+# Local S3/object storage config (may embed real credentials)
+services/provider/config/s3.local.yaml
+
 # Dependencies
 node_modules/
 .venv/
