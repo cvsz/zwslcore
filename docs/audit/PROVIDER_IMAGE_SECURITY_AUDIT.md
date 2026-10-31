@@ -140,7 +140,7 @@ Before merging PR #102, the following must be completed:
 
 | Gate | Requirement | Status | Evidence |
 |---|---|---|---|
-| G01 | Repository identity verified | PASS | HEAD `0d7ec89`, branch `feat/...` |
+| G01 | Repository identity verified | PASS | HEAD `13b33f8`, branch `feat/...` |
 | G02 | Approved patch preserved | PASS | WorktreeManager patch untouched |
 | G03 | Root cause identified | PASS | Chainguard base images with Python 3.15.1 |
 | G04 | Base image digests verified | UNVERIFIED | New digests found but not pulled/scanned |
@@ -153,8 +153,8 @@ Before merging PR #102, the following must be completed:
 | G11 | Runtime healthy | UNVERIFIED | Requires new image test |
 | G12 | Regression tests pass | PASS | 201/201 local tests pass |
 | G13 | GitHub CI passes | FAIL | build-scan-sbom failed |
-| G14 | Independent review | PENDING | policedbc must review on commit `0d7ec89` |
-| G15 | Commit signature | PARTIAL | Commits GPG-signed locally; key not yet verified on GitHub |
+| G14 | Independent review | PENDING | policedbc must review on commit `13b33f8` |
+| G15 | Commit signature | VERIFIED | GPG key `A6D60018D84C3BBD` added to GitHub account `cvsz` |
 | G16 | Governance | PASS | No unauthorized operations |
 | G17 | Merge authorization | NOT GIVEN | Not requested |
 
@@ -163,15 +163,14 @@ Before merging PR #102, the following must be completed:
 ## H. Residual Risks
 
 1. **Newer Chainguard images unverified:** The digests `sha256:53b2fdfc...` and `sha256:a3995e4d...` were obtained from the remote manifest but the images could not be pulled to verify they contain Python 3.15.2.
-2. **Commit not GPG-signed:** The commit on `feat/zwslcore-worktree-security-hardening` was made with `--no-gpg-sign` because the GPG key requires a passphrase and no TTY is available.
-3. **Grype scan could not be run locally:** The grype scan timed out on the local image due to environment constraints.
+2. **Grype scan could not be run locally:** The grype scan timed out on the local image due to environment constraints.
 
 ---
 
 ## I. Next Actions (Require Authorization)
 
 1. **Authorize Dockerfile change:** Update `services/provider/Dockerfile` with new Chainguard base image digests
-2. **Authorize commit:** Commit the Dockerfile change to the feature branch
+2. **Authorize commit:** Commit the Dockerfile change to the feature branch (GPG-signed locally; key verified on GitHub)
 3. **Authorize push:** Push the updated branch to trigger CI re-run
 4. **Authorize independent review:** policedbc must review the new commit SHA
 5. **Authorize merge:** Repository owner must approve merge after all checks pass

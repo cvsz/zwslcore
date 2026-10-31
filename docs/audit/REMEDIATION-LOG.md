@@ -25,6 +25,7 @@
 | CI-02 | `repository-baseline` Fail — `python-dateutil` conflict with botocore | Fixed `requirements.lock`: `python-dateutil==2.9.0.post0`, added `six==1.17.0`, corrected pip-compile `via` comments | VERIFIED | Local `pip-compile --check` equivalent passes |
 | CI-03 | `build-scan-sbom` Fail — Chainguard base image CVEs | **BLOCKED** — CVE-2026-115557 Critical (no fix available), CVE-2026-114613 High (fix exists but cannot apply in distroless image without `apk`) | BLOCKED | Upstream Chainguard base image issue; requires new base image digest |
 | CI-04 | S3 config support | Added `boto3` dependency, S3 config loader in `config.py`, `s3.local.yaml` template | VERIFIED | Local S3 download + `load_settings()` from S3 bucket succeeds |
+| CI-05 | GitHub GPG verification | GPG public key `F264197ECE172BFC616BF73CA6D60018D84C3BBD` added to GitHub account `cvsz` via REST API | VERIFIED | `gh api /user/gpg_keys` lists key id `A6D60018D84C3BBD`, email `seaza@msn.com` verified |
 
 ## New features (PR #102)
 
