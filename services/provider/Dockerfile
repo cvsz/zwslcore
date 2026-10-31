@@ -1,4 +1,4 @@
-FROM cgr.dev/chainguard/python:latest-dev@sha256:01280a9ffd0c9c427d3127540203af6707ebf35cdb0481182aef303c03db239c AS build
+FROM cgr.dev/chainguard/python:latest-dev@sha256:53b2fdfc1e01c96b0eb4ac9e3eaec16d702508c07e2b12cc5235fe5c97f3704d AS build
 
 USER 0:0
 WORKDIR /app
@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir --require-hashes --only-binary=:all: --no-binary 
 
 COPY config ./config
 
-FROM cgr.dev/chainguard/python:latest@sha256:0f47468835f6c443553040eebccc20b0762d9608251be085786007e2e93b2285
+FROM cgr.dev/chainguard/python:latest@sha256:a3995e4d233c10dff34ebd5a9f86d60ca041fdc9ca6870482f222baa21e4e4fd
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
