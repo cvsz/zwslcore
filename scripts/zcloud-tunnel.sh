@@ -78,7 +78,8 @@ case "${1:-status}" in
       echo "Existing cloudflared detected: inspect before starting a second connector" >&2
       exit 1
     fi
-    nohup "$SELF" supervise </dev/null >/dev/null 2>&1 &
+    # GitHub API-authored shell files may have mode 0644; invoke through Bash.
+    nohup bash "$SELF" supervise </dev/null >/dev/null 2>&1 &
     sleep 1
     supervisor_pid >/dev/null || { echo "Failed to start; inspect $LOGFILE" >&2; exit 1; }
     echo "Supervisor started"
