@@ -4,6 +4,7 @@
 !.env.example
 !.env.cloudflare.example
 .env.production
+.env.production.backup*
 .env.local
 *.pem
 *.key

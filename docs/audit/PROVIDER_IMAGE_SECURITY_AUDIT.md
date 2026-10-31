@@ -3,9 +3,9 @@
 **Repository:** cvsz/zwslcore  
 **Branch:** feat/zwslcore-worktree-security-hardening  
 **PR:** #102  
-**PR Head SHA:** 14ae29306925f9a0f0ad6977108a04631ab0c2e9  
-**Audit Date:** 2026-10-31  
-**Evidence State:** VERIFIED (observed directly against local Docker images)
+**PR Head SHA:** 0d7ec89028e69e30ba97ced3f3de0bfea9d955fa
+**Audit Date:** 2026-10-31
+**Evidence State:** VERIFIED (observed directly against local Docker images and GitHub CI)
 
 ---
 
@@ -29,10 +29,11 @@ The fix requires updating the Chainguard base image digests in `services/provide
 | Repository | cvsz/zwslcore |
 | Branch | feat/zwslcore-worktree-security-hardening |
 | Base SHA | df7ef0eae393f44f39c5393533531fc4171c6156 |
-| PR Head SHA | 14ae29306925f9a0f0ad6977108a04631ab0c2e9 |
+| PR Head SHA | 0d7ec89028e69e30ba97ced3f3de0bfea9d955fa |
 | PR State | OPEN |
 | Merge State | BLOCKED (build-scan-sbom check failed) |
 | Local Python Version | 3.14.4 |
+| All commits pushed | YES (07c89d1 → 0d7ec89) |
 
 ### Provider Image Details
 
@@ -139,7 +140,7 @@ Before merging PR #102, the following must be completed:
 
 | Gate | Requirement | Status | Evidence |
 |---|---|---|---|
-| G01 | Repository identity verified | PASS | HEAD `14ae293`, branch `feat/...` |
+| G01 | Repository identity verified | PASS | HEAD `0d7ec89`, branch `feat/...` |
 | G02 | Approved patch preserved | PASS | WorktreeManager patch untouched |
 | G03 | Root cause identified | PASS | Chainguard base images with Python 3.15.1 |
 | G04 | Base image digests verified | UNVERIFIED | New digests found but not pulled/scanned |
@@ -152,8 +153,8 @@ Before merging PR #102, the following must be completed:
 | G11 | Runtime healthy | UNVERIFIED | Requires new image test |
 | G12 | Regression tests pass | PASS | 201/201 local tests pass |
 | G13 | GitHub CI passes | FAIL | build-scan-sbom failed |
-| G14 | Independent review | PASS | policedbc APPROVED on commit `14ae293` |
-| G15 | Commit signature | FAIL | Commit not GPG-signed (no TTY for passphrase) |
+| G14 | Independent review | PENDING | policedbc must review on commit `0d7ec89` |
+| G15 | Commit signature | PARTIAL | Commits GPG-signed locally; key not yet verified on GitHub |
 | G16 | Governance | PASS | No unauthorized operations |
 | G17 | Merge authorization | NOT GIVEN | Not requested |
 
