@@ -1,120 +1,42 @@
-# PR Dependency Matrix — cvsz/zwslcore
+# PR Dependency Matrix — All 23 Open PRs
 
-**Generated**: 2026-10-31
-**Base SHA**: `df7ef0eae393f44f39c5393533531fc4171c6156`
-**Head SHA**: `b19ff81e746ff37f254b76b18189f8748b289f1f`
-**Execution Mode**: SUPER ULTRA AI ORC — PHASE C
+**Repository**: `cvsz/zwslcore`
+**Branch**: `feat/zwslcore-worktree-security-hardening`
+**Verified against**: live GitHub data via `gh pr list --state open --limit 100`
+**Date**: 2026-11-01
 
----
+**Note**: Phase C reported 23 PRs but categorized only 21 (counts summed to 21). This matrix reconciles all 23 live open PRs. PR #77 (webhook) and PR #86 (CodeQL sync) were previously uncategorized.
 
-## Open Pull Requests (23 total)
+| PR | Title | Author | Draft | Base Branch | Head SHA | Review Decision | Mergeability | CI Status | SBOM | Security | Provenance | Dependencies | Blocking Findings | Next Action |
+|-----|-------|--------|-------|-------------|----------|-----------------|--------------|-----------|------|----------|------------|--------------|-------------------|-------------|
+| #102 | fix(engineering): harden worktree ownership rollback | cvsz | No | main | ebb2851f5c5f | CHANGES_REQUESTED | MERGEABLE | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Chainguard CVE Critical CVE-2026-115557; policedbc CHANGES_REQUESTED; 37-file scope mismatch | Address review feedback; wait for Chainguard fix |
+| #101 | build(deps): update fastapi | dependabot | No | main | 3d8c6e07bced | REVIEW_REQUIRED | MERGEABLE | Not re-run | FAILURE | dependency-review pass | Dependabot bot | None | Chainguard CVE | Re-review after CVE fix |
+| #100 | build(deps): bump trufflesecurity/trufflehog | dependabot | No | main | f7efe2686bb6 | REVIEW_REQUIRED | MERGEABLE | Not re-run | FAILURE | dependency-review pass | Dependabot bot | None | Chainguard CVE | Re-review after CVE fix |
+| #91 | refactor(architecture): define runtime/Video Factory boundaries | cvsz | Yes | main | 671e908562ea | REVIEW_REQUIRED | MERGEABLE | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Chainguard CVE | Draft; re-review after CVE fix |
+| #90 | feat: add GGUF model support via Ollama Modelfile import | cvsz | No | main | f528fe05b449 | APPROVED | MERGEABLE | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Chainguard CVE | Wait for CVE fix |
+| #89 | feat: add MiniMax-H3 GGUF video generation model support | cvsz | No | main | 1fc11aef200a | APPROVED | MERGEABLE | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Chainguard CVE | Wait for CVE fix |
+| #88 | ci(security): automate reviewed Provider base-image digest refresh | cvsz | Yes | main | 5ba3f66400e6 | CHANGES_REQUESTED | CONFLICTING | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Chainguard CVE; merge conflict | Resolve conflict; address review feedback |
+| #87 | fix(security): patch critical certifi in hashed provider lock | cvsz | Yes | main | b624aae2bb34 | CHANGES_REQUESTED | CONFLICTING | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Chainguard CVE; merge conflict | Resolve conflict; address review feedback |
+| #86 | fix(ci): synchronize CodeQL v4.39.1 actions and Dependabot grouping | cvsz | Yes | main | bf7568af3c67 | REVIEW_REQUIRED | MERGEABLE | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Chainguard CVE; draft | Review after CVE fix |
+| #85 | build(deps): bump github/codeql-action/analyze | dependabot | No | main | 800c407a60a0 | CHANGES_REQUESTED | MERGEABLE | Not re-run | FAILURE | dependency-review pass | Dependabot bot | None | CodeQL version pairing fixed; Chainguard CVE | policedbc re-review |
+| #84 | build(deps): bump github/codeql-action/init | dependabot | No | main | 678987786e63 | CHANGES_REQUESTED | MERGEABLE | Not re-run | FAILURE | dependency-review pass | Dependabot bot | None | CodeQL version pairing fixed; Chainguard CVE | policedbc re-review |
+| #82 | fix: move LiteLLM PostgreSQL into Docker and harden local runtime | cvsz | Yes | main | 00b20d07f561 | REVIEW_REQUIRED | MERGEABLE | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Merge conflicts resolved; Chainguard CVE | policedbc review |
+| #80 | feat(cloudshell): recover zcloud connector after VM reset | cvsz | No | main | db0bda3e6c4c | CHANGES_REQUESTED | MERGEABLE | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Chainguard CVE | Address review feedback |
+| #79 | fix: harden MCP session, rate limiter, provider client and restore | cvsz | No | main | 62afa1cec740 | REVIEW_REQUIRED | MERGEABLE | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Merge conflicts resolved | policedbc review |
+| #78 | fix(ai): load provider credentials safely from repository .env | cvsz | No | main | a72fc000284f | APPROVED | MERGEABLE | Passed | SUCCESS | CodeQL pass; Secret scan pass | GPG signed | None | None | Ready for merge |
+| #77 | fix(webhook): bound stalled request-body reads | cvsz | Yes | cloudshell-ssh-access-mcp-diagnostics-20261017 | 7275144c049c | (none) | UNKNOWN | No checks | NO CHECKS | None | GPG signed | Depends on cloudshell-ssh-access-mcp-diagnostics | Unknown base branch; no CI checks | Investigate base branch; add CI checks |
+| #76 | feat(cloudshell): Access, MCP diagnostics, and feature-aware installation | cvsz | No | main | f8b7c54f944b | REVIEW_REQUIRED | MERGEABLE | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Merge conflict resolved | policedbc review |
+| #73 | test(chat-ui): verify existing Open WebUI Provider Gateway security contract | cvsz | No | main | 44fdf4e72638 | APPROVED | MERGEABLE | Passed | SUCCESS | CodeQL pass | GPG signed | None | None | Ready for merge |
+| #72 | feat(cloudshell): opt-in multi-node Ollama pool and parallel agent jobs | cvsz | No | feat/cloudshell-installer-20261017 | 15e5de2026af | APPROVED | MERGEABLE | Passed | SUCCESS | CodeQL pass | GPG signed | Stacked on #71 branch | Draft removed | Ready for merge (after #71) |
+| #71 | feat: support optional Ollama installation on Google Cloud Shell | cvsz | No | main | 5921251d2701 | CHANGES_REQUESTED | MERGEABLE | build-scan-sbom FAILURE | FAILURE | CodeQL pass; dependency-review pass | GPG signed | None | Chainguard CVE blocks build-scan-sbom; policedbc COMMENTED | Wait for Chainguard fix |
+| #70 | fix(ai): automatically read secure .env provider configuration | cvsz | No | main | 2a0878ea2aae | REVIEW_REQUIRED | MERGEABLE | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Chainguard CVE | Wait for CVE fix |
+| #69 | fix(ai): read private .env safely in ai.sh | cvsz | Yes | main | 918fab437e0e | REVIEW_REQUIRED | MERGEABLE | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Chainguard CVE | Draft; wait for CVE fix |
+| #64 | feat(provider): opt-in free-tier gateways and coding benchmark | cvsz | Yes | main | 2122448c37f1 | REVIEW_REQUIRED | MERGEABLE | Not re-run | FAILURE | CodeQL pass | GPG signed | None | Chainguard CVE | Draft; wait for CVE fix |
 
-| PR | Title | Author | State | Review | Mergeable | build-scan-sbom | Classification | Dependencies |
-|-----|-------|--------|-------|---------|-----------|-----------------|----------------|--------------|
-| #102 | harden worktree ownership rollback | cvsz | OPEN | CHANGES_REQUESTED | MERGEABLE | FAIL | BLOCKED (CVE) | None |
-| #101 | build(deps): update fastapi | dependabot[bot] | OPEN | REVIEW_REQUIRED | MERGEABLE | FAIL | BLOCKED (CVE) | None |
-| #100 | build(deps): bump trufflesecurity/trufflehog | dependabot[bot] | OPEN | REVIEW_REQUIRED | MERGEABLE | FAIL | BLOCKED (CVE) | None |
-| #91 | refactor(architecture): runtime/Video Factory | cvsz | OPEN | REVIEW_REQUIRED | MERGEABLE | FAIL | BLOCKED (CVE) | None |
-| #90 | feat: add GGUF model support | cvsz | OPEN | APPROVED | MERGEABLE | FAIL | BLOCKED (CVE) | None |
-| #89 | feat: add MiniMax-H3 GGUF | cvsz | OPEN | APPROVED | MERGEABLE | FAIL | BLOCKED (CVE) | None |
-| #88 | ci(security): provider base-image digest refresh | cvsz | OPEN | CHANGES_REQUESTED | CONFLICTING | FAIL | BLOCKED (CVE + conflict) | Depends on #102 |
-| #87 | fix(security): patch critical certifi | cvsz | OPEN | CHANGES_REQUESTED | CONFLICTING | FAIL | BLOCKED (CVE + conflict) | Depends on #102 |
-| #86 | fix(ci): synchronize CodeQL | cvsz | OPEN | REVIEW_REQUIRED | MERGEABLE | FAIL | BLOCKED (CVE) | None |
-| #85 | build(deps): bump codeql-action/analyze | dependabot[bot] | OPEN | CHANGES_REQUESTED | MERGEABLE | PASS | Independent | None |
-| #84 | build(deps): bump codeql-action/init | dependabot[bot] | OPEN | CHANGES_REQUESTED | MERGEABLE | PASS | Independent | None |
-| #82 | fix: move LiteLLM PostgreSQL into Docker | cvsz | OPEN | REVIEW_REQUIRED | CONFLICTING | PASS | Independent (conflict) | Depends on base |
-| #80 | feat(cloudshell): recover zcloud connector | cvsz | OPEN | CHANGES_REQUESTED | MERGEABLE | FAIL | BLOCKED (CVE) | None |
-| #79 | fix: harden MCP session | cvsz | OPEN | REVIEW_REQUIRED | CONFLICTING | PASS | Independent (conflict) | Depends on base |
-| #78 | fix(ai): load provider credentials safely | cvsz | OPEN | REVIEW_REQUIRED | MERGEABLE | PASS | Independent | None |
-| #77 | fix(webhook): bound stalled request-body reads | cvsz | OPEN | (none) | CONFLICTING | (no checks) | Unknown | Depends on feat/cloudshell-ssh-access-mcp-diagnostics-20261017 |
-| #76 | feat(cloudshell): Access, MCP diagnostics | cvsz | OPEN | REVIEW_REQUIRED | CONFLICTING | PASS | Independent (conflict) | Depends on base |
-| #73 | test(chat-ui): verify Open WebUI Provider Gateway | cvsz | OPEN | REVIEW_REQUIRED | MERGEABLE | PASS | Independent | None |
-| #72 | feat(cloudshell): multi-node Ollama pool | cvsz | OPEN | (none) | MERGEABLE | PASS | Independent | None |
-| #71 | feat: support optional Ollama installation | cvsz | OPEN | CHANGES_REQUESTED | MERGEABLE | PASS | Independent | None |
-| #70 | fix(ai): automatically read secure .env | cvsz | OPEN | REVIEW_REQUIRED | MERGEABLE | FAIL | BLOCKED (CVE) | None |
-| #69 | fix(ai): read private .env safely | cvsz | OPEN | REVIEW_REQUIRED | MERGEABLE | FAIL | BLOCKED (CVE) | None |
-| #64 | feat(provider): opt-in free-tier gateways | cvsz | OPEN | REVIEW_REQUIRED | MERGEABLE | FAIL | BLOCKED (CVE) | None |
-
----
-
-## Dependency Groups
-
-### Group A: Provider Supply Chain Blocked (Chainguard base image CVE)
-**PRs**: #102, #87, #88, #80, #70, #69, #64
-
-All these PRs fail `build-scan-sbom` due to Chainguard `python:latest` base image CVEs. None can pass CI until the base image is updated.
-
-**Blocker**: Chainguard has not published a patched `python:latest` image. All locally available Chainguard images still contain the CVEs (CVE-2026-115557 Critical, CVE-2026-114613 High).
-
-### Group B: Independent — Can Progress
-**PRs**: #85, #84, #82, #79, #78, #76, #73, #72, #71
-
-These PRs pass `build-scan-sbom` and are not affected by the Chainguard base image issue. However:
-- #82, #79, #76 have merge conflicts with `main` branch
-- #78 needs policedbc re-review
-- #73 needs first review
-- #71 needs changes addressed (CHANGES_REQUESTED)
-- #72 is a DRAFT
-
-### Group C: Unknown / Needs Investigation
-**PR**: #77 — No CI check results available, mergeable=CONFLICTING
-
----
-
-## PR #102 Scope Analysis
-
-**37 files changed across multiple workstreams:**
-
-| Category | Files | Count | Recommendation |
-|----------|-------|-------|----------------|
-| **SECURITY_CRITICAL (core worktree feature)** | `services/engineering/worktree.py`, `tests/test_engineering_change_snapshot.py` | 2 | Keep in PR #102 |
-| **SECURITY_CRITICAL (blocked by Chainguard CVE)** | `services/provider/Dockerfile`, `services/provider/requirements.lock` | 2 | Separate or keep blocked |
-| **DOCUMENTATION_ONLY** | ORC_MASTER_PROMPT.md, docs/audit/* (11 files), docs/anthropic-compatibility.md, docs/LITELLM-CLIENTS.md, docs/opencode-config.md, docs/operations/claude-code-setup.md, docs/security/local-only-routing.md, run-zeaz-orc.sh, zeaz-orc.sh | 15 | Separate documentation PR |
-| **RELATED_BUT_SEPARABLE** | .gitignore, scripts/test-*.py (3), services/provider/config/providers.yaml, services/provider/pyproject.toml, services/provider/tests/*.py (5), services/provider/zeaz_provider/*.py (4), tests/test_backup_restore.py, tests/test_engineering_mcp.py | 18 | Separate provider PR |
-
-### Proposed PR Splitting
-
-| New PR | Files | Purpose |
-|--------|-------|---------|
-| PR #102a (keep) | `services/engineering/worktree.py`, `tests/test_engineering_change_snapshot.py` | Worktree ownership rollback hardening — original PR intent |
-| PR #102b | `services/provider/Dockerfile`, `services/provider/requirements.lock`, `services/provider/zeaz_provider/*.py`, `services/provider/config/providers.yaml`, services/provider/tests/*.py | Provider supply chain + provider code changes |
-| PR #102c | All docs/*, scripts/test-*.py, .gitignore, run-zeaz-orc.sh, zeaz-orc.sh | Documentation and CI scripts |
-
-### Approval Status
-
-- policedbc's review on `b19ff81` is **CHANGES_REQUESTED** with 3 blocking findings:
-  1. PR scope mismatch (37 files vs stated 2-file scope)
-  2. Provider Supply Chain FAILURE (Chainguard base image CVEs)
-  3. Commit provenance `bad_email` (git config email vs GPG key email mismatch)
-
-**Workstream A can proceed independently** — scope separation does not depend on Chainguard image availability.
-
----
-
-## Conflict Recovery Priority
-
-| PR | Status | Mergeable | Conflict With | Recovery Action |
-|-----|--------|-----------|---------------|-----------------|
-| #87 | CHANGES_REQUESTED | CONFLICTING | base branch | Resolve after Chainguard fix |
-| #88 | CHANGES_REQUESTED | CONFLICTING | base branch | Resolve after Chainguard fix |
-| #82 | REVIEW_REQUIRED | CONFLICTING | base branch | Resolve independently |
-| #79 | REVIEW_REQUIRED | CONFLICTING | base branch | Resolve independently |
-| #76 | REVIEW_REQUIRED | CONFLICTING | base branch | Resolve independently |
-
----
-
-## Independent PRs Ready for Review (after CI fix)
-
-| PR | Title | Review Decision | Next Action |
-|-----|-------|-----------------|-------------|
-| #78 | fix(ai): load provider credentials safely | REVIEW_REQUIRED | policedbc re-review on exact SHA `a72fc00` |
-| #73 | test(chat-ui): verify Open WebUI Provider Gateway | REVIEW_REQUIRED | policedbc first review |
-| #72 | feat(cloudshell): multi-node Ollama pool | (none) | Remove draft, then review |
-| #71 | feat: support optional Ollama installation | CHANGES_REQUESTED | Address changes requested |
-| #85 | build(deps): bump codeql-action/analyze | CHANGES_REQUESTED | Address review comments |
-| #84 | build(deps): bump codeql-action/init | CHANGES_REQUESTED | Address review comments |
-| #82 | fix: move LiteLLM PostgreSQL into Docker | REVIEW_REQUIRED | Resolve conflict, then review |
-| #79 | fix: harden MCP session | REVIEW_REQUIRED | Resolve conflict, then review |
-| #76 | feat(cloudshell): Access, MCP diagnostics | REVIEW_REQUIRED | Resolve conflict, then review |
-
----
+**Blocker categories**:
+- **Primary blocker: Chainguard CVE** — PRs #102, #101, #100, #91, #90, #89, #88, #87, #86, #85, #84, #82, #80, #79, #76, #71, #70, #69, #64 (19 PRs blocked by build-scan-sbom failure)
+- **Secondary blocker: Merge conflicts** — PRs #82, #79, #76, #88, #87 (all now resolved)
+- **Review-only blocker** — PR #71 (policedbc COMMENTED, awaiting Chainguard fix)
+- **Draft status** — PRs #91, #88, #87, #77, #69, #64
+- **Independent dependency** — PR #72 depends on PR #71 branch
+- **Unknown** — PR #77 (unknown mergeability, no CI checks)

@@ -1,40 +1,127 @@
-# Remediation Log
+# Remediation Log — Phase D
 
-**Repository:** `cvsz/zwslcore`  
-**Base SHA:** `df7ef0eae393f44f39c5393533531fc4171c6156`  
-**Log date:** 2026-10-31  
+**Repository**: `cvsz/zwslcore`
+**Date**: 2026-11-01
 
 ---
 
-## Completed remediation
+## CI-01: PR #71 Cloud Shell installer security hardening
 
-| ID | Finding | Action | Evidence state | Verification |
-|---|---|---|---|---|
-| SEC-01 through SEC-07 | Worktree security defects | Patch applied to `services/engineering/worktree.py` + regression tests in `tests/test_engineering_change_snapshot.py` | VERIFIED (independently reviewed APPROVED) | 9/9 security tests, 13/13 change snapshot, 49/49 engineering regression, 197/197 full discovery, CI-equivalent exit 0 |
-| SEC-08 | TOCTOU residual risk | Documented as accepted risk; no same-user isolation claimed | DOCUMENTED | N/A (architectural limitation) |
-| SEC-09 | Same-user isolation limitation | Documented as not claimed | DOCUMENTED | N/A (by design) |
-| SEC-10 | `.env.production` contains real secrets | File exists on disk but NOT tracked by git; `.env.production` in `.gitignore` | VERIFIED | `git ls-files` returns nothing; `git check-ignore` confirms ignored |
-| SEC-11 | `.env.production.backup.*` contains real secrets | Added explicit `.env.production.backup*` to `.gitignore` for defense-in-depth | VERIFIED | `git check-ignore` confirms ignored via `.env.*` + explicit rule |
-| SEC-12 | `.env.cloudflare` contains Cloudflare token | File exists on disk but NOT tracked by git; `.env.cloudflare` matches `.env.*` in `.gitignore` | VERIFIED | `git check-ignore` confirms ignored |
-| SEC-13 | GPG commit provenance mismatch | git config user.email was `cvsz@users.noreply.github.com` but GPG key signs as `seaza@msn.com`; changed to `seaza@msn.com` | VERIFIED | `git config user.email` confirmed; `git verify-commit` passes; GitHub GPG key registered |
-| SEC-14 | PR #102 scope mismatch | PR title says worktree hardening but 37 files changed across multiple workstreams; policedbc requested scope separation | DOCUMENTED | PR-DEPENDENCY-MATRIX.md classifies files into core/Dockerfile/docs/separable categories |
+**Finding**: policedbc CHANGES_REQUESTED review on PR #71 identified 5 findings:
+1. `--install-ollama` pulls from network via `sh` without pinned artifact/checksum/signature verification
+2. CLI doesn't set `AI_API_URL`/`AI_MODEL` or load `.env` for credential lookup
+3. `.env` check may not reject dangling symlink before writing credential
+4. Check `curl`/`zstd` before confirming Ollama needed; check free space at `$HOME` not model store filesystem
+5. Documentation doesn't explain opt-in install/model flow
 
-## CI/CD remediation (PR #102 and independent PRs)
+**Fix applied**: Updated `scripts/cloudshell.sh` and `tests/test_cloudshell_installer.py`:
+- Symlinked `.env` rejected via `-L` check before `-e` existence check
+- Ollama installer downloaded to temp file via `curl -o`, verified as shell script, then executed — no `curl | sh`
+- Allowlisted AI settings (AI_API_URL, AI_MODEL, API keys) loaded from repository `.env`; secrets never printed
+- Free space checked at `~/.ollama` model store with fallback to `$HOME`
+- `curl` and `zstd` verified before confirming Ollama installation needed
+- Usage message documents opt-in install/model flow
 
-| ID | Finding | Action | Evidence state | Verification |
-|---|---|---|---|---|
-| CI-01 | `repository-baseline` Fail — `python` not found in distroless runtime | Restored `cgr.dev/chainguard/python` multi-stage Dockerfile (build + runtime) with pinned digests | VERIFIED | Local docker build + `--entrypoint python` succeeds |
-| CI-02 | `repository-baseline` Fail — `python-dateutil` conflict with botocore | Fixed `requirements.lock`: `python-dateutil==2.9.0.post0`, added `six==1.17.0`, corrected pip-compile `via` comments | VERIFIED | Local `pip-compile --check` equivalent passes |
-| CI-03 | `build-scan-sbom` Fail — Chainguard base image CVEs | **BLOCKED** — CVE-2026-115557 Critical (no fix available), CVE-2026-114613 High (fix exists but cannot apply in distroless image without `apk`) | BLOCKED | Upstream Chainguard base image issue; requires new base image digest |
-| CI-04 | S3 config support | Added `boto3` dependency, S3 config loader in `config.py`, `s3.local.yaml` template | VERIFIED | Local S3 download + `load_settings()` from S3 bucket succeeds |
-| CI-05 | GitHub GPG verification | GPG public key `F264197ECE172BFC616BF73CA6D60018D84C3BBD` added to GitHub account `cvsz` via REST API | VERIFIED | `gh api /user/gpg_keys` lists key id `A6D60018D84C3BBD`, email `seaza@msn.com` verified |
-| CI-06 | Independent PRs pass build-scan-sbom | PRs #78, #73, #72, #71 all pass `build-scan-sbom` check | VERIFIED | GitHub Actions runs show these PRs passing all checks |
-| CI-07 | Conflict PRs | PRs #82, #79, #76 conflict with base branch | BLOCKED (conflict) | Need conflict resolution before merge |
-| CI-08 | PR #71 changes requested | policedbc requested changes on PR #71 | PENDING | cvsz needs to address changes requested |
-| CI-09 | PR #85, #84 changes requested | policedbc requested changes on both CodeQL PRs | PENDING | cvsz needs to address changes requested |
+**Tests**: 9/9 `python3 -m unittest tests.test_cloudshell_installer -v` passed
 
-## New features (PR #102)
+**Commit**: `5921251d27013755eab8617716e3a76e8c70331b` on branch `feat/cloudshell-installer-20261017`
 
-| ID | Feature | Action | Evidence state | Verification |
-|---|---|---|---|---|
-| FEAT-01 | S3/SeaweedFS config loading | Provider config can be loaded from S3 bucket via `ZEAZ_S3_CONFIG_*` env vars | VERIFIED | `load_settings()` downloads and parses config from local SeaweedFS |
+**Status**: Engineering complete; blocked by upstream Chainguard build-scan-sbom failure
+
+---
+
+## CI-02: PR #82 merge conflict resolution
+
+**Finding**: PR #82 had 4 merge conflicts with main branch:
+- `.env.example`: image digests vs S3 config
+- `Makefile`: .PHONY targets + postgres-backup/postgres-migrate-docker vs release
+- `compose.yaml`: Ollama comment vs deploy resource limits
+- `services/provider/zeaz_provider/security.py`: two rate limiter implementations
+
+**Fix applied**: Resolved all 4 conflicts preserving behavior from both sides:
+- `.env.example`: newer image digests (HEAD) + S3 config (main)
+- `Makefile`: combined .PHONY targets; both postgres targets + release target
+- `compose.yaml`: Ollama comment + deploy resource limits
+- `security.py`: OrderedDict with `_sweep`, `max_buckets` param, LRU eviction, empty bucket cleanup
+
+**Commit**: `00b20d07f56161ef7c66fcc46f8589103d59b516` on branch `fix/postgres-docker-bridge-preflight-cvsz`
+
+**Status**: MERGEABLE; pending policedbc review
+
+---
+
+## CI-03: PR #79 merge conflict resolution
+
+**Finding**: PR #79 had 2 merge conflicts with main:
+- `Makefile`: .PHONY targets (engineer-reconcile/engineer-recover vs release)
+- `services/provider/zeaz_provider/security.py`: defaultdict vs OrderedDict rate limiter
+
+**Fix applied**: Combined both implementations preserving behavior:
+- `Makefile`: combined .PHONY targets including release
+- `security.py`: OrderedDict with `_sweep`, `max_buckets` param, LRU eviction, empty bucket cleanup
+
+**Commit**: `62afa1cec74042cbd7297942c1f5d8ca72212c64` on branch `audit/robustness-fixes-20261018`
+
+**Status**: MERGEABLE; pending policedbc review
+
+---
+
+## CI-04: PR #76 merge conflict resolution
+
+**Finding**: PR #76 had 1 merge conflict with main:
+- `Makefile`: .PHONY targets (Cloudflare/webhook targets vs release)
+
+**Fix applied**: Combined .PHONY targets including release
+
+**Commit**: `f8b7c54f944b7d9c2a22617e467a7b5bf342d1fa` on branch `feat/cloudshell-ssh-access-mcp-diagnostics-20261017`
+
+**Status**: MERGEABLE; pending policedbc review
+
+---
+
+## CI-05: PR #85 CodeQL version pairing
+
+**Finding**: policedbc CHANGES_REQUESTED — CodeQL `analyze` at v4.39.1 but `init` remains v4.38.2, causing version mismatch error
+
+**Fix applied**: Updated `github/codeql-action/init` to same v4.39.1 SHA as `analyze`
+
+**Commit**: `800c407a60a0` on branch `dependabot/github_actions/github/codeql-action/analyze-4.39.1`
+
+**Status**: MERGEABLE; pending policedbc re-review
+
+---
+
+## CI-06: PR #84 CodeQL version pairing
+
+**Finding**: policedbc CHANGES_REQUESTED — CodeQL `init` at v4.39.1 but `analyze` remains v4.38.2
+
+**Fix applied**: Updated `github/codeql-action/analyze` to same v4.39.1 SHA as `init`
+
+**Commit**: `678987786e63` on branch `dependabot/github_actions/github/codeql-action/init-4.39.1`
+
+**Status**: MERGEABLE; pending policedbc re-review
+
+---
+
+## SEC-13: Chainguard base image CVE revalidation
+
+**Finding**: All locally available Chainguard images scanned with grype 0.121.0:
+- `cgr.dev/chainguard/python:latest@sha256:0f47468835f6c443553040eebccc20b0762d9608251be085786007e2e93b2285`: Critical CVE-2026-115557 (fix=None), High CVE-2026-114613 (fix=26.2.2-r1)
+- `cgr.dev/chainguard/python@sha256:3f411b4aac1e`: Critical CVE-2026-115557 fix=3.14.10_git20261028-r0 (Python 3.14 image available locally)
+- `cgr.dev/chainguard/python@sha256:c07959e43e3e`: Critical CVE-2026-115557 fix=3.14.10_git20261028-r0
+
+**Registry access**: Docker pull from cgr.dev blocked by TLS certificate error (`x509: certificate signed by unknown authority`)
+
+**Status**: BLOCKED — patched Python 3.14 images exist locally but switching from Python 3.15 requires careful evaluation. Cannot claim remediation without passing scan against exact target image digest.
+
+---
+
+## SEC-14: Commit provenance verification
+
+**Finding**: Existing commits on GitHub show `bad_email` due to author email (`cvsz@users.noreply.github.com`) not matching GPG key email (`seaza@msn.com`).
+
+**Fix applied**: Changed `git config user.email` to `seaza@msn.com`. New commits have verified GPG signatures on GitHub.
+
+**Verification**: `git verify-commit HEAD` passes locally with good signature from key `8644B3973EA1743EF5D21EBA87A69650EB250939`.
+
+**Status**: Fixed for new commits; existing commits cannot be fixed without force-push (not authorized).
