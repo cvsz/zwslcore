@@ -38,6 +38,33 @@ providers:
     base_url: https://api.groq.com/openai/v1
     api_key: ${GROQ_API_KEY:-}
 
+  cerebras:
+    cost_class: FREE_REMOTE
+    enabled: ${CEREBRAS_FREE_ENABLED:-false}
+    api: openai
+    base_url: https://api.cerebras.ai/v1
+    api_key: ${CEREBRAS_API_KEY:-}
+    timeout_seconds: 90
+    max_attempts: 2
+
+  sambanova:
+    cost_class: FREE_REMOTE
+    enabled: ${SAMBANOVA_FREE_ENABLED:-false}
+    api: openai
+    base_url: https://api.sambanova.ai/v1
+    api_key: ${SAMBANOVA_API_KEY:-}
+    timeout_seconds: 90
+    max_attempts: 2
+
+  cloudflare:
+    cost_class: FREE_REMOTE
+    enabled: ${CLOUDFLARE_FREE_ENABLED:-false}
+    api: openai
+    base_url: https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID:-REPLACE_ME}/ai/v1
+    api_key: ${CLOUDFLARE_API_TOKEN:-}
+    timeout_seconds: 120
+    max_attempts: 2
+
 models:
   zeaz-fast:
     provider: ollama
@@ -84,3 +111,32 @@ models:
   zeaz-cloud-code:
     provider: openrouter
     model: ${OPENROUTER_FREE_CODE:-cohere/north-mini-code:free}
+
+  zeaz-cloud-cerebras:
+    provider: cerebras
+    model: ${CEREBRAS_FREE_MODEL:-gpt-oss-120b}
+
+  zeaz-cloud-sambanova:
+    provider: sambanova
+    model: ${SAMBANOVA_FREE_MODEL:-Meta-Llama-3.3-70B-Instruct}
+
+  zeaz-cloud-cloudflare:
+    provider: cloudflare
+    model: ${CLOUDFLARE_FREE_MODEL:-@cf/openai/gpt-oss-120b}
+
+  zeaz-cloud-auto:
+    provider: ollama
+    model: ${ZEAZ_FAST_MODEL:-qwen2.5-coder:3b}
+    fallbacks:
+      - provider: openrouter
+        model: ${OPENROUTER_FREE_CODE:-cohere/north-mini-code:free}
+      - provider: cerebras
+        model: ${CEREBRAS_FREE_MODEL:-gpt-oss-120b}
+      - provider: groq
+        model: ${GROQ_FREE_MODEL:-openai/gpt-oss-20b}
+      - provider: sambanova
+        model: ${SAMBANOVA_FREE_MODEL:-Meta-Llama-3.3-70B-Instruct}
+      - provider: gemini
+        model: ${GEMINI_FREE_MODEL:-gemini-2.5-flash-lite}
+      - provider: cloudflare
+        model: ${CLOUDFLARE_FREE_MODEL:-@cf/openai/gpt-oss-120b}
