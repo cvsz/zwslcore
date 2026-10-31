@@ -375,3 +375,12 @@ def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
     if value > maximum:
         raise RuntimeError(f"{name} must be at most {maximum}")
     return value
+
+
+__all__ = [
+    "ProviderConfig",
+    "RouteTarget",
+    "ModelRoute",
+    "Settings",
+    "load_settings",
+]

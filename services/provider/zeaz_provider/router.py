@@ -239,3 +239,8 @@ def _first_nonnegative_int(value: dict[str, Any], keys: tuple[str, ...]) -> int 
         if type(count) is int and count >= 0:
             return count
     return None
+
+
+__all__ = [
+    "ProviderRouter",
+]
