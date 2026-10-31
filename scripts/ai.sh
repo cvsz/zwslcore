@@ -3,10 +3,54 @@
 set -Eeuo pipefail
 umask 077
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required" >&2; exit 127; }
+export ZWSLCORE_AI_ENV_FILE="${AI_ENV_FILE:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)/.env}"
 exec python3 - "$@" <<'PY'
-import json, os, sys, pathlib, urllib.request, urllib.error, urllib.parse, ssl, stat, tempfile, time
+import json, os, sys, pathlib, urllib.request, urllib.error, urllib.parse, ssl, stat, tempfile, time, re, shlex
 
-VERSION = "1.0.0"
+# Parse env as inert data, never source/execute dotenv file as Bash/Python code.
+# An explicit process environment variable always takes precedence.
+def load_dotenv():
+    path = pathlib.Path(os.environ["ZWSLCORE_AI_ENV_FILE"]).expanduser()
+    if path.is_symlink():
+        sys.exit("Refusing symlink .env file")
+    try:
+        metadata = path.stat()
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(metadata.st_mode):
+        sys.exit("Invalid .env file type")
+    if stat.S_IMODE(metadata.st_mode) & 0o077:
+        sys.exit("Insecure .env permissions: use chmod 600")
+    if metadata.st_size > 262144:
+        sys.exit(".env file too large")
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped[7:].lstrip()
+        key, sep, value = stripped.partition("=")
+        key = key.strip()
+        if not sep or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            continue
+        if key in os.environ:
+            continue
+        value = value.strip()
+        if value.startswith(("'", '"')):
+            try:
+                parts = shlex.split(value, comments=True, posix=True)
+            except ValueError:
+                sys.exit("Invalid quoted .env value")
+            if len(parts) != 1:
+                sys.exit("Invalid quoted .env value")
+            value = parts[0]
+        else:
+            value = value.split(" #", 1)[0].rstrip()
+        os.environ[key] = value
+
+load_dotenv()
+
+VERSION = "1.0.1"
 ROOT = pathlib.Path(os.environ.get("XDG_STATE_HOME", str(pathlib.Path.home()/".local/state"))) / "zwslcore-ai"
 SESSION = os.environ.get("AI_SESSION", "default")
 if not SESSION or not all(c.isalnum() or c in "-_" for c in SESSION) or len(SESSION)>64:
@@ -83,7 +127,7 @@ def main():
     args=sys.argv[1:]
     cmd=args.pop(0) if args else "help"
     if cmd in ("help","--help","-h"):
-        print("zwslcore AI CLI "+VERSION+"\nUsage: bash scripts/ai.sh [doctor|selftest|ask TEXT|chat|sessions|clear|version]\nEnvironment: AI_API_URL (default local provider), AI_MODEL (default zeaz-auto), AI_API_KEY/PROVIDER_CLIENT_KEY, AI_SESSION, AI_TIMEOUT")
+        print("zwslcore AI CLI "+VERSION+"\nUsage: bash scripts/ai.sh [doctor|selftest|ask TEXT|chat|sessions|clear|version]\nEnvironment: AI_API_URL (default local provider), AI_MODEL (default zeaz-auto), AI_API_KEY/PROVIDER_CLIENT_KEY, AI_SESSION, AI_TIMEOUT; automatically reads repo .env or AI_ENV_FILE without executing it")
     elif cmd=="version": print(VERSION)
     elif cmd=="doctor":
         print("Python:",sys.version.split()[0]); print("Endpoint:",endpoint()); print("Model:",os.environ.get("AI_MODEL","zeaz-auto"))

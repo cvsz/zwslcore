@@ -63,6 +63,48 @@ class CliTests(unittest.TestCase):
         self.assertTrue(history.exists())
         self.assertEqual(history.stat().st_mode & 0o077,0)
         self.assertEqual(len(json.loads(history.read_text())),2)
+    def test_reads_private_dotenv_and_preserves_explicit_environment(self):
+        dotenv = Path(self.temp.name) / ".env"
+        dotenv.write_text(
+            "AI_MODEL=from-file\\nAI_API_KEY=from-file\\n"
+            "AI_SESSION=fromfile\\n", encoding="utf-8"
+        )
+        dotenv.chmod(0o600)
+        self.env["AI_ENV_FILE"] = str(dotenv)
+        self.env["AI_MODEL"] = "zeaz-auto"
+        self.env["AI_API_KEY"] = "test-token"
+        result = self.run_cli("doctor")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Model: zeaz-auto", result.stdout)
+        self.assertIn("Session: fromfile", result.stdout)
+        self.assertNotIn("test-token", result.stdout)
+
+    def test_dotenv_rejects_insecure_mode_and_symlinks(self):
+        dotenv = Path(self.temp.name) / ".env"
+        dotenv.write_text("AI_SESSION=unsafe\\n", encoding="utf-8")
+        self.env["AI_ENV_FILE"] = str(dotenv)
+        dotenv.chmod(0o644)
+        result = self.run_cli("doctor")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("permissions", result.stderr)
+        dotenv.unlink()
+        dotenv.symlink_to(Path(self.temp.name) / "target")
+        result = self.run_cli("doctor")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlink", result.stderr)
+
+    def test_dotenv_is_not_executed(self):
+        dotenv = Path(self.temp.name) / ".env"
+        marker = Path(self.temp.name) / "executed"
+        dotenv.write_text(
+            "AI_SESSION=$(touch " + str(marker) + ")\\n", encoding="utf-8"
+        )
+        dotenv.chmod(0o600)
+        self.env["AI_ENV_FILE"] = str(dotenv)
+        result = self.run_cli("doctor")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(marker.exists())
+
     def test_remote_http_rejected(self):
         self.env["AI_API_URL"]="http://example.com/v1/chat/completions"
         result=self.run_cli("ask","hello")
