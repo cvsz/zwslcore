@@ -106,3 +106,10 @@ def classify_http_error(
         fallback_allowed=False,
         circuit_failure=False,
     )
+
+
+__all__ = [
+    "ErrorKind",
+    "ProviderError",
+    "classify_http_error",
+]

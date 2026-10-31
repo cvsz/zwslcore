@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up postgres-backup postgres-migrate-docker ci
+.PHONY: cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up postgres-backup postgres-migrate-docker ci release
 
 cloudshell:
 	bash scripts/cloudshell.sh
@@ -51,6 +51,7 @@ help:
   'provider-lock update the hashed Provider dependency lock' \
   'provider-lock-check verify Provider dependency lock drift' \
   'cloudflare-up start zwslcore on the Cloudflare loopback ports' \
+  'release        pre-flight checks before creating a release tag' \
 	  'ci            repository + stack static validation'
 
 validate-template:
@@ -150,11 +151,33 @@ provider-lock-check:
 cloudflare-up:
 	bash scripts/cloudflare-up.sh
 
+cloudflare-up:
+	bash scripts/cloudflare-up.sh
+
 postgres-backup:
 	python3 scripts/postgres_backup.py --env-file .env
 
 postgres-migrate-docker:
 	python3 scripts/postgres_migrate_docker.py .env
+
+release:
+	@echo "== zwslcore Release Pre-flight Check =="
+	@set -euo pipefail; \
+	head="$$(git rev-parse HEAD)"; \
+	echo "Current HEAD: $$head"; \
+	git diff --quiet && git diff --cached --quiet || { echo "ERROR: Working tree is not clean. Commit or stash changes first." >&2; exit 1; }; \
+	echo "[OK] Working tree is clean"; \
+	if git rev-parse --verify "v$$(cat CHANGELOG.md 2>/dev/null | grep -m1 -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo '0.0.0')" >/dev/null 2>&1; then \
+		echo "WARNING: Release tag may already exist."; \
+	else \
+		echo "[OK] No existing release tag conflict detected"; \
+	fi; \
+	echo ""; \
+	echo "Next steps (manual):"; \
+	echo "  1. Update CHANGELOG.md with release notes"; \
+	echo "  2. Create and push tag: git tag v<version> && git push origin v<version>"; \
+	echo "  3. Create GitHub Release from the tag"; \
+	echo "  4. Verify attestation: gh attestation verify artifacts/provider-image.tar.gz --repo OWNER/REPO"
 
 ci: validate-template
 	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py scripts/postgres_preflight.py scripts/postgres_backup.py scripts/postgres_migrate_docker.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py

@@ -6,7 +6,7 @@ import ipaddress
 import re
 import time
 import uuid
-from collections import defaultdict, deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -94,13 +94,15 @@ class RateLimitBackend(Protocol):
 
 
 class InMemoryRateLimiter:
+    MAX_BUCKETS = 10_000
+
     def __init__(
         self,
         limit: int,
         window_seconds: float = 60.0,
         *,
         clock=time.monotonic,
-        max_buckets: int = MAX_TRACKED_RATE_LIMIT_BUCKETS,
+        max_buckets: int = MAX_BUCKETS,
     ):
         if type(max_buckets) is not int or max_buckets < 1:
             raise ValueError("max_buckets must be a positive integer")
@@ -108,7 +110,7 @@ class InMemoryRateLimiter:
         self.window_seconds = window_seconds
         self.clock = clock
         self.max_buckets = max_buckets
-        self._events: dict[str, deque[float]] = defaultdict(deque)
+        self._events: OrderedDict[str, deque[float]] = OrderedDict()
         self._next_sweep = self.clock() + window_seconds
 
     def _sweep(self, now: float) -> None:
@@ -132,21 +134,32 @@ class InMemoryRateLimiter:
 
         now = self.clock()
         self._sweep(now)
+
+        # Evict oldest bucket if we're at capacity and bucket is new
+        if bucket not in self._events and len(self._events) >= self.max_buckets:
+            self._events.popitem(last=False)
+
         events = self._events.get(bucket)
         if events is None:
-            if len(self._events) >= self.max_buckets:
-                return False, 0
             events = self._events[bucket]
+            events = deque()
+
         cutoff = now - self.window_seconds
 
         while events and events[0] <= cutoff:
             events.popleft()
+
+        # Clean up empty buckets
+        if not events and bucket in self._events:
+            del self._events[bucket]
 
         remaining = max(0, self.limit - len(events))
         if not remaining:
             return False, 0
 
         events.append(now)
+        # Mark as recently used
+        self._events.move_to_end(bucket)
         return True, remaining - 1
 
     async def close(self) -> None:
@@ -223,3 +236,17 @@ class RedisRateLimiter:
 
     async def close(self) -> None:
         await self.client.aclose()
+
+
+__all__ = [
+    "redact",
+    "request_id",
+    "client_bucket",
+    "client_key_digest",
+    "verify_client_key",
+    "TrustedProxyPolicy",
+    "RateLimitBackendError",
+    "RateLimitBackend",
+    "InMemoryRateLimiter",
+    "RedisRateLimiter",
+]

@@ -82,3 +82,11 @@ def ollama_chat_to_openai(
             "total_tokens": prompt_tokens + completion_tokens,
         },
     }
+
+
+__all__ = [
+    "StructuredOutputError",
+    "structured_schema",
+    "ollama_structured_payload",
+    "ollama_chat_to_openai",
+]

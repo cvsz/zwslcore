@@ -160,3 +160,11 @@ def _lifecycle(value: Any) -> ModelLifecycle:
         return ModelLifecycle(str(value).lower())
     except ValueError:
         return ModelLifecycle.ACTIVE
+
+
+__all__ = [
+    "ModelLifecycle",
+    "ModelCapabilities",
+    "CapabilityRecord",
+    "CapabilityRegistry",
+]

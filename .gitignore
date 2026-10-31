@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 !.env.cloudflare.example
+.env.production
+.env.local
 *.pem
 *.key
 
@@ -56,3 +58,5 @@ tmp/
 # Operator-local generated skill catalogs (downloaded libraries, not repo content)
 .agents/skills/cvsz-*/
 .agents/skills/.cvsz-skill-catalog.json
+*.egg-info/
+tmp_out/
