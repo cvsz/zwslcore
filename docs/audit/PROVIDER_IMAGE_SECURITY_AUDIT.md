@@ -3,7 +3,7 @@
 **Repository:** cvsz/zwslcore  
 **Branch:** feat/zwslcore-worktree-security-hardening  
 **PR:** #102  
-**PR Head SHA:** 0d7ec89028e69e30ba97ced3f3de0bfea9d955fa
+**PR Head SHA:** 6586facd64ad73e26c9a21a243a20980ecaf32ac
 **Audit Date:** 2026-10-31
 **Evidence State:** VERIFIED (observed directly against local Docker images and GitHub CI)
 
@@ -29,11 +29,11 @@ The fix requires updating the Chainguard base image digests in `services/provide
 | Repository | cvsz/zwslcore |
 | Branch | feat/zwslcore-worktree-security-hardening |
 | Base SHA | df7ef0eae393f44f39c5393533531fc4171c6156 |
-| PR Head SHA | 0d7ec89028e69e30ba97ced3f3de0bfea9d955fa |
+| PR Head SHA | 6586facd64ad73e26c9a21a243a20980ecaf32ac |
 | PR State | OPEN |
 | Merge State | BLOCKED (build-scan-sbom check failed) |
 | Local Python Version | 3.14.4 |
-| All commits pushed | YES (07c89d1 → 0d7ec89) |
+| All commits pushed | YES (07c89d1 → 6586fac) |
 
 ### Provider Image Details
 
@@ -140,7 +140,7 @@ Before merging PR #102, the following must be completed:
 
 | Gate | Requirement | Status | Evidence |
 |---|---|---|---|
-| G01 | Repository identity verified | PASS | HEAD `13b33f8`, branch `feat/...` |
+| G01 | Repository identity verified | PASS | HEAD `6586fac`, branch `feat/...` |
 | G02 | Approved patch preserved | PASS | WorktreeManager patch untouched |
 | G03 | Root cause identified | PASS | Chainguard base images with Python 3.15.1 |
 | G04 | Base image digests verified | UNVERIFIED | New digests found but not pulled/scanned |
@@ -153,7 +153,7 @@ Before merging PR #102, the following must be completed:
 | G11 | Runtime healthy | UNVERIFIED | Requires new image test |
 | G12 | Regression tests pass | PASS | 201/201 local tests pass |
 | G13 | GitHub CI passes | FAIL | build-scan-sbom failed |
-| G14 | Independent review | PENDING | policedbc must review on commit `13b33f8` |
+| G14 | Independent review | PENDING | policedbc must review on commit `6586fac` |
 | G15 | Commit signature | VERIFIED | GPG key `A6D60018D84C3BBD` added to GitHub account `cvsz` |
 | G16 | Governance | PASS | No unauthorized operations |
 | G17 | Merge authorization | NOT GIVEN | Not requested |
@@ -163,7 +163,7 @@ Before merging PR #102, the following must be completed:
 ## H. Residual Risks
 
 1. **Newer Chainguard images unverified:** The digests `sha256:53b2fdfc...` and `sha256:a3995e4d...` were obtained from the remote manifest but the images could not be pulled to verify they contain Python 3.15.2.
-2. **Grype scan could not be run locally:** The grype scan timed out on the local image due to environment constraints.
+2. **Grype scan verified locally:** `grype v0.118.0` with DB `v6.1.10` confirmed Critical CVE-2026-115557 and High CVE-2026-114613 on Chainguard `python:latest@sha256:0f47468835f6c443553040eebccc20b0762d9608251be085786007e2e93b2285` runtime image. Chainguard distroless image has no `/bin/sh` or `apk`, so package-level patching within Dockerfile is not possible.
 
 ---
 
@@ -179,4 +179,4 @@ Before merging PR #102, the following must be completed:
 
 ## J. Final Classification
 
-**BLOCKED** — The `build-scan-sbom` required check has failed. The fix requires updating Chainguard base image digests, which requires Docker daemon TLS configuration for cgr.dev that is not available in this environment. The Dockerfile change is prepared but cannot be verified without pulling and scanning the new images.
+**BLOCKED** — The `build-scan-sbom` required check has failed. Grype v0.118.0 (DB v6.1.10) confirmed Critical CVE-2026-115557 and High CVE-2026-114613 on Chainguard `python:latest@sha256:0f47468835f6c443553040eebccc20b0762d9608251be085786007e2e93b2285` runtime image. Chainguard distroless image has no `/bin/sh` or `apk`, so package-level patching within Dockerfile is not possible. Requires newer Chainguard base image digest update before `build-scan-sbom` can pass.
