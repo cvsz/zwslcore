@@ -167,3 +167,8 @@ class Observability:
     def shutdown(self) -> None:
         if self._meter_provider is not None:
             self._meter_provider.shutdown()
+
+
+__all__ = [
+    "Observability",
+]

@@ -33,52 +33,48 @@ class CircuitBreaker:
     _state: str = field(default="closed", init=False)
     _opened_at: float = field(default=0.0, init=False)
     _probe_in_flight: bool = field(default=False, init=False)
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
     @property
     def state(self) -> str:
         return self._state
 
-    def before_call(self) -> None:
-        if self._state == "half_open" and self._probe_in_flight:
-            raise ProviderError(
-                "Provider circuit probe is already in progress",
-                503,
-                kind=ErrorKind.CIRCUIT_OPEN,
-                fallback_allowed=True,
-                circuit_failure=False,
-            )
-        if self._state != "open":
-            return
-        if self.clock() - self._opened_at < self.reset_timeout_seconds:
-            raise ProviderError(
-                "Provider circuit is open",
-                503,
-                kind=ErrorKind.CIRCUIT_OPEN,
-                fallback_allowed=True,
-                circuit_failure=False,
-            )
-        if self._probe_in_flight:
-            raise ProviderError(
-                "Provider circuit probe is already in progress",
-                503,
-                kind=ErrorKind.CIRCUIT_OPEN,
-                fallback_allowed=True,
-                circuit_failure=False,
-            )
-        self._state = "half_open"
-        self._probe_in_flight = True
+    async def before_call(self) -> None:
+        async with self._lock:
+            if self._state == "half_open" and self._probe_in_flight:
+                raise ProviderError(
+                    "Provider circuit probe is already in progress",
+                    503,
+                    kind=ErrorKind.CIRCUIT_OPEN,
+                    fallback_allowed=True,
+                    circuit_failure=False,
+                )
+            if self._state != "open":
+                return
+            if self.clock() - self._opened_at < self.reset_timeout_seconds:
+                raise ProviderError(
+                    "Provider circuit is open",
+                    503,
+                    kind=ErrorKind.CIRCUIT_OPEN,
+                    fallback_allowed=True,
+                    circuit_failure=False,
+                )
+            self._state = "half_open"
+            self._probe_in_flight = True
 
-    def success(self) -> None:
-        self._failures = 0
-        self._probe_in_flight = False
-        self._state = "closed"
+    async def success(self) -> None:
+        async with self._lock:
+            self._failures = 0
+            self._probe_in_flight = False
+            self._state = "closed"
 
-    def failure(self) -> None:
-        self._failures += 1
-        self._probe_in_flight = False
-        if self._state == "half_open" or self._failures >= self.failure_threshold:
-            self._state = "open"
-            self._opened_at = self.clock()
+    async def failure(self) -> None:
+        async with self._lock:
+            self._failures += 1
+            self._probe_in_flight = False
+            if self._state == "half_open" or self._failures >= self.failure_threshold:
+                self._state = "open"
+                self._opened_at = self.clock()
 
 
 class ResilienceExecutor:
@@ -109,7 +105,7 @@ class ResilienceExecutor:
             remaining = self.policy.total_timeout_seconds - (self.clock() - started_at)
             if remaining <= 0:
                 raise self._deadline_error(last_error)
-            self.breaker.before_call()
+            await self.breaker.before_call()
             try:
                 async with asyncio.timeout(remaining):
                     result = await operation()
@@ -122,14 +118,14 @@ class ResilienceExecutor:
                     fallback_allowed=True,
                     circuit_failure=True,
                 )
-                self.breaker.failure()
+                await self.breaker.failure()
                 raise timeout_error from exc
             except ProviderError as exc:
                 last_error = exc
                 if exc.circuit_failure:
-                    self.breaker.failure()
+                    await self.breaker.failure()
                 elif self.breaker.state == "half_open":
-                    self.breaker.success()
+                    await self.breaker.success()
                 if not exc.retryable or attempt + 1 >= self.policy.max_attempts:
                     raise
                 delay = self._delay(exc, attempt)
@@ -140,7 +136,7 @@ class ResilienceExecutor:
                     self.on_retry(exc)
                 await self.sleep(delay)
             else:
-                self.breaker.success()
+                await self.breaker.success()
                 return result
         assert last_error is not None
         raise last_error
@@ -168,3 +164,10 @@ class ResilienceExecutor:
             self.policy.base_delay_seconds * (2**attempt),
         )
         return self.uniform(0.0, ceiling)
+
+
+__all__ = [
+    "ResiliencePolicy",
+    "CircuitBreaker",
+    "ResilienceExecutor",
+]

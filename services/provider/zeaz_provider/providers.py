@@ -198,6 +198,15 @@ class ProviderClient:
                             error_body,
                             retry_after=_retry_after(response),
                         )
+                    # Validate Content-Type for JSON responses
+                    content_type = response.headers.get("content-type", "")
+                    if "application/json" not in content_type:
+                        raise ProviderError(
+                            f"Provider returned non-JSON content type: {content_type or '(none)'}",
+                            kind=ErrorKind.PROTOCOL,
+                            fallback_allowed=True,
+                            circuit_failure=True,
+                        )
                     raw = await _read_bounded(response, self.max_response_bytes)
             except httpx.TimeoutException as exc:
                 raise ProviderError(
@@ -291,3 +300,8 @@ async def _read_at_most(response: httpx.Response, maximum: int) -> bytes:
         if len(chunk) >= remaining:
             break
     return b"".join(chunks)
+
+
+__all__ = [
+    "ProviderClient",
+]

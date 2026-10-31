@@ -463,3 +463,12 @@ def _json_text(value: Any) -> str:
 
 def _nonnegative_int(value: Any) -> int:
     return value if type(value) is int and value >= 0 else 0
+
+
+__all__ = [
+    "anthropic_to_openai",
+    "openai_to_anthropic",
+    "openai_request_to_anthropic",
+    "responses_to_chat",
+    "chat_to_responses",
+]
