@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 import os
 import re
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,11 +12,54 @@ from urllib.parse import urlsplit
 
 import yaml
 
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+
 from .cost import CostClass, CostPolicy, parse_cost_class, parse_cost_policy
 from .security import client_key_digest
 
 ENV_PATTERN = re.compile(r"\$\{([A-Z][A-Z0-9_]*)(?::-([^}]*))?\}")
 CLIENT_KEY_HASH_PATTERN = re.compile(r"^(?:sha256:)?([a-fA-F0-9]{64})$")
+
+
+def _resolve_s3_config_path() -> str | None:
+    """ถ้าตั้งค่า env vars สำหรับ S3 config ให้ดาวน์โหลดไฟล์ config มาไว้ที่ temp file และคืน path
+
+    ตัวแปรสภาพแวดล้อมที่อ่าน:
+      ZEAZ_S3_CONFIG_ENDPOINT   endpoint ของ S3 (เช่น http://127.0.0.1:8333)
+      ZEAZ_S3_CONFIG_ACCESS_KEY_ID   access key
+      ZEAZ_S3_CONFIG_SECRET_ACCESS_KEY secret key
+      ZEAZ_S3_CONFIG_BUCKET   ชื่อ bucket
+      ZEAZ_S3_CONFIG_KEY      object key ของไฟล์ config (เช่น zwslcore/config.yaml)
+      ZEAZ_S3_CONFIG_REGION   region (default us-east-1)
+    """
+    required = {
+        "ZEAZ_S3_CONFIG_ENDPOINT": os.getenv("ZEAZ_S3_CONFIG_ENDPOINT"),
+        "ZEAZ_S3_CONFIG_ACCESS_KEY_ID": os.getenv("ZEAZ_S3_CONFIG_ACCESS_KEY_ID"),
+        "ZEAZ_S3_CONFIG_SECRET_ACCESS_KEY": os.getenv("ZEAZ_S3_CONFIG_SECRET_ACCESS_KEY"),
+        "ZEAZ_S3_CONFIG_BUCKET": os.getenv("ZEAZ_S3_CONFIG_BUCKET"),
+        "ZEAZ_S3_CONFIG_KEY": os.getenv("ZEAZ_S3_CONFIG_KEY"),
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        return None
+
+    region = os.getenv("ZEAZ_S3_CONFIG_REGION", "us-east-1")
+    try:
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=required["ZEAZ_S3_CONFIG_ENDPOINT"],
+            aws_access_key_id=required["ZEAZ_S3_CONFIG_ACCESS_KEY_ID"],
+            aws_secret_access_key=required["ZEAZ_S3_CONFIG_SECRET_ACCESS_KEY"],
+            region_name=region,
+        )
+        tmp = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w", encoding="utf-8")
+        obj = s3.get_object(Bucket=required["ZEAZ_S3_CONFIG_BUCKET"], Key=required["ZEAZ_S3_CONFIG_KEY"])
+        tmp.write(obj["Body"].read().decode("utf-8"))
+        tmp.close()
+        return tmp.name
+    except (BotoCoreError, ClientError, OSError) as exc:
+        raise RuntimeError(f"Failed to load provider config from S3: {exc}") from exc
 
 
 def _expand(value: Any) -> Any:
@@ -156,10 +200,17 @@ class ModelRoute:
     alias: str
     primary: RouteTarget
     fallbacks: tuple[RouteTarget, ...] = ()
+    cost_policy: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.alias, str) or not 1 <= len(self.alias) <= 256:
             raise ValueError("model alias is invalid")
+        if self.cost_policy is not None:
+            try:
+                normalized_policy = parse_cost_policy(self.cost_policy).value
+            except (TypeError, ValueError) as exc:
+                raise ValueError("model route cost policy is invalid") from exc
+            object.__setattr__(self, "cost_policy", normalized_policy)
 
 
 @dataclass(frozen=True)
@@ -183,8 +234,28 @@ class Settings:
 
 
 def load_settings(path: str | Path | None = None) -> Settings:
-    config_path = Path(path or os.getenv("ZEAZ_CONFIG", "config/providers.yaml"))
-    raw_value = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    if path is not None:
+        config_path = Path(path)
+    else:
+        configured_path = os.getenv("ZEAZ_CONFIG")
+        if configured_path:
+            config_path = Path(configured_path)
+        else:
+            config_path = (
+                Path(__file__).resolve().parent.parent
+                / "config"
+                / "providers.yaml"
+            )
+
+    try:
+        s3_config_path = _resolve_s3_config_path()
+        if s3_config_path is not None:
+            config_path = Path(s3_config_path)
+        raw_value = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"Provider configuration file not found: {config_path.resolve()}"
+        ) from exc
     if raw_value is None:
         raw_value = {}
     if not isinstance(raw_value, Mapping):
@@ -220,6 +291,15 @@ def load_settings(path: str | Path | None = None) -> Settings:
             primary = RouteTarget(provider=value["provider"], model=value["model"])
         except (KeyError, TypeError, ValueError) as exc:
             raise RuntimeError(f"Invalid model route: {alias}") from exc
+        raw_route_policy = value.get("cost_policy")
+        try:
+            route_policy = (
+                parse_cost_policy(raw_route_policy).value
+                if raw_route_policy is not None
+                else None
+            )
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"Invalid model route cost policy: {alias}") from exc
         if primary.provider not in providers:
             continue
         raw_fallbacks = value.get("fallbacks", [])
@@ -237,7 +317,12 @@ def load_settings(path: str | Path | None = None) -> Settings:
                 continue
             fallbacks.append(fallback)
         try:
-            models[alias] = ModelRoute(alias=alias, primary=primary, fallbacks=tuple(fallbacks))
+            models[alias] = ModelRoute(
+                alias=alias,
+                primary=primary,
+                fallbacks=tuple(fallbacks),
+                cost_policy=route_policy,
+            )
         except (TypeError, ValueError) as exc:
             raise RuntimeError(f"Invalid model route: {alias}") from exc
     key_hashes: set[bytes] = {

@@ -30,9 +30,18 @@ an authenticated Provider key rather than the LiteLLM master key:
   `zeaz-coder` (or another model returned by Provider), and bearer key from
   `PROVIDER_CLIENT_KEY`.
 - Claude Code: Anthropic-compatible base URL `http://localhost:8080`, model
-  `zeaz-coder`, and the same Provider key as `ANTHROPIC_AUTH_TOKEN`. Provider
-  implements `/v1/messages`; confirm the selected model supports the features
+  `zeaz-claude` (or `zeaz-coder`), and the same Provider key as `ANTHROPIC_AUTH_TOKEN`.
+  Provider implements `/v1/messages`; confirm the selected model supports the features
   your Claude Code version requires.
+
+  The `zeaz-claude` route is configured with `cost_policy: LOCAL_ONLY`, meaning it
+  routes only to providers with `cost_class: FREE_LOCAL` (Ollama by default) and
+  will not fall back to remote/paid providers. If no local target is available,
+  the gateway returns HTTP 410 instead of routing remotely. See
+  `services/provider/config/providers.yaml` for route configuration.
+
+- Cursor: add an OpenAI-compatible custom model using the Provider URL, model
+  `zeaz-coder`, and the Provider key. Cursor UI options vary by version.
 - Cursor: add an OpenAI-compatible custom model using the Provider URL, model
   `zeaz-coder`, and the Provider key. Cursor UI options vary by version.
 - Gemini CLI: use its OpenAI-compatible provider mode with the Provider URL,
