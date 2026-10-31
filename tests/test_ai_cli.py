@@ -81,5 +81,56 @@ class CliTests(unittest.TestCase):
         self.assertNotEqual(result.returncode,0)
         self.assertIn("symlink",result.stderr.lower())
 
+    def test_dotenv_gemini_configuration(self):
+        # The repository .env is shared, so test with a private script copy.
+        root = Path(self.temp.name) / "checkout"
+        (root / "scripts").mkdir(parents=True)
+        script = root / "scripts" / "ai.sh"
+        script.write_bytes(SCRIPT.read_bytes())
+        (root / ".env").write_text(
+            'AI_API_URL="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"\\n'
+            'AI_MODEL="gemini-3.8-flash"\\n'
+            'GEMINI_API_KEY="test-secret"\\n'
+            'AI_API_KEY="${GEMINI_API_KEY}"\\n'
+            'APP_URL=<http://127.0.0.1:3000>\\n'
+        )
+        (root / ".env").chmod(0o600)
+        env = dict(self.env)
+        for key in ("AI_API_URL", "AI_MODEL", "AI_API_KEY", "GEMINI_API_KEY"):
+            env.pop(key, None)
+        result = subprocess.run(["bash", str(script), "doctor"], env=env,
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("gemini-3.8-flash", result.stdout)
+        self.assertIn("Credential configured: True", result.stdout)
+        self.assertNotIn("test-secret", result.stdout)
+
+    def test_dotenv_does_not_execute_commands(self):
+        root = Path(self.temp.name) / "checkout"
+        (root / "scripts").mkdir(parents=True)
+        script = root / "scripts" / "ai.sh"
+        script.write_bytes(SCRIPT.read_bytes())
+        marker = root / "executed"
+        (root / ".env").write_text(f'AI_MODEL="$(touch {marker})"\\n')
+        (root / ".env").chmod(0o600)
+        env = dict(self.env)
+        env.pop("AI_MODEL", None)
+        result = subprocess.run(["bash", str(script), "doctor"], env=env,
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(marker.exists())
+
+    def test_dotenv_rejects_insecure_permissions(self):
+        root = Path(self.temp.name) / "checkout"
+        (root / "scripts").mkdir(parents=True)
+        script = root / "scripts" / "ai.sh"
+        script.write_bytes(SCRIPT.read_bytes())
+        (root / ".env").write_text('AI_MODEL="test"\\n')
+        (root / ".env").chmod(0o644)
+        result = subprocess.run(["bash", str(script), "doctor"], env=self.env,
+                                capture_output=True, text=True, timeout=20)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("chmod 600", result.stderr)
+
 if __name__=="__main__":
     unittest.main()
