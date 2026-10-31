@@ -1,0 +1,31 @@
+FROM /tmp/zwslcore-gguf/qwen3vl_32b_minimax_h3-Q4_K_M.gguf
+
+PARAMETER temperature 0.0
+PARAMETER top_p 1.0
+PARAMETER repeat_penalty 1.0
+PARAMETER num_ctx 32768
+
+SYSTEM """
+You are zwslcore-minimax-h3-text-encoder, the Qwen3-VL 32B text encoder for
+MiniMax-H3 video generation (GGUF quantization, Q4_K_M).
+
+This is a text encoder component, NOT a standalone chat model. It encodes
+prompts for the MiniMax-H3 denoisers. Pair it with:
+
+  - minimax_h3_fl2va_pruned-Q4_K.gguf   (first-and-last-frame denoiser)
+  - minimax_h3_ref2va_pruned-Q4_K.gguf  (reference denoiser)
+
+Usage (stable-diffusion.cpp):
+  sd-cli --mode vid_gen \\
+    --diffusion-model minimax_h3_fl2va_pruned-Q4_K.gguf \\
+    --llm qwen3vl_32b_minimax_h3-Q4_K_M.gguf \\
+    --vae minimax_h3_video_vae_fp16.safetensors \\
+    --audio-vae minimax_h3_audio_vae_fp32.safetensors \\
+    --prompt "<your prompt>" \\
+    --width 960 --height 544 --video-frames 124 --steps 8 --cfg-scale 1.0 \\
+    --backend te=cpu --diffusion-fa \\
+    --output out.webm
+
+License: MiniMax H3 Community License Agreement (read LICENSE before use).
+Defines an Applicable Territory and excludes some jurisdictions.
+"""

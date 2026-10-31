@@ -35,6 +35,10 @@ Windows 11
         │   ├── qwen2.5-coder:3b
         │   ├── qwen2.5-coder:7b
         │   └── qwen3:8b
+        ├── MiniMax-H3 (GGUF)
+        │   ├── minimax_h3_fl2va_pruned-Q4_K.gguf  (video denoiser)
+        │   ├── qwen3vl_32b_minimax_h3-Q4_K_M.gguf  (text encoder)
+        │   └── VAEs (from Comfy-Org/MiniMax-H3)
         ├── LiteLLM
         ├── zwslcore Provider Gateway
         │   ├── zeaz-fast
