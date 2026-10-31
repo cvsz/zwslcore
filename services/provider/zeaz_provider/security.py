@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import ipaddress
@@ -89,23 +88,54 @@ class RateLimitBackend(Protocol):
 class InMemoryRateLimiter:
     MAX_BUCKETS = 10_000
 
-    def __init__(self, limit: int, window_seconds: float = 60.0, *, clock=time.monotonic):
+    def __init__(
+        self,
+        limit: int,
+        window_seconds: float = 60.0,
+        *,
+        clock=time.monotonic,
+        max_buckets: int = MAX_BUCKETS,
+    ):
+        if type(max_buckets) is not int or max_buckets < 1:
+            raise ValueError("max_buckets must be a positive integer")
         self.limit = limit
         self.window_seconds = window_seconds
         self.clock = clock
+        self.max_buckets = max_buckets
         self._events: OrderedDict[str, deque[float]] = OrderedDict()
+        self._next_sweep = self.clock() + window_seconds
+
+    def _sweep(self, now: float) -> None:
+        """Drop buckets whose events have all expired.
+
+        Buckets are keyed on client-supplied credentials before authentication,
+        so without this an attacker rotating the Authorization header grows the
+        table without bound.
+        """
+        if now < self._next_sweep:
+            return
+        cutoff = now - self.window_seconds
+        stale = [key for key, events in self._events.items() if not events or events[-1] <= cutoff]
+        for key in stale:
+            del self._events[key]
+        self._next_sweep = now + self.window_seconds
 
     async def allow(self, bucket: str) -> tuple[bool, int]:
         if self.limit <= 0:
             return True, 0
 
         now = self.clock()
+        self._sweep(now)
 
         # Evict oldest bucket if we're at capacity and bucket is new
-        if bucket not in self._events and len(self._events) >= self.MAX_BUCKETS:
+        if bucket not in self._events and len(self._events) >= self.max_buckets:
             self._events.popitem(last=False)
 
-        events = self._events[bucket]
+        events = self._events.get(bucket)
+        if events is None:
+            events = deque()
+            self._events[bucket] = events
+
         cutoff = now - self.window_seconds
 
         while events and events[0] <= cutoff:

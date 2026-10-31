@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
 
 from .ledger import JsonContinuousLedger
-from .models import EngineeringTask, TaskStatus
+from .models import TaskStatus
 from .store import SQLiteEngineeringStore
 
 
