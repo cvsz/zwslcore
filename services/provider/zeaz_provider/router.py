@@ -55,7 +55,9 @@ class ProviderRouter:
         except KeyError as exc:
             raise ProviderError(f"Unknown model: {name}", 404) from exc
         candidates = (configured.primary, *configured.fallbacks)
-        policy = parse_cost_policy(self.settings.cost_policy)
+        policy = parse_cost_policy(
+            configured.cost_policy or self.settings.cost_policy
+        )
         available = [
             target
             for target in candidates
@@ -84,14 +86,43 @@ class ProviderRouter:
             alias=configured.alias,
             primary=available[0],
             fallbacks=tuple(available[1:]),
+            cost_policy=policy.value,
         )
+
+    def _route_candidates(self, route: ModelRoute) -> tuple:
+        candidates = (route.primary, *route.fallbacks)
+        if route.cost_policy is None:
+            # Preserve behavior for legacy callers constructing ModelRoute directly.
+            return candidates
+
+        policy = parse_cost_policy(route.cost_policy)
+        available = tuple(
+            target
+            for target in candidates
+            if target.provider in self.settings.providers
+            and cost_allowed(
+                parse_cost_class(
+                    self.settings.providers[target.provider].cost_class
+                ),
+                policy,
+            )
+        )
+        if not available:
+            raise ProviderError(
+                f"No configured targets for {route.alias} are permitted "
+                f"under cost policy {policy.value}",
+                410,
+                fallback_allowed=False,
+                circuit_failure=False,
+            )
+        return available
 
     async def execute(
         self,
         route: ModelRoute,
         operation: Callable[[ProviderClient, str], Awaitable[T]],
     ) -> T:
-        candidates = (route.primary, *route.fallbacks)
+        candidates = self._route_candidates(route)
         errors: list[str] = []
         for index, target in enumerate(candidates):
             client = self.clients.get(target.provider)
@@ -140,7 +171,7 @@ class ProviderRouter:
         operation: Callable[[ProviderClient, str], AsyncIterator[bytes]],
     ) -> AsyncIterator[bytes]:
         errors: list[str] = []
-        for index, target in enumerate((route.primary, *route.fallbacks)):
+        for index, target in enumerate(self._route_candidates(route)):
             client = self.clients.get(target.provider)
             if not client:
                 errors.append(f"{target.provider}: not configured")

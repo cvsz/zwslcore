@@ -151,6 +151,71 @@ class BackupRestoreTests(unittest.TestCase):
                     )
             self.assertFalse((root / "must-not-exist").exists())
 
+    def test_restore_rejects_missing_backup(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            missing = root / "no-such-backup"
+            with self.assertRaisesRegex(RestoreError, "manifest or checksum is missing"):
+                restore_backup(missing, root / "restore")
+
+    def test_restore_rejects_corrupt_manifest_checksum(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source, _, _, _ = self._source(root)
+            backup_path = root / "backup"
+            with patch("scripts.backup._runtime_metadata", return_value={"python": "test", "containers": {}}):
+                create_backup(
+                    source_root=source,
+                    repository_root=REPOSITORY,
+                    output=backup_path,
+                )
+            # Corrupt the manifest so its checksum sidecar no longer matches.
+            manifest_path = backup_path / "manifest.json"
+            manifest_path.write_text(
+                manifest_path.read_text(encoding="utf-8").replace('"schema": 1', '"schema": 2'),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(RestoreError, "manifest checksum failed"):
+                restore_backup(backup_path, root / "restore")
+            self.assertTrue((source / "state/engineering.db").exists())
+
+    def test_restore_rejects_symlink_in_backup_content(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source, _, _, _ = self._source(root)
+            backup_path = root / "backup"
+            with patch("scripts.backup._runtime_metadata", return_value={"python": "test", "containers": {}}):
+                create_backup(
+                    source_root=source,
+                    repository_root=REPOSITORY,
+                    output=backup_path,
+                )
+            # Replace a backed-up regular file with a symlink pointing outside the content root.
+            symlink_target = backup_path / "content" / "cache" / "catalog.json"
+            symlink_target.unlink()
+            symlink_target.symlink_to("/etc/passwd")
+            with self.assertRaisesRegex(RestoreError, "escapes content root"):
+                restore_backup(backup_path, root / "restore")
+            self.assertTrue((source / "state/engineering.db").exists())
+
+    def test_restore_rejects_non_empty_destination(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source, _, _, _ = self._source(root)
+            backup_path = root / "backup"
+            with patch("scripts.backup._runtime_metadata", return_value={"python": "test", "containers": {}}):
+                create_backup(
+                    source_root=source,
+                    repository_root=REPOSITORY,
+                    output=backup_path,
+                )
+            destination = root / "restore"
+            destination.mkdir()
+            (destination / "existing.txt").write_text("pre-existing\n", encoding="utf-8")
+            with self.assertRaisesRegex(RestoreError, "restore target must be a new or empty directory"):
+                restore_backup(backup_path, destination)
+            self.assertTrue((source / "state/engineering.db").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
