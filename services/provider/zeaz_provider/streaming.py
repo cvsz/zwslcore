@@ -9,8 +9,17 @@ from typing import Any
 
 async def sse_events(chunks: AsyncIterator[bytes]) -> AsyncIterator[tuple[str, str]]:
     buffer = ""
+    MAX_BUFFER = 1024 * 1024  # 1 MB max SSE frame buffer
     async for chunk in chunks:
         buffer += chunk.decode(errors="replace").replace("\r\n", "\n")
+        if len(buffer) > MAX_BUFFER:
+            yield "message", json.dumps({
+                "error": {
+                    "type": "protocol_error",
+                    "message": "SSE frame buffer exceeded maximum size",
+                }
+            })
+            return
         while "\n\n" in buffer:
             frame, buffer = buffer.split("\n\n", 1)
             event = "message"
@@ -426,3 +435,12 @@ def _safe_string(value: Any, default: str) -> str:
 
 def _safe_count(value: Any) -> int:
     return value if type(value) is int and value >= 0 else 0
+
+
+__all__ = [
+    "sse_events",
+    "rewrite_sse_model",
+    "anthropic_to_chat_stream",
+    "chat_to_anthropic_stream",
+    "chat_to_responses_stream",
+]

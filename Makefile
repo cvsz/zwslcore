@@ -1,15 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: cloudshell-model-restore cloudshell-recover cloudshell-recover-status cloudshell-tunnel-start cloudflare-migration-inspect cloudflare-migration-stage cloudflare-stack-preflight cloudflare-stack-configure cloudflare-stack-rollback webhook-install webhook-start webhook-health webhook-route webhook-rollback cloudflare-doctor feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci
-
-# Safe migration preparation only: does not change the active tunnel, DNS, or Access.
-cloudflare-migration-inspect:
-	@test -n "$$ZWSL_TARGET_TUNNEL_ID" && test -n "$$ZCLOUD_HOSTNAME" || { echo "Set ZWSL_TARGET_TUNNEL_ID and ZCLOUD_HOSTNAME" >&2; exit 2; }
-	python3 scripts/cloudflare-tunnel-migrate.py inspect
-
-cloudflare-migration-stage:
-	@test -n "$$ZWSL_TARGET_TUNNEL_ID" && test -n "$$ZCLOUD_HOSTNAME" || { echo "Set ZWSL_TARGET_TUNNEL_ID and ZCLOUD_HOSTNAME" >&2; exit 2; }
-	python3 scripts/cloudflare-tunnel-migrate.py stage
+.PHONY: cloudshell-model-restore cloudshell-recover cloudshell-recover-status cloudshell-tunnel-start cloudflare-migration-inspect cloudflare-migration-stage cloudflare-stack-preflight cloudflare-stack-configure cloudflare-stack-rollback webhook-install webhook-start webhook-health webhook-route webhook-rollback cloudflare-doctor feature-preflight feature-install feature-verify cloudflare-preflight cloudshell-full-install cloudshell ai-help ai-doctor ai-test help validate-template install up down restart wait-runtime doctor smoke logs capacity models models-manifest free-models models-dev-sync models-dev-stats models-dev-recommend engineer-tasks engineer-profile engineer-work engineer-tui engineer-test config production-config production-up provider-build provider-lock provider-lock-check cloudflare-up ci release
 
 cloudshell:
 	bash scripts/cloudshell.sh
@@ -139,6 +130,7 @@ help:
   'provider-lock update the hashed Provider dependency lock' \
   'provider-lock-check verify Provider dependency lock drift' \
   'cloudflare-up start zwslcore on the Cloudflare loopback ports' \
+  'release        pre-flight checks before creating a release tag' \
 	  'ci            repository + stack static validation'
 
 validate-template:
@@ -245,6 +237,25 @@ provider-lock-check:
 
 cloudflare-up:
 	bash scripts/cloudflare-up.sh
+
+release:
+	@echo "== zwslcore Release Pre-flight Check =="
+	@set -euo pipefail; \
+	head="$$(git rev-parse HEAD)"; \
+	echo "Current HEAD: $$head"; \
+	git diff --quiet && git diff --cached --quiet || { echo "ERROR: Working tree is not clean. Commit or stash changes first." >&2; exit 1; }; \
+	echo "[OK] Working tree is clean"; \
+	if git rev-parse --verify "v$$(cat CHANGELOG.md 2>/dev/null | grep -m1 -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo '0.0.0')" >/dev/null 2>&1; then \
+		echo "WARNING: Release tag may already exist."; \
+	else \
+		echo "[OK] No existing release tag conflict detected"; \
+	fi; \
+	echo ""; \
+	echo "Next steps (manual):"; \
+	echo "  1. Update CHANGELOG.md with release notes"; \
+	echo "  2. Create and push tag: git tag v<version> && git push origin v<version>"; \
+	echo "  3. Create GitHub Release from the tag"; \
+	echo "  4. Verify attestation: gh attestation verify artifacts/provider-image.tar.gz --repo OWNER/REPO"
 
 ci: validate-template
 	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
