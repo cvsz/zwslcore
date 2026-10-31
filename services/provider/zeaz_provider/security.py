@@ -105,18 +105,17 @@ class InMemoryRateLimiter:
         if bucket not in self._events and len(self._events) >= self.MAX_BUCKETS:
             self._events.popitem(last=False)
 
-        events = self._events[bucket]
+        events = self._events.setdefault(bucket, deque())
         cutoff = now - self.window_seconds
 
         while events and events[0] <= cutoff:
             events.popleft()
 
-        # Clean up empty buckets
-        if not events and bucket in self._events:
-            del self._events[bucket]
-
         remaining = max(0, self.limit - len(events))
         if not remaining:
+            # Clean up empty bucket when rate-limited
+            if not events and bucket in self._events:
+                del self._events[bucket]
             return False, 0
 
         events.append(now)

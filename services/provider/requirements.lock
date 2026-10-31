@@ -19,6 +19,14 @@ anyio==4.15.1 \
     #   httpx
     #   starlette
     #   watchfiles
+boto3==1.43.123 \
+    --hash=sha256:d18d66e1e13faa0c25d0b1b8c5ce946e29fb5fc0b6456b655a93a678ff4cc313
+    # via zwslcore-provider (pyproject.toml)
+botocore==1.43.123 \
+    --hash=sha256:e30580f9c1282c321529238ff8ff75066096a2adbd0a293c8ae592c21d1733a3
+    # via
+    #   boto3
+    #   s3transfer
 certifi==2026.10.23 \
     --hash=sha256:a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd \
     --hash=sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
@@ -353,6 +361,11 @@ idna==3.20 \
     #   anyio
     #   httpx
     #   requests
+jmespath==1.1.0 \
+    --hash=sha256:a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64
+    # via
+    #   boto3
+    #   botocore
 opentelemetry-api==1.45.1 \
     --hash=sha256:aa38ed19bcc084ba42782a73255b3582283eced7ad6dddbd6695189e69adfb75 \
     --hash=sha256:b31553efa588ae44bc306f863c785c5333a9ecc091248c6ee68b4b6c87fdedfb
@@ -557,6 +570,10 @@ pydantic-core==2.50.1 \
     --hash=sha256:f77ac30b19221cd9bd3fcfa3d4614eff93140d0572ab730cded17b64adca05f3 \
     --hash=sha256:fe90228920fd8ff2be62622b6bb8a2b11acd65046d50c6b130614b5879605a20
     # via pydantic
+python-dateutil==2.9.0.post0 \
+    --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
+    --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
+    # via botocore
 python-dotenv==1.2.4 \
     --hash=sha256:42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc \
     --hash=sha256:f0d53e69935a851c0dcc78f3ab7aaccd8cabef0b92382b576b824212902873c0
@@ -648,6 +665,13 @@ requests==2.34.2 \
     # via
     #   opentelemetry-exporter-http-transport
     #   opentelemetry-exporter-otlp-proto-http
+s3transfer==0.19.3 \
+    --hash=sha256:24eb7535804306355e31c952a90022bf5b2f9d760f9a11062c7493a217c08553
+    # via boto3
+six==1.17.0 \
+    --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
+    --hash=sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81
+    # via python-dateutil
 starlette==1.10.0 \
     --hash=sha256:478c0ab3b4ced6e82719849c118fa406f0278a3499c1a898cd15cd31bdc38ce4 \
     --hash=sha256:b8399098d4c1e3522734f7235dc79b1fc967f96cf139c81e0fa30479e0685f9b
@@ -673,7 +697,9 @@ typing-inspection==0.4.4 \
 urllib3==2.8.0 \
     --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3 \
     --hash=sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63
-    # via requests
+    # via
+    #   botocore
+    #   requests
 uvicorn==0.54.0 \
     --hash=sha256:505bdb0f318731d45f1f712071fc781a8981f6847a31c902c9f5e652d4f67faf \
     --hash=sha256:a2e33cbfaa0306f8e6b0c13e0cb89d7d7a2da3e62b90c66e18c33d9807b28620

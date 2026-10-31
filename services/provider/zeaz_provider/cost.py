@@ -12,6 +12,7 @@ class CostClass(str, enum.Enum):
 
 
 class CostPolicy(str, enum.Enum):
+    LOCAL_ONLY = "LOCAL_ONLY"
     ZERO_COST_ONLY = "ZERO_COST_ONLY"
     PREFER_ZERO_COST = "PREFER_ZERO_COST"
     PERMIT_PAID = "PERMIT_PAID"
@@ -41,11 +42,15 @@ def parse_cost_policy(value: str) -> CostPolicy:
 
 
 def cost_allowed(cost_class: CostClass, policy: CostPolicy) -> bool:
+    if policy == CostPolicy.LOCAL_ONLY:
+        return cost_class == CostClass.FREE_LOCAL
     if policy == CostPolicy.ZERO_COST_ONLY:
         return cost_class in {CostClass.FREE_LOCAL, CostClass.FREE_REMOTE}
     if policy == CostPolicy.PREFER_ZERO_COST:
         return cost_class != CostClass.UNKNOWN
-    return True
+    if policy == CostPolicy.PERMIT_PAID:
+        return True
+    return False
 
 
 def cost_rank(cost_class: CostClass) -> int:

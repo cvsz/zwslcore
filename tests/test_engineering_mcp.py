@@ -141,6 +141,38 @@ class MCPStdioTests(unittest.TestCase):
         self.assertEqual(result["structuredContent"], {"echo": "hello"})
         self.assertFalse(result["isError"])
 
+    def test_context_manager_closes_all_process_pipes(self):
+        session = StdioMCPSession(self.config())
+
+        with session:
+            process = session.process
+            self.assertIsNotNone(process)
+            self.assertIsNotNone(process.stdin)
+            self.assertIsNotNone(process.stdout)
+            self.assertIsNotNone(process.stderr)
+
+        self.assertIsNone(session.process)
+        self.assertIsNone(session._selector)
+
+        self.assertTrue(process.stdin.closed)
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
+
+    def test_close_is_idempotent(self):
+        session = StdioMCPSession(self.config())
+        session.__enter__()
+
+        process = session.process
+        self.assertIsNotNone(process)
+
+        session.close()
+        session.close()
+
+        self.assertIsNone(session.process)
+        self.assertTrue(process.stdin.closed)
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
+
     def test_unknown_method_is_reported(self):
         with StdioMCPSession(self.config()) as session:
             with self.assertRaisesRegex(MCPError, "method not found"):

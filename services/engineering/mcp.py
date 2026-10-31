@@ -182,19 +182,34 @@ class StdioMCPSession:
     def close(self) -> None:
         process = self.process
         self.process = None
+
         selector = self._selector
         self._selector = None
-        if selector is not None:
-            selector.close()
-        if process is None:
-            return
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=2)
+
+        try:
+            if selector is not None:
+                selector.close()
+        finally:
+            if process is not None:
+                try:
+                    if process.poll() is None:
+                        process.terminate()
+                        try:
+                            process.wait(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait(timeout=2)
+                finally:
+                    for stream in (
+                        process.stdin,
+                        process.stdout,
+                        process.stderr,
+                    ):
+                        if stream is not None:
+                            try:
+                                stream.close()
+                            except OSError:
+                                pass
 
     def _send(self, payload: dict[str, Any]) -> None:
         if self.process is None or self.process.stdin is None:

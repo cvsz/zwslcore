@@ -47,6 +47,12 @@ models:
     provider: ollama
     model: ${ZEAZ_CODER_MODEL:-qwen2.5-coder:7b}
 
+  zeaz-claude:
+    provider: ollama
+    model: ${ZEAZ_CODER_MODEL:-qwen2.5-coder:3b}
+    cost_policy: LOCAL_ONLY
+    fallbacks: []
+
   zeaz-reasoning:
     provider: ollama
     model: ${ZEAZ_REASONING_MODEL:-qwen3:8b}
