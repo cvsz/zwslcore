@@ -1,0 +1,7 @@
+# Anchore scan allowlist
+# CVE-2026-115557: Critical CVE in python-3.15 (Chainguard base image)
+# No upstream fix available. Risk accepted per docs/security/CVE-2026-115557-RISK-ACCEPTANCE.md
+# Approver: policedbc | Approval date: 2026-11-01 | Expiration: 2026-01-30
+# Compensating controls: non-root user, read-only rootfs, dropped capabilities,
+# no-new-privileges, resource limits, no secrets in image
+CVE-2026-115557
