@@ -21,7 +21,11 @@ LITELLM_PORT="$(dotenv_get "$ENV_FILE" LITELLM_PORT 4000)"
 PROVIDER_PORT="$(dotenv_get "$ENV_FILE" PROVIDER_PORT 8080)"
 OPENWEBUI_PORT="$(dotenv_get "$ENV_FILE" OPENWEBUI_PORT 3000)"
 PROVIDER_CLIENT_KEY="$(dotenv_get "$ENV_FILE" PROVIDER_CLIENT_KEY)"
-LITELLM_MASTER_KEY="$(dotenv_get "$ENV_FILE" LITELLM_MASTER_KEY)"
+AUTH_DIR="$(mktemp -d "${TMPDIR:-/tmp}/zwslcore-doctor.XXXXXX")"
+chmod 700 "$AUTH_DIR"
+trap 'rm -rf -- "$AUTH_DIR"' EXIT
+PROVIDER_AUTH_FILE="$AUTH_DIR/provider.header"
+write_curl_auth_header "$PROVIDER_AUTH_FILE" "$PROVIDER_CLIENT_KEY"
 
 fail=0
 
@@ -36,11 +40,14 @@ check() {
   fi
 }
 
+# These callbacks are invoked indirectly through check().
+# shellcheck disable=SC2329
 container_running() {
   local name="$1"
   [[ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || true)" == "true" ]]
 }
 
+# shellcheck disable=SC2329
 container_healthy() {
   local name="$1"
   local status
@@ -51,7 +58,7 @@ container_healthy() {
 check "docker" docker info
 check "compose config" docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" config --quiet
 
-for name in zwslcore-ollama zwslcore-litellm zwslcore-provider zwslcore-open-webui; do
+for name in zwslcore-ollama zwslcore-postgres zwslcore-litellm zwslcore-provider zwslcore-webui; do
   check "$name running" container_running "$name"
   check "$name health" container_healthy "$name"
 done
@@ -59,7 +66,7 @@ done
 check "ollama api" curl -fsS --max-time 10 "http://127.0.0.1:${OLLAMA_PORT:-11434}/api/tags"
 check "litellm readiness" curl -fsS --max-time 10 "http://127.0.0.1:${LITELLM_PORT:-4000}/health/readiness"
 check "provider ready" curl -fsS --max-time 10 "http://127.0.0.1:${PROVIDER_PORT:-8080}/health/ready"
-check "provider models" curl -fsS --max-time 10 -H "Authorization: Bearer ${PROVIDER_CLIENT_KEY}" "http://127.0.0.1:${PROVIDER_PORT:-8080}/v1/models"
+check "provider models" curl -fsS --max-time 10 -H "@$PROVIDER_AUTH_FILE" "http://127.0.0.1:${PROVIDER_PORT:-8080}/v1/models"
 
 if curl -fsS --max-time 10 "http://127.0.0.1:${OPENWEBUI_PORT:-3000}/health" >/dev/null 2>&1; then
   printf '[PASS] open-webui\n'

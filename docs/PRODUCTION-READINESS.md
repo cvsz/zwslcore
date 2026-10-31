@@ -2,6 +2,8 @@
 
 Canonical readiness matrix for the zwslcore workstation and repository controls. Evidence states use the definitions and decision rule in [ZEAZ-INTRODUCTION.md](../ZEAZ-INTRODUCTION.md). A description, test fixture, workflow file, or green CI run is not proof of a broader runtime or governance claim.
 
+The latest local WSL reassessment is [LOCAL-READINESS-AUDIT-2026-10-20.md](LOCAL-READINESS-AUDIT-2026-10-20.md); it records the assessed branch, runtime evidence, and remaining external gates.
+
 ## Baseline
 
 - Assessment date: 2026-10-05 (Asia/Bangkok).

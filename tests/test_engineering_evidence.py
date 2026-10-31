@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -95,6 +96,8 @@ class EvidenceExporterTests(unittest.TestCase):
             exporter = EvidenceExporter(store, root / "evidence")
             path, digest = exporter.export(task)
             self.assertTrue(path.exists())
+            self.assertEqual(stat.S_IMODE(exporter.root.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
             self.assertEqual(len(digest), 64)
             self.assertTrue(exporter.verify(task.id))
 

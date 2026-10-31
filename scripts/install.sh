@@ -7,6 +7,10 @@ ENV_FILE="$ROOT/.env"
 log() { printf '\n[zwslcore] %s\n' "$*"; }
 die() { printf '[zwslcore] ERROR: %s\n' "$*" >&2; exit 1; }
 
+if [[ -L "$ENV_FILE" || ( -e "$ENV_FILE" && ! -f "$ENV_FILE" ) ]]; then
+  die ".env must be a regular, non-symlink file. Refusing to modify it."
+fi
+
 [[ "$(uname -s)" == "Linux" ]] || die "Linux is required."
 grep -qi microsoft /proc/version || log "Warning: WSL2 was not detected; continuing on Linux."
 command -v docker >/dev/null 2>&1 || die "Docker Engine is required."
@@ -16,7 +20,16 @@ command -v curl >/dev/null 2>&1 || die "curl is required."
 
 if [[ ! -f "$ENV_FILE" ]]; then
   log "Creating .env from .env.example"
-  cp "$ROOT/.env.example" "$ENV_FILE"
+  python3 - "$ROOT/.env.example" "$ENV_FILE" <<'PY'
+from pathlib import Path
+import sys
+
+source, destination = map(Path, sys.argv[1:])
+sys.path.insert(0, str(destination.parent / "scripts" / "lib"))
+from env_file import write_private_file
+
+write_private_file(destination, source.read_text(encoding="utf-8"))
+PY
 fi
 chmod 600 "$ENV_FILE"
 
@@ -27,6 +40,9 @@ import secrets
 import sys
 
 path = Path(sys.argv[1])
+sys.path.insert(0, str(path.parent / "scripts" / "lib"))
+from env_file import write_private_file
+
 lines = path.read_text(encoding="utf-8").splitlines()
 
 managed_defaults = {
@@ -50,18 +66,30 @@ managed_defaults = {
         },
     ),
     "OPENWEBUI_IMAGE": (
-        "ghcr.io/open-webui/open-webui:v0.11.4",
-        {"", "ghcr.io/open-webui/open-webui:main", "ghcr.io/open-webui/open-webui:latest"},
+        "ghcr.io/open-webui/open-webui:v0.12.3@sha256:a537bbe1e6b428820f52ed4a029d7fff97062e24d5cf32c365fba36fd0542def",
+        {
+            "",
+            "ghcr.io/open-webui/open-webui:main",
+            "ghcr.io/open-webui/open-webui:latest",
+            "ghcr.io/open-webui/open-webui:v0.11.4",
+            "ghcr.io/open-webui/open-webui:v0.11.4@sha256:9591b13f13843c7721c2b8eaf7382846c81b3ffe126526d1888d1fed50c6a33f",
+        },
+    ),
+    "POSTGRES_IMAGE": (
+        "postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+        {"", "postgres:latest", "postgres:18-alpine"},
     ),
 }
 
 database_password = secrets.token_hex(32)
 salt_key = secrets.token_hex(32)
+postgres_superuser_password = secrets.token_hex(32)
 replacements = {
     "REPLACE_ME_WEBUI_SECRET": secrets.token_hex(32),
     "REPLACE_ME_LITELLM_MASTER_KEY": "sk-" + secrets.token_hex(32),
     "REPLACE_ME_PROVIDER_CLIENT_KEY": "zw-" + secrets.token_hex(32),
     "REPLACE_ME_DATABASE_PASSWORD": database_password,
+    "REPLACE_ME_POSTGRES_SUPERUSER_PASSWORD": postgres_superuser_password,
     "REPLACE_ME_LITELLM_SALT_KEY": salt_key,
 }
 text = "\n".join(lines) + "\n"
@@ -80,12 +108,14 @@ if not values.get("LITELLM_DB_PASSWORD"):
     values["LITELLM_DB_PASSWORD"] = database_password
 if not values.get("LITELLM_SALT_KEY"):
     values["LITELLM_SALT_KEY"] = salt_key
+if not values.get("POSTGRES_SUPERUSER_PASSWORD"):
+    values["POSTGRES_SUPERUSER_PASSWORD"] = postgres_superuser_password
 database_url = values.get("DATABASE_URL", "")
 if not database_url or "REPLACE_ME" in database_url:
     database_url = (
         "postgresql://litellm:"
         + values["LITELLM_DB_PASSWORD"]
-        + "@host.docker.internal:5432/litellm"
+        + "@postgres:5432/litellm"
     )
 for line in lines:
     if "=" not in line or line.lstrip().startswith("#"):
@@ -120,51 +150,39 @@ if "LITELLM_DB_PASSWORD" not in seen:
     out.append(f"LITELLM_DB_PASSWORD={values['LITELLM_DB_PASSWORD']}")
 if "LITELLM_SALT_KEY" not in seen:
     out.append(f"LITELLM_SALT_KEY={values['LITELLM_SALT_KEY']}")
+if "POSTGRES_SUPERUSER_PASSWORD" not in seen:
+    out.append(f"POSTGRES_SUPERUSER_PASSWORD={values['POSTGRES_SUPERUSER_PASSWORD']}")
 
-path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+write_private_file(path, "\n".join(out).rstrip() + "\n")
 PY
 
-if grep -Eq 'REPLACE_ME_(WEBUI_SECRET|LITELLM_MASTER_KEY|PROVIDER_CLIENT_KEY|DATABASE_PASSWORD|LITELLM_SALT_KEY)' "$ENV_FILE"; then
+if grep -Eq 'REPLACE_ME_(WEBUI_SECRET|LITELLM_MASTER_KEY|PROVIDER_CLIENT_KEY|DATABASE_PASSWORD|POSTGRES_SUPERUSER_PASSWORD|LITELLM_SALT_KEY)' "$ENV_FILE"; then
   die "Secret placeholders remain in .env."
 fi
 
-log "Checking host PostgreSQL reachability for LiteLLM"
-if ! python3 - "$ENV_FILE" <<'PY'
-from pathlib import Path
-import socket
-import sys
-from urllib.parse import urlsplit
-
-values = {}
-for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
-    line = line.strip()
-    if line and not line.startswith("#") and "=" in line:
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip()
-url = urlsplit(values.get("DATABASE_URL", ""))
-host = url.hostname or ""
-if host == "host.docker.internal":
-    host = "127.0.0.1"
-port = url.port or 5432
-try:
-    socket.create_connection((host, port), timeout=3).close()
-except OSError as exc:
-    print(f"PostgreSQL unreachable at {host}:{port}: {exc}")
-    raise SystemExit(1)
-print(f"PostgreSQL reachable at {host}:{port}")
-PY
+log "Checking PostgreSQL configuration for LiteLLM"
+if ! python3 "$ROOT/scripts/postgres_preflight.py" "$ENV_FILE"
 then
-  die "Host PostgreSQL is unreachable. Install it and create the litellm role/database first; see README Host PostgreSQL setup."
+  die "The configured PostgreSQL endpoint is unavailable. For the default local Docker service, check the postgres container health; see README Docker PostgreSQL setup."
 fi
 
 log "Validating Compose configuration"
 docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" config --quiet
 
 log "Pulling pinned runtime images"
-docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" pull ollama litellm open-webui
+docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" pull ollama postgres litellm open-webui
 
-log "Starting Ollama"
-docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" up -d ollama
+log "Starting Docker PostgreSQL and Ollama"
+docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" up -d postgres ollama
+
+log "Waiting for PostgreSQL"
+for _ in $(seq 1 60); do
+  if [[ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' zwslcore-postgres 2>/dev/null || true)" == "healthy" ]]; then
+    break
+  fi
+  sleep 2
+done
+[[ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' zwslcore-postgres 2>/dev/null || true)" == "healthy" ]] || die "Docker PostgreSQL did not become ready."
 
 log "Waiting for Ollama"
 for _ in $(seq 1 60); do
@@ -227,6 +245,9 @@ from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
+sys.path.insert(0, str(path.parent / "scripts" / "lib"))
+from env_file import write_private_file
+
 fast, coder, reasoning, local = sys.argv[2:6]
 accelerator, quantization, context_length, flash_attention = sys.argv[6:10]
 engineering = "auto"
@@ -266,7 +287,7 @@ for key, value in updates.items():
         out.append(f"{key}={value}")
 if "ZEAZ_ENGINEERING_MODEL" not in seen:
     out.append(f"ZEAZ_ENGINEERING_MODEL={engineering}")
-path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+write_private_file(path, "\n".join(out).rstrip() + "\n")
 PY
 chmod 600 "$ENV_FILE"
 

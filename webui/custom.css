@@ -1,0 +1,36 @@
+/* Keep the upstream Open WebUI sign-in layout usable on narrow screens. */
+@media (max-width: 480px) {
+	#auth-page,
+	#auth-container {
+		width: 100%;
+		max-width: 100vw;
+		overflow-x: clip;
+	}
+
+	#auth-container > .w-full {
+		box-sizing: border-box;
+		width: 100%;
+		min-width: 0;
+		padding-inline: 1rem;
+	}
+
+	#auth-login-card {
+		box-sizing: border-box;
+		width: 100%;
+		max-width: 28rem;
+		min-width: 0;
+		margin-inline: auto;
+	}
+
+	#auth-login-card :is(form, input, button) {
+		box-sizing: border-box;
+		width: 100%;
+		max-width: 100%;
+		min-width: 0;
+	}
+
+	#auth-login-card h1 {
+		font-size: clamp(1.5rem, 7vw, 2rem);
+		overflow-wrap: anywhere;
+	}
+}

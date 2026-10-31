@@ -15,6 +15,8 @@ if [[ ! -r /etc/os-release ]]; then
   exit 1
 fi
 
+# This is the trusted OS metadata file installed by the host distribution.
+# shellcheck disable=SC1091
 . /etc/os-release
 if [[ "${ID:-}" != "ubuntu" ]]; then
   echo "Ubuntu is required; detected ${ID:-unknown}." >&2
@@ -46,9 +48,18 @@ apt-get install -y \
 if ! dpkg-query -W -f='${db:Status-Abbrev}' docker-ce 2>/dev/null | grep -q '^ii '; then
   log "Installing Docker Engine from Docker's official Ubuntu repository"
 
+  conflicting_packages=()
   for package in docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc; do
-    dpkg-query -W -f='${db:Status-Abbrev}' "$package" 2>/dev/null | grep -q '^ii ' && apt-get remove -y "$package" || true
+    if dpkg-query -W -f='${db:Status-Abbrev}' "$package" 2>/dev/null | grep -q '^ii '; then
+      conflicting_packages+=("$package")
+    fi
   done
+  if ((${#conflicting_packages[@]})); then
+    printf '[zwslcore-bootstrap] Existing container packages need operator review: %s\n' \
+      "${conflicting_packages[*]}" >&2
+    echo "Remove or migrate these packages deliberately, then rerun the bootstrap." >&2
+    exit 1
+  fi
 
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
@@ -69,6 +80,21 @@ EOF
   apt-get update
   apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
+
+# Existing Docker CE installations may lack the Compose or Buildx plugins.
+# Install only missing packages; do not silently upgrade an existing engine.
+missing_docker_packages=()
+for package in docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; do
+  if ! dpkg-query -W -f='${db:Status-Abbrev}' "$package" 2>/dev/null | grep -q '^ii '; then
+    missing_docker_packages+=("$package")
+  fi
+done
+if ((${#missing_docker_packages[@]})); then
+  log "Installing missing Docker components: ${missing_docker_packages[*]}"
+  apt-get update
+  apt-get install -y "${missing_docker_packages[@]}"
+fi
+# END Docker package completion
 
 log "Enabling Docker"
 systemctl enable docker

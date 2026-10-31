@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -16,6 +18,60 @@ from services.engineering.store import SQLiteEngineeringStore
 
 
 class QueueLifecycleTests(unittest.TestCase):
+    def test_new_ledger_and_lock_use_private_modes_under_common_umask(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state"
+            path = state / "continuous.json"
+            previous_umask = os.umask(0o022)
+            try:
+                ledger = JsonContinuousLedger(path)
+                item = WorkItem("private ledger probe", WorkKind.REPAIR)
+                ledger.register(item)
+                self.assertEqual(stat.S_IMODE(state.stat().st_mode), 0o700)
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+                lock = path.with_name(f"{path.name}.write.lock")
+                self.assertEqual(stat.S_IMODE(lock.stat().st_mode), 0o600)
+            finally:
+                os.umask(previous_umask)
+
+    def test_ledger_tightens_owned_file_and_rejects_symlink(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "continuous.json"
+            path.write_text('{"schema":1,"records":{},"archives":{}}', encoding="utf-8")
+            path.chmod(0o644)
+            ledger = JsonContinuousLedger(path)
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+            target = root / "outside.json"
+            target.write_text('{"schema":1,"records":{},"archives":{}}', encoding="utf-8")
+            path.unlink()
+            path.symlink_to(target)
+            with self.assertRaises(PermissionError):
+                JsonContinuousLedger(path)
+            self.assertEqual(target.read_text(encoding="utf-8"), '{"schema":1,"records":{},"archives":{}}')
+
+    def test_ledger_rejects_group_or_world_writable_state_directory(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state"
+            state.mkdir(mode=0o700)
+            state.chmod(0o777)
+            with self.assertRaisesRegex(PermissionError, "must be owned.*not writable"):
+                JsonContinuousLedger(state / "continuous.json")
+            self.assertFalse((state / "continuous.json").exists())
+
+    def test_ledger_rejects_symlinked_ancestor_without_creating_redirected_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            actual = root / "actual"
+            actual.mkdir()
+            alias = root / "alias"
+            alias.symlink_to(actual, target_is_directory=True)
+
+            with self.assertRaisesRegex(PermissionError, "symlinked storage path component"):
+                JsonContinuousLedger(alias / "state" / "continuous.json")
+
+            self.assertFalse((actual / "state").exists())
+
     def _run_cli(self, root: Path, ledger_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [

@@ -126,6 +126,7 @@ function Get-WslDistroVersion([string]$Name) {
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptRoot
 $BootstrapPath = Join-Path $ScriptRoot "bootstrap-wsl.sh"
+$WslConfPath = Join-Path $ScriptRoot "wsl_conf.py"
 
 if (-not $Branch) {
   try {
@@ -143,6 +144,9 @@ if (-not $Branch) {
 if ($ValidateOnly) {
   if (-not (Test-Path $BootstrapPath)) {
     throw "Missing $BootstrapPath"
+  }
+  if (-not (Test-Path $WslConfPath)) {
+    throw "Missing $WslConfPath"
   }
 
   $sample = @(
@@ -176,6 +180,9 @@ if ($Repo -notmatch "^https://github[.]com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+[.]git
 }
 if (-not (Test-Path $BootstrapPath)) {
   throw "Missing local bootstrap script: $BootstrapPath"
+}
+if (-not (Test-Path $WslConfPath)) {
+  throw "Missing local WSL configuration helper: $WslConfPath"
 }
 
 Write-Step "Checking Windows version"
@@ -211,7 +218,6 @@ if ($LASTEXITCODE -ne 0) {
   }
 }
 Invoke-Native wsl.exe @("--update")
-Invoke-Native wsl.exe @("--set-default-version", "2")
 
 Write-Step "Resolving Ubuntu distribution"
 $online = Get-OnlineDistros
@@ -230,7 +236,7 @@ if ($installed -notcontains $Distro) {
   Invoke-Native wsl.exe @("--install", "--distribution", $Distro, "--no-launch", "--web-download")
 }
 
-Write-Step "Ensuring WSL2 and selecting default distribution"
+Write-Step "Ensuring selected distribution uses WSL2"
 $currentVersion = Get-WslDistroVersion -Name $Distro
 if ($currentVersion -eq 2) {
   Write-Host "[zwslcore-wsl] $Distro is already WSL2; skipping conversion."
@@ -239,23 +245,12 @@ if ($currentVersion -eq 2) {
   Start-Sleep -Seconds 1
   Invoke-Native wsl.exe @("--set-version", $Distro, "2")
 }
-Invoke-Native wsl.exe @("--set-default", $Distro)
 
-Write-Step "Enabling systemd and interop"
-$wslConf = @'
-[boot]
-systemd=true
-
-[interop]
-enabled=true
-appendWindowsPath=true
-'@
-$encodedConf = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($wslConf))
-Invoke-Native wsl.exe @(
-  "-d", $Distro, "-u", "root", "--",
-  "bash", "-lc",
-  "echo '$encodedConf' | base64 -d > /etc/wsl.conf"
-)
+Write-Step "Enabling systemd while preserving existing WSL configuration"
+$wslConfText = Get-Content -Raw -LiteralPath $WslConfPath
+$encodedWslConf = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($wslConfText))
+$wslConfCommand = "echo '$encodedWslConf' | base64 -d > /tmp/zwslcore-wsl-conf.py && python3 /tmp/zwslcore-wsl-conf.py /etc/wsl.conf '$LinuxUser'"
+Invoke-Native wsl.exe @("-d", $Distro, "-u", "root", "--", "bash", "-lc", $wslConfCommand)
 
 Write-Step "Restarting WSL to activate systemd"
 Invoke-Native wsl.exe @("--terminate", $Distro)
@@ -282,21 +277,9 @@ if (($newUserMarker | Out-String).Trim() -eq "yes") {
   Invoke-Native wsl.exe @("-d", $Distro, "-u", "root", "--", "rm", "-f", "/var/lib/zwslcore-user-created")
 }
 
-Write-Step "Setting the default Linux user"
-$userCommand = "if grep -q '^\[user\]' /etc/wsl.conf; then " +
-  "if sed -n '/^\[user\]/,/^\[/p' /etc/wsl.conf | grep -q '^default='; then " +
-  "sed -i '/^\[user\]/,/^\[/ s/^default=.*/default=$LinuxUser/' /etc/wsl.conf; " +
-  "else sed -i '/^\[user\]/a default=$LinuxUser' /etc/wsl.conf; fi; " +
-  "else printf '\n[user]\ndefault=$LinuxUser\n' >> /etc/wsl.conf; fi"
-Invoke-Native wsl.exe @("-d", $Distro, "-u", "root", "--", "bash", "-lc", $userCommand)
-
-Write-Step "Restarting WSL to apply default-user settings"
-Invoke-Native wsl.exe @("--terminate", $Distro)
-Start-Sleep -Seconds 2
-
 Write-Step "Validating WSL, systemd, Docker and development tools"
 $validate = 'set -Eeuo pipefail; test "$(ps -p 1 -o comm=)" = systemd; docker version >/dev/null; docker compose version >/dev/null; git --version; python3 --version; curl --version | head -1'
-Invoke-Native wsl.exe @("-d", $Distro, "--", "bash", "-lc", $validate)
+Invoke-Native wsl.exe @("-d", $Distro, "-u", $LinuxUser, "--", "bash", "-lc", $validate)
 
 if (-not $SkipStackInstall) {
   Write-Step "Cloning/updating zwslcore and installing the AI stack"
@@ -317,7 +300,7 @@ make install 2>&1 | tee ~/zwslcore-install.log
 "@
   $encodedInstall = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($linuxInstall))
   Invoke-Native wsl.exe @(
-    "-d", $Distro, "--",
+    "-d", $Distro, "-u", $LinuxUser, "--",
     "bash", "-lc",
     "echo '$encodedInstall' | base64 -d | bash"
   )

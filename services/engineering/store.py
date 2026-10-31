@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import dataclasses
 import json
+import os
 import sqlite3
+import stat
 import time
 from contextlib import contextmanager
 from pathlib import Path
 from collections.abc import Iterator
 
 from .models import Checkpoint, EngineeringTask, PushPolicy, TaskRisk, TaskStatus
+from .secure_storage import reject_symlink_components
 
 
 class SQLiteEngineeringStore:
@@ -18,8 +20,40 @@ class SQLiteEngineeringStore:
 
     def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path or Path.home() / ".zwslcore" / "state" / "engineering.db")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._prepare_private_storage()
         self._init_schema()
+
+    def _prepare_private_storage(self) -> None:
+        """Create or validate owner-only SQLite storage before opening it."""
+        reject_symlink_components(self.path.parent)
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        reject_symlink_components(self.path.parent)
+        parent = self.path.parent.lstat()
+        if (
+            not stat.S_ISDIR(parent.st_mode)
+            or parent.st_uid != os.geteuid()
+            or stat.S_IMODE(parent.st_mode) & 0o022
+        ):
+            raise PermissionError(
+                f"engineering state directory must be owned by the current user and not writable by other users: {self.path.parent}"
+            )
+
+        try:
+            descriptor = os.open(
+                self.path,
+                os.O_CREAT | os.O_EXCL | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+        except FileExistsError:
+            existing = self.path.lstat()
+            if not stat.S_ISREG(existing.st_mode) or existing.st_uid != os.geteuid():
+                raise PermissionError(
+                    f"engineering database must be a regular file owned by the current user: {self.path}"
+                )
+            if stat.S_IMODE(existing.st_mode) & 0o077:
+                os.chmod(self.path, 0o600)
+        else:
+            os.close(descriptor)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:

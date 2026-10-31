@@ -16,6 +16,11 @@ read -rsp 'API key: ' AI_API_KEY; echo; export AI_API_KEY
 bash scripts/ai.sh chat
 ```
 
+The AI CLI defaults to the local Provider. It reads only allowlisted settings
+from this checkout's `.env` when that file has private permissions; process
+environment values take precedence, and assignments are parsed without shell
+execution. Remote endpoints must be configured explicitly and use HTTPS.
+
 The Cloud Shell project ID is not an API key. The default CLI endpoint
 `http://127.0.0.1:8080/v1/chat/completions` only works when a compatible
 local Provider is running. Do not use `make install` in Cloud Shell unless
@@ -130,30 +135,14 @@ needed, then save its login in
 The Admin UI rejects the environment master key; keep that key for API and
 service authentication. `LITELLM_PROXY_ADMIN_NAME=zeaz` sets LiteLLM's default
 proxy-admin identity to `zeaz` instead of `default_user_id`; this is separate
-from the individual UI account login. LiteLLM connects to a host PostgreSQL
-database named `litellm` using `DATABASE_URL`; Compose does not publish or run
-PostgreSQL. Keep `LITELLM_DB_PASSWORD` and `LITELLM_SALT_KEY` stable across
-restarts and upgrades. The PostgreSQL role/database must exist before starting
-LiteLLM, and the server must accept connections from the zwslcore Compose
-bridge only. Back up the PostgreSQL database along with the local application
-data.
-
-### Host PostgreSQL setup
-
-Install PostgreSQL on the WSL host and create the `litellm` role/database
-before running `make install`. The installer fails fast when the database is
-unreachable.
-
-```bash
-sudo apt install postgresql
-sudo -u postgres psql -c "CREATE ROLE litellm LOGIN PASSWORD 'REPLACE_ME_DATABASE_PASSWORD';"
-sudo -u postgres psql -c "CREATE DATABASE litellm OWNER litellm;"
-```
-
-Use the same password as `LITELLM_DB_PASSWORD` in `.env`. Keep the server
-bound to loopback and restart PostgreSQL after changing authentication or
-listen settings. The database is operator-managed: it is outside the
-`scripts/backup.py` bundle, so dump it separately (see
+from the individual UI account login. LiteLLM and PostgreSQL run in the private
+Compose network. PostgreSQL has no published host port, uses a persistent
+named volume, and is health-checked before LiteLLM starts. Keep
+`LITELLM_DB_PASSWORD`, `POSTGRES_SUPERUSER_PASSWORD`, and `LITELLM_SALT_KEY`
+stable across restarts and upgrades. Existing host PostgreSQL installations
+can be copied with `make postgres-migrate-docker`; the migration creates a
+verified backup and leaves the host cluster available for rollback. Back up
+PostgreSQL separately with `make postgres-backup` (see
 [Local backup and isolated restore](docs/BACKUP-RESTORE.md)).
 
 ## Operations

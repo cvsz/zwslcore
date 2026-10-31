@@ -10,6 +10,7 @@ import sqlite3
 import stat
 import sys
 from collections import Counter
+from contextlib import closing
 from pathlib import Path
 from typing import Callable
 
@@ -180,7 +181,8 @@ class EngineeringMetrics:
         if not self.database.is_file():
             raise FileNotFoundError(self.database)
         uri = f"{self.database.resolve().as_uri()}?mode=ro"
-        with sqlite3.connect(uri, uri=True, timeout=1) as connection:
+        # sqlite3's own context manager only ends the transaction; closing() releases the handle.
+        with closing(sqlite3.connect(uri, uri=True, timeout=1)) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA query_only = ON")
             tasks = connection.execute(

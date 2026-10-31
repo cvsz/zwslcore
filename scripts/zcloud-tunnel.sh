@@ -3,7 +3,6 @@
 set -Eeuo pipefail
 umask 077
 
-NAME="${ZCLOUD_TUNNEL_NAME:-zcloud-tunnel}"
 CONFIG="${ZCLOUD_CONFIG:-$HOME/.cloudflared/config.yml}"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/zwslcore-cloudflared"
 PIDFILE="$STATE/supervisor.pid"
@@ -106,6 +105,8 @@ case "${1:-status}" in
   logs) touch "$LOGFILE"; tail -n 80 "$LOGFILE" ;;
   install-autostart)
     # Shell startup is best effort, not a boot-level service.
+    # The literal $HOME must expand when the user's shell later reads this line.
+    # shellcheck disable=SC2016
     line='[ -x "$HOME/zwslcore/scripts/zcloud-tunnel.sh" ] && "$HOME/zwslcore/scripts/zcloud-tunnel.sh" start >/dev/null 2>&1 || true'
     if ! grep -Fq 'scripts/zcloud-tunnel.sh" start' "$HOME/.bashrc" 2>/dev/null; then
       printf '\n# zwslcore Cloud Shell tunnel (opt-in)\n%s\n' "$line" >> "$HOME/.bashrc"

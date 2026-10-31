@@ -3,10 +3,78 @@
 set -Eeuo pipefail
 umask 077
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required" >&2; exit 127; }
+ZWSLCORE_AI_REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+export ZWSLCORE_AI_REPO_ROOT
 exec python3 - "$@" <<'PY'
 import json, os, sys, pathlib, urllib.request, urllib.error, urllib.parse, ssl, stat, tempfile, time
+import re
 
-VERSION = "1.0.0"
+def load_dotenv():
+    path = pathlib.Path(os.environ["ZWSLCORE_AI_REPO_ROOT"]) / ".env"
+    explicit_api_key = "AI_API_KEY" in os.environ
+    if path.is_symlink():
+        sys.exit("Refusing symlink .env")
+    if not path.exists():
+        return
+    if not path.is_file():
+        sys.exit("Invalid .env file")
+    try:
+        info = path.stat()
+        if info.st_size > 1_000_000:
+            sys.exit(".env file too large")
+        if stat.S_IMODE(info.st_mode) & 0o077:
+            sys.exit("Insecure .env permissions: run chmod 600 .env")
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        sys.exit("Unable to read .env safely")
+
+    allowed = {
+        "AI_API_URL", "AI_MODEL", "AI_API_KEY", "GEMINI_API_KEY",
+        "OPENROUTER_API_KEY", "GROQ_API_KEY", "PROVIDER_CLIENT_KEY",
+        "AI_TIMEOUT", "AI_SESSION", "AI_SYSTEM_PROMPT",
+    }
+    parsed = {}
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = re.fullmatch(r"(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)", line)
+        if not match:
+            continue
+        key, value = match.groups()
+        if key not in allowed or key in os.environ:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        parsed[key] = value
+
+    resolved = {}
+    for key, value in parsed.items():
+        reference = re.fullmatch(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", value)
+        if reference:
+            variable = reference.group(1)
+            value = os.environ.get(variable, parsed.get(variable, ""))
+        resolved[key] = value
+    os.environ.update(resolved)
+
+    provider_keys = {
+        "generativelanguage.googleapis.com": "GEMINI_API_KEY",
+        "openrouter.ai": "OPENROUTER_API_KEY",
+        "api.groq.com": "GROQ_API_KEY",
+    }
+    if not explicit_api_key and not os.environ.get("AI_API_KEY"):
+        try:
+            hostname = urllib.parse.urlsplit(os.environ.get("AI_API_URL", "")).hostname or ""
+        except ValueError:
+            hostname = ""
+        source = provider_keys.get(hostname.lower())
+        if source:
+            os.environ["AI_API_KEY"] = os.environ.get(source, "")
+
+load_dotenv()
+
+VERSION = "1.0.1"
 ROOT = pathlib.Path(os.environ.get("XDG_STATE_HOME", str(pathlib.Path.home()/".local/state"))) / "zwslcore-ai"
 SESSION = os.environ.get("AI_SESSION", "default")
 if not SESSION or not all(c.isalnum() or c in "-_" for c in SESSION) or len(SESSION)>64:
@@ -39,12 +107,25 @@ def save(messages):
         if os.path.exists(name): os.unlink(name)
 def endpoint():
     url=os.environ.get("AI_API_URL",DEFAULT_URL)
-    p=urllib.parse.urlsplit(url)
+    try:
+        p=urllib.parse.urlsplit(url)
+        port = p.port  # Force validation of malformed and out-of-range ports.
+    except ValueError:
+        sys.exit("Invalid AI_API_URL")
+    if port == 0:
+        sys.exit("Invalid AI_API_URL")
     if p.scheme not in ("http","https") or not p.hostname or p.username or p.password or p.fragment:
         sys.exit("Invalid AI_API_URL")
     if p.scheme=="http" and p.hostname not in ("localhost","127.0.0.1","::1"):
         sys.exit("Remote AI_API_URL must use HTTPS")
     return url
+def safe_endpoint(url):
+    parsed = urllib.parse.urlsplit(url)
+    host = parsed.hostname or ""
+    if ":" in host and not host.startswith("["):
+        host = "[" + host + "]"
+    port = ":" + str(parsed.port) if parsed.port else ""
+    return urllib.parse.urlunsplit((parsed.scheme, host + port, parsed.path, "", ""))
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):
         raise urllib.error.HTTPError(args[0].full_url,302,"Redirect refused",{},None)
@@ -74,8 +155,16 @@ def ask(prompt):
             obj=json.loads(data)
         answer=obj["choices"][0]["message"]["content"]
         if not isinstance(answer,str): raise ValueError("Non-text response")
-    except (urllib.error.URLError,ValueError,KeyError,IndexError,TypeError,TimeoutError) as e:
-        sys.exit("Inference failed: "+str(e))
+    except urllib.error.HTTPError as e:
+        sys.exit("Inference failed: HTTP "+str(e.code))
+    except urllib.error.URLError as e:
+        reason = e.reason
+        if isinstance(reason, TimeoutError):
+            sys.exit("Inference failed: request timed out")
+        sys.exit("Inference failed: network error ("+type(reason).__name__+")")
+    except (ValueError,KeyError,IndexError,TypeError,TimeoutError) as e:
+        # These messages contain parser/validation details but never endpoint URLs.
+        sys.exit("Inference failed: "+type(e).__name__)
     print(answer)
     history.extend(({"role":"user","content":prompt},{"role":"assistant","content":answer}))
     save(history)
@@ -86,7 +175,7 @@ def main():
         print("zwslcore AI CLI "+VERSION+"\nUsage: bash scripts/ai.sh [doctor|selftest|ask TEXT|chat|sessions|clear|version]\nEnvironment: AI_API_URL (default local provider), AI_MODEL (default zeaz-auto), AI_API_KEY/PROVIDER_CLIENT_KEY, AI_SESSION, AI_TIMEOUT")
     elif cmd=="version": print(VERSION)
     elif cmd=="doctor":
-        print("Python:",sys.version.split()[0]); print("Endpoint:",endpoint()); print("Model:",os.environ.get("AI_MODEL","zeaz-auto"))
+        print("Python:",sys.version.split()[0]); print("Endpoint:",safe_endpoint(endpoint())); print("Model:",os.environ.get("AI_MODEL","zeaz-auto"))
         print("Credential configured:",bool(os.environ.get("AI_API_KEY") or os.environ.get("PROVIDER_CLIENT_KEY") or os.environ.get("OPENAI_API_KEY")))
         print("Session:",SESSION)
     elif cmd=="selftest":

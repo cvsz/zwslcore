@@ -11,10 +11,27 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 2
 fi
 
-if [[ ! -f "$PROFILE_FILE" ]]; then
+if [[ -L "$PROFILE_FILE" || ( -e "$PROFILE_FILE" && ! -f "$PROFILE_FILE" ) ]]; then
+  printf 'Refusing missing, non-regular, or symlink Cloudflare profile: %s\n' "$PROFILE_FILE" >&2
+  exit 2
+fi
+if [[ ! -e "$PROFILE_FILE" ]]; then
   install -m 0600 "$ROOT/.env.cloudflare.example" "$PROFILE_FILE"
   printf 'Created %s from the example. Set the real public hostname there.\n' "$PROFILE_FILE"
 fi
+[[ -f "$PROFILE_FILE" && ! -L "$PROFILE_FILE" ]] || {
+  printf 'Refusing missing, non-regular, or symlink Cloudflare profile: %s\n' "$PROFILE_FILE" >&2
+  exit 2
+}
+profile_mode="$(stat -c '%a' "$PROFILE_FILE")"
+if (( (8#$profile_mode & 8#077) != 0 )); then
+  printf 'Cloudflare profile permissions are too open; run chmod 600 %s.\n' "$PROFILE_FILE" >&2
+  exit 2
+fi
+
+# Parse values as data; never execute the ignored profile as shell code.
+# shellcheck source=scripts/lib/env.sh
+source "$ROOT/scripts/lib/env.sh"
 
 # Keep long-lived port overrides in the ignored profile so every compose
 # invocation that loads the overlay agrees; backfill older copies.
@@ -24,13 +41,25 @@ for entry in PROVIDER_PORT=18086 OPENWEBUI_PORT=18087 OPENWEBUI_BIND_ADDRESS=127
   fi
 done
 
-# shellcheck disable=SC1090
-set -a; source "$PROFILE_FILE"; set +a
+PROVIDER_PORT="$(dotenv_get "$PROFILE_FILE" PROVIDER_PORT 18086)"
+OPENWEBUI_PORT="$(dotenv_get "$PROFILE_FILE" OPENWEBUI_PORT 18087)"
+OPENWEBUI_BIND_ADDRESS="$(dotenv_get "$PROFILE_FILE" OPENWEBUI_BIND_ADDRESS)"
 
-if [[ "${OPENWEBUI_BIND_ADDRESS:-}" != "127.0.0.1" ]]; then
+if [[ "$OPENWEBUI_BIND_ADDRESS" != "127.0.0.1" ]]; then
   printf 'Cloudflare profile requires OPENWEBUI_BIND_ADDRESS=127.0.0.1 in %s.\n' "$PROFILE_FILE" >&2
   exit 2
 fi
+for port in "$PROVIDER_PORT" "$OPENWEBUI_PORT"; do
+  if [[ ! "$port" =~ ^[0-9]{1,5}$ ]]; then
+    printf 'Cloudflare profile contains an invalid port. Expected 1-65535.\n' >&2
+    exit 2
+  fi
+  port_number=$((10#$port))
+  if (( port_number < 1 || port_number > 65535 )); then
+    printf 'Cloudflare profile contains an invalid port. Expected 1-65535.\n' >&2
+    exit 2
+  fi
+done
 
 docker compose \
   --project-directory "$ROOT" \
