@@ -46,6 +46,8 @@ Windows 11
         └── Open WebUI
 ```
 
+See [Architecture](docs/architecture.md) and [ADR 0001](docs/adr/0001-zwslcore-runtime-boundary.md) for the runtime contract and proposed ZEAZDEV integration boundaries. Video inference, MiniMax H3 workers, media QA, and publication remain outside zwslcore; this documentation does not claim those integrations are implemented.
+
 All published ports bind to `127.0.0.1` by default. To expose Open WebUI
 directly on the LAN, set `OPENWEBUI_BIND_ADDRESS=0.0.0.0` in `.env`; this
 allows other devices that can reach the host to connect to the authenticated

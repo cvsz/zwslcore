@@ -1,7 +1,7 @@
 # AGENTS.md — Repository Agent Contract
 
 ## Purpose
-This repository is a reusable GitHub project template. Changes must remain generic, secure by default, easy to customize, and safe to inherit into a newly generated repository.
+This repository is the WSL2-first `zwslcore` local AI/model-serving runtime and engineering control plane. It also inherits ZEAZDEV's reusable repository-governance and agent-execution baseline. Runtime behavior and compatibility are defined by the application code, Compose configuration, README, and operations docs; template/bootstrap utilities are secondary and must never overwrite or destabilize the runtime.
 
 ## Operating rules
 - Read README.md, CONTRIBUTING.md, SECURITY.md, ROADMAP.md, and the closest AGENTS.md before editing.
@@ -10,13 +10,13 @@ This repository is a reusable GitHub project template. Changes must remain gener
 - Never weaken CI, security scanning, dependency review, branch protections, or release controls merely to make a check pass.
 - Never commit credentials, tokens, private keys, production endpoints, personal data, or realistic secrets. Use documented placeholders.
 - Do not invent project-specific owners, domains, deployment providers, package registries, cloud accounts, or credentials.
-- Preserve template portability across languages and frameworks unless a file explicitly declares a narrower scope.
+- Preserve the WSL2/local-first runtime, loopback-by-default network posture, and Cloud Shell CLI-only profile. Keep inherited template/bootstrap utilities generic within their own scope; do not apply template changes to application runtime files blindly.
 - Reuse existing workflows and documents instead of creating overlapping alternatives.
 - Pin permissions for GitHub Actions to least privilege and prefer maintained first-party/verified actions.
 - Treat external input, generated artifacts, pull requests from forks, and dependency metadata as untrusted.
 
-## Template placeholders
-Use obvious placeholders such as `PROJECT_NAME`, `OWNER`, `example.com`, and `REPLACE_ME`. Any generated repository must be able to find and replace placeholders without exposing secrets.
+## Inherited template/bootstrap utilities
+Use obvious placeholders such as `PROJECT_NAME`, `OWNER`, `example.com`, and `REPLACE_ME` only in bootstrap scaffolds and generated-project templates. Never let placeholder values silently replace real runtime configuration. Preserve the existing application, production secrets, DNS ownership, and license attribution during bootstrap or rollout.
 
 ## Review skill
 
@@ -33,7 +33,7 @@ Use obvious placeholders such as `PROJECT_NAME`, `OWNER`, `example.com`, and `RE
 
 ## Change workflow
 1. Inspect the current exact branch/head and existing files.
-2. Identify the smallest missing or inconsistent template capability.
+2. Identify the smallest missing or inconsistent runtime, integration, or governance capability.
 3. Add tests or validation first when practical.
 4. Implement without widening scope.
 5. Run the relevant validation and security checks.
@@ -41,7 +41,7 @@ Use obvious placeholders such as `PROJECT_NAME`, `OWNER`, `example.com`, and `RE
 7. Open a pull request; do not claim merge/release readiness without exact-head evidence.
 
 ## Verification
-At minimum, verify Markdown/YAML syntax for touched files, workflow permissions/triggers, links and placeholders, absence of committed secrets, and consistency between README, templates, governance, security, and release documentation.
+At minimum, verify Markdown/YAML syntax for touched files, workflow permissions/triggers, links and placeholders, absence of committed secrets, and consistency between README, Compose/runtime configuration, installers, provider behavior, governance, security, and release documentation.
 
 ## Pull requests and releases
 PRs must state scope, tests, security impact, compatibility/migration impact, documentation impact, deployment impact, and rollback. Releases require green required checks and explicit evidence; never infer production readiness from documentation alone.
@@ -70,6 +70,6 @@ Add a child AGENTS.md only when a subtree has durable rules that differ from thi
 
 ## Existing-repository rollout
 
-When applying this template to an established repository, follow [docs/repository-rollout.md](docs/repository-rollout.md). Audit the target first and port only missing compatible controls. Do not overwrite repository-specific AGENTS rules, CI matrices, release workflows, infrastructure ownership, or operational evidence merely to match this template.
+When applying the inherited ZEAZDEV repository baseline to another established repository, follow [docs/repository-rollout.md](docs/repository-rollout.md). Audit the target first and port only missing compatible controls. Do not overwrite repository-specific AGENTS rules, CI matrices, release workflows, infrastructure ownership, or operational evidence merely to match the baseline.
 
 For repository administration, `scripts/github_admin.py` requires an authenticated GitHub identity with Administration permission. Treat successful read-back verification—not script presence—as evidence that the controls are effective.

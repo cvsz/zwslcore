@@ -1,8 +1,8 @@
 # Changelog
 
-All notable changes to this template are documented here.
+All notable changes to this repository are documented here.
 
-The format follows Keep a Changelog conventions; generated projects should adopt an explicit versioning policy appropriate to their product.
+The repository combines the zwslcore runtime with an inherited ZEAZDEV governance baseline. The format follows Keep a Changelog conventions; application release/version policy remains a separate explicit decision.
 
 ## [Unreleased]
 
@@ -23,6 +23,7 @@ The format follows Keep a Changelog conventions; generated projects should adopt
 
 ### Changed
 
+- Clarified the zwslcore runtime architecture and the proposed boundary between LLM serving and the separate ZEAZDEV Video Factory.
 - Reorganized reusable AI documentation into `guides/`, `playbooks/`, and `prompts/`.
 - Pinned baseline first-party GitHub Actions to immutable commit SHAs.
 - Expanded CODEOWNERS coverage for repository policy, AI, ECC, skills, components, and plugin manifests.
