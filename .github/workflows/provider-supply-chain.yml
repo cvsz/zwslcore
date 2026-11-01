@@ -38,7 +38,6 @@ jobs:
           severity-cutoff: high
           output-format: json
           output-file: artifacts/provider-scan.json
-          allowlist: .github/workflows/provider-scan-allowlist.txt
 
       - name: Generate Provider image SPDX SBOM
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
