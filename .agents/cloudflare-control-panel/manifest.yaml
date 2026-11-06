@@ -1,0 +1,247 @@
+# Global Cloudflare Control Panel — Agent Manifest
+# This manifest makes all Cloudflare Control Panel skills available to any AI client
+# Supports both MCP integration and standalone shell fallback mode
+
+manifest_version: 1.0.0
+created: 2026-11-06
+description: "Global Cloudflare Control Panel with MCP integration and standalone shell fallback — all features, ready for any AI client"
+
+# Global agent definition
+agent:
+  name: "cloudflare-controller"
+  version: "1.0.0"
+  description: "Cloudflare Control Panel agent — manages tunnels, DNS, health checks, and config validation via MCP protocol or shell commands"
+  type: "control-panel"
+  supports_mcp: true
+  supports_shell: true
+  mcp_endpoint: null  # Will be set per AI client configuration
+
+# Skill registry — all 7 Cloudflare MCP skills
+skills:
+  # Skill 1: Tunnel Status Check
+  - skill_id: "cvsz-cloudflare-mcp-status"
+    name: "Cloudflare MCP Tunnel Status Check"
+    version: "1.0.0"
+    description: "Checks tunnel status, health, and config via MCP protocol or shell fallback"
+    category: "status"
+    mcp_integration: true
+    shell_fallback: true
+    billing:
+      mode: "fixed"
+      base_price: 5
+      reservation: 5
+    plans: ["pro", "business", "enterprise"]
+    permissions:
+      destructive: false
+    evidence_required: true
+    expose_secrets: false
+    completion_states: ["VERIFIED", "BLOCKED", "NOT_VERIFIED"]
+    mcp_fields: ["mcp_source", "mcp_endpoint"]
+    shell_fields: ["shell_output"]
+
+  # Skill 2: DNS Records Management
+  - skill_id: "cvsz-cloudflare-mcp-dns"
+    name: "Cloudflare MCP DNS Records Management"
+    version: "1.0.0"
+    description: "Manages DNS CNAME records via MCP protocol or shell fallback"
+    category: "dns"
+    mcp_integration: true
+    shell_fallback: true
+    billing:
+      mode: "fixed"
+      base_price: 8
+      reservation: 8
+    plans: ["pro", "business", "enterprise"]
+    permissions:
+      destructive: false
+    evidence_required: true
+    expose_secrets: false
+    completion_states: ["VERIFIED", "BLOCKED", "NOT_VERIFIED"]
+    mcp_fields: ["mcp_source", "mcp_endpoint"]
+    shell_fields: ["shell_output"]
+
+  # Skill 3: Setup Verification
+  - skill_id: "cvsz-cloudflare-mcp-setup"
+    name: "Cloudflare MCP Setup Verification"
+    version: "1.0.0"
+    description: "Verifies complete Cloudflare setup (tunnel + DNS + service health) via MCP protocol or shell fallback"
+    category: "setup"
+    mcp_integration: true
+    shell_fallback: true
+    billing:
+      mode: "fixed"
+      base_price: 15
+      reservation: 15
+    plans: ["pro", "business", "enterprise"]
+    permissions:
+      destructive: false
+    evidence_required: true
+    expose_secrets: false
+    completion_states: ["VERIFIED", "BLOCKED", "NOT_VERIFIED"]
+    mcp_fields: ["mcp_source", "mcp_endpoint", "last_verified"]
+    shell_fields: ["shell_output"]
+
+  # Skill 4: Tunnel Creation
+  - skill_id: "cvsz-cloudflare-mcp-create"
+    name: "Cloudflare MCP Tunnel Creation"
+    version: "1.0.0"
+    description: "Creates new Cloudflare tunnels via MCP protocol or shell fallback"
+    category: "creation"
+    mcp_integration: true
+    shell_fallback: true
+    billing:
+      mode: "fixed"
+      base_price: 20
+      reservation: 20
+    plans: ["pro", "business", "enterprise"]
+    permissions:
+      destructive: false
+    evidence_required: true
+    expose_secrets: false
+    completion_states: ["VERIFIED", "BLOCKED", "NOT_VERIFIED"]
+    mcp_fields: ["mcp_source", "mcp_endpoint", "tunnel_url", "tunnel_id"]
+    shell_fields: ["shell_output"]
+
+  # Skill 5: DNS Update
+  - skill_id: "cvsz-cloudflare-mcp-update"
+    name: "Cloudflare MCP DNS Update"
+    version: "1.0.0"
+    description: "Updates DNS CNAME records via MCP protocol or shell fallback"
+    category: "update"
+    mcp_integration: true
+    shell_fallback: true
+    billing:
+      mode: "fixed"
+      base_price: 10
+      reservation: 10
+    plans: ["pro", "business", "enterprise"]
+    permissions:
+      destructive: false
+    evidence_required: true
+    expose_secrets: false
+    completion_states: ["VERIFIED", "BLOCKED", "NOT_VERIFIED"]
+    mcp_fields: ["mcp_source", "mcp_endpoint", "records_updated"]
+    shell_fields: ["shell_output"]
+
+  # Skill 6: Health Check
+  - skill_id: "cvsz-cloudflare-mcp-health"
+    name: "Cloudflare MCP Health Check"
+    version: "1.0.0"
+    description: "Checks overall Cloudflare setup health via MCP protocol or shell fallback"
+    category: "health"
+    mcp_integration: true
+    shell_fallback: true
+    billing:
+      mode: "fixed"
+      base_price: 12
+      reservation: 12
+    plans: ["pro", "business", "enterprise"]
+    permissions:
+      destructive: false
+    evidence_required: true
+    expose_secrets: false
+    completion_states: ["VERIFIED", "BLOCKED", "NOT_VERIFIED"]
+    mcp_fields: ["mcp_source", "mcp_endpoint", "overall_status"]
+    shell_fields: ["shell_output"]
+
+  # Skill 7: Config Validation
+  - skill_id: "cvsz-cloudflare-mcp-validate"
+    name: "Cloudflare MCP Config Validation"
+    version: "1.0.0"
+    description: "Validates Cloudflare config correctness via MCP protocol or shell fallback"
+    category: "validation"
+    mcp_integration: true
+    shell_fallback: true
+    billing:
+      mode: "fixed"
+      base_price: 6
+      reservation: 6
+    plans: ["pro", "business", "enterprise"]
+    permissions:
+      destructive: false
+    evidence_required: true
+    expose_secrets: false
+    completion_states: ["VERIFIED", "BLOCKED", "NOT_VERIFIED"]
+    mcp_fields: ["mcp_source", "mcp_endpoint", "config_valid"]
+    shell_fields: ["shell_output"]
+
+# Global workflows
+workflows:
+
+  # Workflow 1: Standalone mode (no MCP server required)
+  - name: "standalone-mode"
+    description: "All skills work without MCP server, fallback to shell commands automatically"
+    skills: [
+      "cvsz-cloudflare-mcp-status",
+      "cvsz-cloudflare-mcp-dns",
+      "cvsz-cloudflare-mcp-setup",
+      "cvsz-cloudflare-mcp-create",
+      "cvsz-cloudflare-mcp-update",
+      "cvsz-cloudflare-mcp-health",
+      "cvsz-cloudflare-mcp-validate"
+    ]
+    mode: "standalone"
+    note: "Skills automatically detect MCP availability and fall back to shell commands"
+
+  # Workflow 2: MCP integrated mode
+  - name: "mcp-integrated"
+    description: "All skills use MCP protocol when server is available, with shell fallback"
+    skills: [
+      "cvsz-cloudflare-mcp-status",
+      "cvsz-cloudflare-mcp-dns",
+      "cvsz-cloudflare-mcp-setup",
+      "cvsz-cloudflare-mcp-create",
+      "cvsz-cloudflare-mcp-update",
+      "cvsz-cloudflare-mcp-health",
+      "cvsz-cloudflare-mcp-validate"
+    ]
+    mode: "mcp_integrated"
+    note: "Requires MCP server configuration (MCP_ENDPOINT environment variable)"
+
+  # Workflow 3: Health check workflow
+  - name: "health-check-workflow"
+    description: "Run setup verification, then health check, then config validation"
+    steps:
+      - "cvsz-cloudflare-mcp-setup"
+      - "cvsz-cloudflare-mcp-health"
+      - "cvsz-cloudflare-mcp-validate"
+    mode: "both"  # Works in both standalone and MCP modes
+
+  # Workflow 4: Full control panel workflow
+  - name: "full-control-panel"
+    description: "Complete workflow: status -> DNS -> create/update -> health -> validation"
+    steps:
+      - "cvsz-cloudflare-mcp-status"
+      - "cvsz-cloudflare-mcp-dns"
+      - "cvsz-cloudflare-mcp-create"  # or cvsz-cloudflare-mcp-update for modifications
+      - "cvsz-cloudflare-mcp-health"
+      - "cvsz-cloudflare-mcp-validate"
+    mode: "both"  # Works in both standalone and MCP modes
+
+# MCP configuration guidelines
+mcp_guidelines:
+  - "Set MCP_ENDPOINT environment variable to enable MCP mode"
+  - "Skills automatically fall back to shell if MCP is unavailable"
+  - "All output includes mcp_source field to indicate data origin"
+  - "Use mcp_endpoint field to determine if MCP mode is active"
+  - "Completion states: VERIFIED, BLOCKED, NOT_VERIFIED (both modes)"
+  - "Never expose secret values in MCP payload or shell output"
+
+# Global notes
+notes: |
+  This manifest provides global access to all Cloudflare Control Panel features
+  for any AI client, with full MCP integration and standalone shell fallback.
+  
+  Key features:
+  - 7 complete skills covering all Cloudflare control panel features
+  - MCP integration with automatic shell fallback
+  - Works with any AI client that supports this manifest format
+  - Full evidence tracking and completion states
+  - Policy-compliant (SUPER ULTRA AI ORC Version 2.1)
+  - Generic and reusable across repositories
+
+# Version history
+version_history:
+  - version: "1.0.0"
+    date: "2026-11-06"
+    changes: "Initial release — 7 Cloudflare MCP skills with MCP integration and shell fallback"

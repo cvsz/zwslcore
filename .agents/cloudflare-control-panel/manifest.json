@@ -1,0 +1,181 @@
+{
+  "manifest_version": "1.0.0",
+  "created": "2026-11-06",
+  "description": "Global Cloudflare Control Panel with MCP integration and standalone shell fallback",
+  "agent": {
+    "name": "cloudflare-controller",
+    "version": "1.0.0",
+    "description": "Cloudflare Control Panel agent — manages tunnels, DNS, health checks, and config validation via MCP protocol or shell commands",
+    "type": "control-panel",
+    "supports_mcp": true,
+    "supports_shell": true
+  },
+  "skills": [
+    {
+      "skill_id": "cvsz-cloudflare-mcp-status",
+      "name": "Cloudflare MCP Tunnel Status Check",
+      "version": "1.0.0",
+      "category": "status",
+      "mcp_integration": true,
+      "shell_fallback": true,
+      "billing": {"mode": "fixed", "base_price": 5, "reservation": 5},
+      "plans": ["pro", "business", "enterprise"],
+      "permissions": {"destructive": false},
+      "evidence_required": true,
+      "expose_secrets": false,
+      "completion_states": ["VERIFIED", "BLOCKED", "NOT_VERIFIED"],
+      "mcp_fields": ["mcp_source", "mcp_endpoint"],
+      "shell_fields": ["shell_output"]
+    },
+    {
+      "skill_id": "cvsz-cloudflare-mcp-dns",
+      "name": "Cloudflare MCP DNS Records Management",
+      "version": "1.0.0",
+      "category": "dns",
+      "mcp_integration": true,
+      "shell_fallback": true,
+      "billing": {"mode": "fixed", "base_price": 8, "reservation": 8},
+      "plans": ["pro", "business", "enterprise"],
+      "permissions": {"destructive": false},
+      "evidence_required": true,
+      "expose_secrets": false,
+      "completion_states": ["VERIFIED", "BLOCKED", "NOT_VERIFIED"],
+      "mcp_fields": ["mcp_source", "mcp_endpoint"],
+      "shell_fields": ["shell_output"]
+    },
+    {
+      "skill_id": "cvsz-cloudflare-mcp-setup",
+      "name": "Cloudflare MCP Setup Verification",
+      "version": "1.0.0",
+      "category": "setup",
+      "mcp_integration": true,
+      "shell_fallback": true,
+      "billing": {"mode": "fixed", "base_price": 15, "reservation": 15},
+      "plans": ["pro", "business", "enterprise"],
+      "permissions": {"destructive": false},
+      "evidence_required": true,
+      "expose_secrets": false,
+      "completion_states": ["VERIFIED", "BLOCKED", "NOT_VERIFIED"],
+      "mcp_fields": ["mcp_source", "mcp_endpoint", "last_verified"],
+      "shell_fields": ["shell_output"]
+    },
+    {
+      "skill_id": "cvsz-cloudflare-mcp-create",
+      "name": "Cloudflare MCP Tunnel Creation",
+      "version": "1.0.0",
+      "category": "creation",
+      "mcp_integration": true,
+      "shell_fallback": true,
+      "billing": {"mode": "fixed", "base_price": 20, "reservation": 20},
+      "plans": ["pro", "business", "enterprise"],
+      "permissions": {"destructive": false},
+      "evidence_required": true,
+      "expose_secrets": false,
+      "completion_states": ["VERIFIED", "BLOCKED", "NOT_VERIFIED"],
+      "mcp_fields": ["mcp_source", "mcp_endpoint", "tunnel_url", "tunnel_id"],
+      "shell_fields": ["shell_output"]
+    },
+    {
+      "skill_id": "cvsz-cloudflare-mcp-update",
+      "name": "Cloudflare MCP DNS Update",
+      "version": "1.0.0",
+      "category": "update",
+      "mcp_integration": true,
+      "shell_fallback": true,
+      "billing": {"mode": "fixed", "base_price": 10, "reservation": 10},
+      "plans": ["pro", "business", "enterprise"],
+      "permissions": {"destructive": false},
+      "evidence_required": true,
+      "expose_secrets": false,
+      "completion_states": ["VERIFIED", "BLOCKED", "NOT_VERIFIED"],
+      "mcp_fields": ["mcp_source", "mcp_endpoint", "records_updated"],
+      "shell_fields": ["shell_output"]
+    },
+    {
+      "skill_id": "cvsz-cloudflare-mcp-health",
+      "name": "Cloudflare MCP Health Check",
+      "version": "1.0.0",
+      "category": "health",
+      "mcp_integration": true,
+      "shell_fallback": true,
+      "billing": {"mode": "fixed", "base_price": 12, "reservation": 12},
+      "plans": ["pro", "business", "enterprise"],
+      "permissions": {"destructive": false},
+      "evidence_required": true,
+      "expose_secrets": false,
+      "completion_states": ["VERIFIED", "BLOCKED", "NOT_VERIFIED"],
+      "mcp_fields": ["mcp_source", "mcp_endpoint", "overall_status"],
+      "shell_fields": ["shell_output"]
+    },
+    {
+      "skill_id": "cvsz-cloudflare-mcp-validate",
+      "name": "Cloudflare MCP Config Validation",
+      "version": "1.0.0",
+      "category": "validation",
+      "mcp_integration": true,
+      "shell_fallback": true,
+      "billing": {"mode": "fixed", "base_price": 6, "reservation": 6},
+      "plans": ["pro", "business", "enterprise"],
+      "permissions": {"destructive": false},
+      "evidence_required": true,
+      "expose_secrets": false,
+      "completion_states": ["VERIFIED", "BLOCKED", "NOT_VERIFIED"],
+      "mcp_fields": ["mcp_source", "mcp_endpoint", "config_valid"],
+      "shell_fields": ["shell_output"]
+    }
+  ],
+  "workflows": {
+    "standalone-mode": {
+      "description": "All skills work without MCP server, fallback to shell commands automatically",
+      "skills": [
+        "cvsz-cloudflare-mcp-status",
+        "cvsz-cloudflare-mcp-dns",
+        "cvsz-cloudflare-mcp-setup",
+        "cvsz-cloudflare-mcp-create",
+        "cvsz-cloudflare-mcp-update",
+        "cvsz-cloudflare-mcp-health",
+        "cvsz-cloudflare-mcp-validate"
+      ],
+      "mode": "standalone"
+    },
+    "mcp-integrated": {
+      "description": "All skills use MCP protocol when server is available, with shell fallback",
+      "skills": [
+        "cvsz-cloudflare-mcp-status",
+        "cvsz-cloudflare-mcp-dns",
+        "cvsz-cloudflare-mcp-setup",
+        "cvsz-cloudflare-mcp-create",
+        "cvsz-cloudflare-mcp-update",
+        "cvsz-cloudflare-mcp-health",
+        "cvsz-cloudflare-mcp-validate"
+      ],
+      "mode": "mcp_integrated"
+    },
+    "health-check-workflow": {
+      "description": "Run setup verification, then health check, then config validation",
+      "steps": ["cvsz-cloudflare-mcp-setup", "cvsz-cloudflare-mcp-health", "cvsz-cloudflare-mcp-validate"],
+      "mode": "both"
+    },
+    "full-control-panel": {
+      "description": "Complete workflow: status -> DNS -> create/update -> health -> validation",
+      "steps": ["cvsz-cloudflare-mcp-status", "cvsz-cloudflare-mcp-dns", "cvsz-cloudflare-mcp-create", "cvsz-cloudflare-mcp-health", "cvsz-cloudflare-mcp-validate"],
+      "mode": "both"
+    }
+  },
+  "mcp_guidelines": [
+    "Set MCP_ENDPOINT environment variable to enable MCP mode",
+    "Skills automatically fall back to shell if MCP is unavailable",
+    "All output includes mcp_source field to indicate data origin",
+    "Use mcp_endpoint field to determine if MCP mode is active",
+    "Completion states: VERIFIED, BLOCKED, NOT_VERIFIED (both modes)",
+    "Never expose secret values in MCP payload or shell output"
+  ],
+  "notes": "This manifest provides global access to all Cloudflare Control Panel features for any AI client, with full MCP integration and standalone shell fallback.",
+  "version_history": [
+    {
+      "version": "1.0.0",
+      "date": "2026-11-06",
+      "changes": "Initial release — 7 Cloudflare MCP skills with MCP integration and shell fallback"
+    }
+  ]
+}
