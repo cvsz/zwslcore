@@ -100,27 +100,31 @@ class InMemoryRateLimiter:
             return True, 0
 
         now = self.clock()
-
-        # Evict oldest bucket if we're at capacity and bucket is new
-        if bucket not in self._events and len(self._events) >= self.MAX_BUCKETS:
-            self._events.popitem(last=False)
-
-        events = self._events[bucket]
         cutoff = now - self.window_seconds
 
+        # Evict oldest bucket if we're at capacity and bucket is new
+        if bucket not in self._events:
+            if len(self._events) >= self.MAX_BUCKETS:
+                self._events.popitem(last=False)
+            self._events[bucket] = deque()
+
+        events = self._events[bucket]
+
+        # Drop expired events. A bucket whose window has fully elapsed keeps
+        # its (now-empty) deque until the next request reuses it, at which
+        # point expired events are pruned and a fresh timestamp is appended.
+        # This keeps the table bounded by MAX_BUCKETS (oldest bucket evicted
+        # when full) and avoids retaining empty shells for one-shot clients.
         while events and events[0] <= cutoff:
             events.popleft()
 
-        # Clean up empty buckets
-        if not events and bucket in self._events:
-            del self._events[bucket]
-
         remaining = max(0, self.limit - len(events))
         if not remaining:
+            # Reject: drop the bucket so it does not linger as an empty shell
+            self._events.pop(bucket, None)
             return False, 0
 
         events.append(now)
-        # Mark as recently used
         self._events.move_to_end(bucket)
         return True, remaining - 1
 

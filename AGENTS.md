@@ -3,6 +3,36 @@
 ## Purpose
 This repository is a reusable GitHub project template. Changes must remain generic, secure by default, easy to customize, and safe to inherit into a newly generated repository.
 
+## Canonical Policy Reference
+
+- **Organization-wide policy:** SUPER ULTRA AI ORC (Version 2.1)
+- **Canonical URL:** https://github.com/cvsz/zeaz/blob/main/zeaz.md
+- **Applies to:** All repositories under GitHub account `cvsz` that are not Archived
+- **Root AGENTS.md requirement:** Every repository in scope must have a root `AGENTS.md` that references this canonical policy
+
+### Priority of Instructions (per SUPER ULTRA AI ORC Section 13.2)
+
+1. Platform/system safety and legal requirements
+2. Mandatory organization-wide security, safety, evidence and release-governance requirements
+3. Repository-root and nearest path-specific instructions which may add stricter requirements
+4. Canonical ZeaZDev engineering policy
+5. Task-specific requirements
+
+Repository-local instructions **may** be stricter than the canonical policy but **must not** weaken mandatory security, safety, evidence, validation, or release requirements defined at the organization level.
+
+### Instruction Discovery Order (per SUPER ULTRA AI ORC Section 13.3)
+
+When managing conflicting instructions, follow this order:
+1. Platform/system safety and legal requirements
+2. Mandatory organization-wide security, safety, evidence and release-governance requirements
+3. Repository-root and nearest path-specific instructions which may add stricter requirements
+4. Canonical ZeaZDev engineering policy
+5. Task-specific requirements
+
+Instruction levels **must not** override or bypass higher-priority requirements. If requirements cannot be made consistent, stop the specific change, record the conflict, and request decision.
+
+## Operating rules
+
 ## Operating rules
 - Read README.md, CONTRIBUTING.md, SECURITY.md, ROADMAP.md, and the closest AGENTS.md before editing.
 - Keep code, configuration, filenames, commit messages, and technical documentation in English.
