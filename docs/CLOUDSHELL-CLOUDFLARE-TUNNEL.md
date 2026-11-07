@@ -73,7 +73,7 @@ Rollback: restore the backed-up safe configuration, validate and restart; do not
 
 ## Git and AI CLI follow-up
 
-Use `git status --short`, `git fetch origin --prune`, then `git pull --ff-only` only if the checkout can safely fast-forward. No force reset. Check `bash scripts/ai.sh doctor`, `bash scripts/ai.sh selftest`, and the tests relevant to provider routing. On `main`, `ai.sh` defaults to a loopback provider and does not load a repository `.env` automatically; coordinate with the existing `.env` and Cloud Shell/Ollama PRs before changing that behavior. Never `source` an untrusted `.env`.
+Use `git status --short`, `git fetch origin --prune`, then `git pull --ff-only` only if the checkout can safely fast-forward. No force reset. Check `bash scripts/ai.sh doctor`, `bash scripts/ai.sh selftest`, and the tests relevant to provider routing. On `main`, `ai.sh` defaults to a loopback provider and loads only an allowlisted set of AI settings from a repository `.env` when that file has `0600` permissions; it never sources the file into a shell, and process environment variables take precedence over `.env` values. On Cloud Shell, export credentials directly into the environment instead of relying on the repository `.env`, which is not part of this checkout by default. Never `source` an untrusted `.env`.
 
 Cloudflare Access and SSH access alone do not grant ChatGPT-in-Chat an SSH execution tool. An explicitly authorized execution connector is still required.
 
