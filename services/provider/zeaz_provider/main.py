@@ -318,7 +318,7 @@ async def authenticate(
     bearer = _bearer_token(authorization)
     if not configured or not (
         verify_client_key(x_api_key or "", configured)
-        | verify_client_key(bearer, configured)
+        or verify_client_key(bearer, configured)
     ):
         raise HTTPException(status_code=401, detail="Invalid API key")
 

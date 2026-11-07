@@ -139,8 +139,8 @@ The wrapper executes the checks inside `Ubuntu-26.04` against `~/zwslcore`, so i
 
 The repository pins default images to stable releases and allows deliberate overrides in `.env`:
 
-- Ollama: `0.35.1`
-- LiteLLM: `v1.104.0`
-- Open WebUI: `v0.11.4`
+- Ollama: `0.40.2@sha256:b86366bb528bbf7f1424435d165028497a5b69bf6ddb4fa5a87102e2b79f44fb`
+- LiteLLM: `v1.104.2@sha256:3d88bd757134a00e8c00237b85a021ab1f6d54abb9c1df750f411dbe7256a500`
+- Open WebUI: `v0.11.4@sha256:9591b13f13843c7721c2b8eaf7382846c81b3ffe126526d1888d1fed50c6a33f`
 
 The installer upgrades only known old mutable defaults such as `:latest` and `:main`; explicit custom image values are preserved.
