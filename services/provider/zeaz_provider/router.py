@@ -9,6 +9,7 @@ import httpx
 from .capabilities import CapabilityRegistry, ModelLifecycle
 from .config import ModelRoute, Settings
 from .cost import cost_allowed, cost_rank, parse_cost_class, parse_cost_policy
+from .errors import ErrorKind
 from .observability import Observability
 from .providers import ProviderClient, ProviderError
 
@@ -53,7 +54,7 @@ class ProviderRouter:
         try:
             configured = self.settings.models[name]
         except KeyError as exc:
-            raise ProviderError(f"Unknown model: {name}", 404) from exc
+            raise ProviderError(f"Unknown model: {name}", 404, kind=ErrorKind.NOT_FOUND) from exc
         candidates = (configured.primary, *configured.fallbacks)
         policy = parse_cost_policy(self.settings.cost_policy)
         available = [

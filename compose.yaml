@@ -98,8 +98,14 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434/v1
       LITELLM_BASE_URL: http://litellm:4000/v1
       LITELLM_API_KEY: ${LITELLM_MASTER_KEY}
+    # Provider Gateway bind address. Defaults to loopback only so local clients
+    # keep working and the Provider is not reachable from the LAN. To allow the
+    # ZCoder client (192.168.1.85) to reach http://192.168.1.100:8080/v1, the
+    # operator must set PROVIDER_BIND_ADDRESS=0.0.0.0 in .env AND apply the
+    # host firewall rule documented in docs/NETWORK-TOPOLOGY.md restricting
+    # ingress to 192.168.1.85/32. Do not expose 0.0.0.0:8080 without that rule.
     ports:
-      - "127.0.0.1:${PROVIDER_PORT:-8080}:8080"
+      - "${PROVIDER_BIND_ADDRESS:-127.0.0.1}:${PROVIDER_PORT:-8080}:8080"
     read_only: true
     tmpfs:
       - /tmp:size=64m,noexec,nosuid
