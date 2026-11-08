@@ -21,7 +21,7 @@
 
 ## Merged & Verified (71)
 
-All 71 merged PRs (#1–#4, #8–#22, #23–#47, #48–#60, #61, #63, #68, #74, #75, #78, #92, #93, #97, #98, #99, #105, #106, #109, #110, #111, plus Dependabot #56, #58, #59) have changes present on `main` at HEAD `bc1eb1c`. No regressions detected.
+All 71 merged PRs (#1–#4, #8–#22, #23–#47, #48–#60, #61, #63, #68, #74, #75, #78, #92, #93, #97, #98, #99, #105, #106, #109, #110, #111, plus Dependabot #56, #58, #59) have changes present on `main` at HEAD `bc1eb1c`. The feature branch `feat/zwslcore-enterprise-hardening` is at `40fdd84`. No regressions detected.
 
 ---
 

@@ -60,7 +60,7 @@
 
 ## Merged PRs (71)
 
-All 71 merged PRs have been verified as present on `main` at HEAD `bc1eb1c`. Key merged PRs include:
+All 71 merged PRs have been verified as present on `main` at HEAD `bc1eb1c`; the feature branch `feat/zwslcore-enterprise-hardening` is at `40fdd84`. Key merged PRs include:
 - #1–#4: Foundation (WSL2 AI stack, WSL hardening, production hardening)
 - #8–#22: Engineering control plane (task store, worktrees, MCP, validation, cost policy)
 - #23–#47: Engineering resilience (evidence, resume, undo/redo, delegation, queue reconciliation)

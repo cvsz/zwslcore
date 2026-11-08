@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-08  
 **Repository:** https://github.com/cvsz/zwslcore  
-**Baseline SHA:** `bc1eb1c` (Merge PR #111)  
+**Baseline SHA:** `40fdd84` (audit: complete enterprise hardening and issue #108 remediation)  
 **Feature branch:** `feat/zwslcore-enterprise-hardening`  
 **Overall Status:** **PARTIALLY_VERIFIED**
 
