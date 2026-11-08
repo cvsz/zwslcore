@@ -1,7 +1,7 @@
 # All Pull Requests Matrix — cvsz/zwslcore
 
 **Generated:** 2026-11-08  
-**Total PRs:** 110 | **Open:** 22 | **Merged:** 71 | **Closed unmerged:** 17 | **Draft:** 10
+**Total PRs:** 111 | **Open:** 23 | **Merged:** 71 | **Closed unmerged:** 17 | **Draft:** 10
 
 ---
 
@@ -9,6 +9,7 @@
 
 | # | Title | Author | Base | Head SHA | Changed Files | Add/Del | Review Status | CI Status | Recommended Action |
 |---|-------|--------|------|----------|---------------|---------|---------------|-----------|-------------------|
+| #112 | audit: complete enterprise hardening and issue #108 remediation | cvsz | main@40fdd84 | e10f5560deb799f1b2cf29f9a83c6c688d1a6798 | 24 | 1978/6 | Unreviewed | Not run | Review and merge — issue #108 remediation, supply-chain tests, complete audit documentation |
 | #64 | feat(provider): opt-in free-tier gateways and coding benchmark | cvsz | main@386d0bb884b7 | 2122448c37f1 | 5 | 257/0 | Unreviewed | Not run | Keep DRAFT; verify free provider routing doesn't bypass zero-cost policy |
 | #69 | fix(ai): read private .env safely in ai.sh | cvsz | main@bb38ae3c0e63 | 918fab437e0e | 2 | 89/3 | Unreviewed | Not run | Keep DRAFT; security-sensitive dotenv handling needs independent review |
 | #70 | fix(ai): automatically read secure .env provider configuration | cvsz | main@bb38ae3c0e63 | 2a0878ea2aae | 2 | 98/1 | Unreviewed | Not run | Review and merge — security hardening for dotenv loading |
