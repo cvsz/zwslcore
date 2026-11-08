@@ -3,10 +3,10 @@ Enterprise Repository Baseline
 
 Repository: cvsz/zwslcore
 Date: 2026-11-08
-Current HEAD: 6a9b45f (post-audit merge commit on main, PR #110)
+Current HEAD: b2f6ee9 (post-audit merge commit on main, PR #110)
 Previous HEAD: c3723f2fb0e24939abf8654f22344bd49f3a531f (PR #109 merge on main)
 Current Branch: main
-Remote: origin/main (6a9b45fc8986250fcc6ae433204c7db48d9d1df6, up to date)
+Remote: origin/main (b2f6ee9f6ec89ee6073aba208a099880fff674da, up to date)
 
 Repository Status
 ----------------
@@ -17,7 +17,7 @@ Repository Status
 
 Current HEAD Analysis
 --------------------
-The current HEAD at 6a9b45f is 21 commits ahead of the previously authorized SHA a72fc000284f0eb2d69b6f67ed6c2e3eb17ebe9e.
+The current HEAD at b2f6ee9 is 21 commits ahead of the previously authorized SHA a72fc000284f0eb2d69b6f67ed6c2e3eb17ebe9e.
 Authorization status: The previously authorized SHA is INVALID for the current HEAD, as new commits were pushed after the approval.
 
 SHA Timeline
@@ -28,7 +28,7 @@ SHA Timeline
 - 95cc9ca565bcb3f18af57411a7e117f49a55a406: Exact head reviewed by policedbc on 2026-11-01
   - CHANGES_REQUESTED due to CVE-2026-115557 build-scan-sbom failure
   - Not an approval; comment-only status
-- 6a9b45fc8986250fcc6ae433204c7db48d9d1df6: Current local HEAD
+- b2f6ee9f6ec89ee6073aba208a099880fff674da: Current local HEAD
   - 21 commits beyond a72fc00
   - Includes CVE allowlist updates and Dockerfile modifications
 
