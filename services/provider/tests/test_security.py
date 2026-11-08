@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import os
 import unittest
 from unittest import mock
 
@@ -13,18 +15,24 @@ from zeaz_provider.config import (
     ProviderConfig,
     RouteTarget,
     Settings,
+    load_settings,
 )
 from zeaz_provider.cost import cost_allowed
 from zeaz_provider.errors import ErrorKind, ProviderError
 from zeaz_provider.main import app
 from zeaz_provider.router import ProviderRouter
-from zeaz_provider.security import client_key_digest, verify_client_key
+from zeaz_provider.security import InMemoryRateLimiter, client_key_digest, verify_client_key
 
 TEST_CLIENT_KEY = "test-client-key-12345-not-real"
 TEST_CLIENT_KEY_HASH = client_key_digest(TEST_CLIENT_KEY)
 
 
-def _provider(name: str, *, cost_class: str = CostClass.FREE_LOCAL.value) -> ProviderConfig:
+def _provider(
+    name: str,
+    *,
+    cost_class: str = CostClass.FREE_LOCAL.value,
+    total_timeout_seconds: float = 135.0,
+) -> ProviderConfig:
     return ProviderConfig(
         name=name,
         api="openai",
@@ -33,6 +41,7 @@ def _provider(name: str, *, cost_class: str = CostClass.FREE_LOCAL.value) -> Pro
         max_attempts=1,
         retry_base_seconds=0,
         retry_max_seconds=0,
+        total_timeout_seconds=total_timeout_seconds,
     )
 
 
@@ -48,7 +57,6 @@ def _settings(providers, models, client_key=TEST_CLIENT_KEY) -> Settings:
 
 class ClientKeyVerificationTests(unittest.TestCase):
     """verify_client_key must use constant-time comparison and fail closed."""
-
     def test_rejects_empty_candidate(self):
         self.assertFalse(verify_client_key("", frozenset({TEST_CLIENT_KEY_HASH})))
 
@@ -220,6 +228,150 @@ class EndpointAuthenticationTests(unittest.TestCase):
             ready = client.get("/health/ready")
         self.assertEqual(live.status_code, 200)
         self.assertEqual(ready.status_code, 200)
+
+    def test_ready_endpoint_exposes_no_infrastructure_counts(self):
+        """Unauthenticated /health/ready must not expose provider/model counts."""
+        test_settings = _settings(self._providers(), self._models())
+        with _PatchedClient(test_settings) as client:
+            response = client.get("/health/ready")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body, {"status": "ready"})
+        self.assertNotIn("providers", body)
+        self.assertNotIn("models", body)
+
+
+class LocalFirstPolicyTests(unittest.TestCase):
+    """Cloud fallback must be disabled by default; local-only mode preserved."""
+
+    def test_cloud_providers_disabled_by_default(self):
+        os.environ["FREE_CLOUD_FALLBACK_ENABLED"] = "false"
+        os.environ["ZEAZ_CLIENT_KEYS"] = "testkey"
+        os.environ["ZEAZ_CONFIG"] = "services/provider/config/providers.yaml"
+        try:
+            settings = load_settings()
+        finally:
+            for key in ("FREE_CLOUD_FALLBACK_ENABLED", "ZEAZ_CLIENT_KEYS", "ZEAZ_CONFIG"):
+                os.environ.pop(key, None)
+        self.assertNotIn("openrouter", settings.providers)
+        self.assertNotIn("gemini", settings.providers)
+        self.assertNotIn("groq", settings.providers)
+        self.assertEqual(settings.cost_policy, CostPolicy.ZERO_COST_ONLY.value)
+        # zeaz-free must resolve to ollama only (cloud fallbacks skipped).
+        route = ProviderRouter(settings, None).route("zeaz-free")
+        self.assertEqual(route.primary.provider, "ollama")
+        self.assertEqual(route.fallbacks, ())
+
+    def test_configured_providers_are_free_cost_classes(self):
+        os.environ["ZEAZ_CLIENT_KEYS"] = "testkey"
+        os.environ["ZEAZ_CONFIG"] = "services/provider/config/providers.yaml"
+        try:
+            settings = load_settings()
+        finally:
+            for key in ("ZEAZ_CLIENT_KEYS", "ZEAZ_CONFIG"):
+                os.environ.pop(key, None)
+        self.assertEqual(settings.cost_policy, CostPolicy.ZERO_COST_ONLY.value)
+        for provider in settings.providers.values():
+            self.assertIn(
+                provider.cost_class,
+                {CostClass.FREE_LOCAL.value, CostClass.FREE_REMOTE.value},
+            )
+
+
+class InMemoryRateLimiterTests(unittest.IsolatedAsyncioTestCase):
+    """The in-memory rate limiter must enforce its window and not reset on rejection."""
+
+    async def test_rejects_over_limit_and_keeps_window(self):
+        limiter = InMemoryRateLimiter(limit=3, window_seconds=60, clock=lambda: 1000.0)
+        # First three requests allowed.
+        for _ in range(3):
+            allowed, remaining = await limiter.allow("bucket-a")
+            self.assertTrue(allowed)
+        # Fourth request rejected; bucket retained so the window is not reset.
+        allowed, remaining = await limiter.allow("bucket-a")
+        self.assertFalse(allowed)
+        self.assertEqual(remaining, 0)
+        # Immediate retry must still be rejected (window not reset by rejection).
+        allowed, _ = await limiter.allow("bucket-a")
+        self.assertFalse(allowed)
+
+    async def test_different_buckets_tracked_independently(self):
+        limiter = InMemoryRateLimiter(limit=2, window_seconds=60, clock=lambda: 1000.0)
+        self.assertTrue((await limiter.allow("bucket-a"))[0])
+        self.assertTrue((await limiter.allow("bucket-b"))[0])
+        self.assertTrue((await limiter.allow("bucket-a"))[0])  # bucket-a at limit now
+        self.assertFalse((await limiter.allow("bucket-a"))[0])  # bucket-a rejected
+        # bucket-b is independent: one used, one remaining.
+        self.assertTrue((await limiter.allow("bucket-b"))[0])
+        self.assertFalse((await limiter.allow("bucket-b"))[0])
+
+    async def test_zero_limit_allows_all(self):
+        limiter = InMemoryRateLimiter(limit=0, window_seconds=60, clock=lambda: 1000.0)
+        allowed, _ = await limiter.allow("bucket-a")
+        self.assertTrue(allowed)
+
+
+class StreamDeadlineTests(unittest.IsolatedAsyncioTestCase):
+    """Streaming must enforce a total deadline, not merely a per-read timeout."""
+
+    async def _never_ending_stream(self):
+        while True:
+            await asyncio.sleep(10)
+            yield b"data: keep-alive\n\n"
+
+    async def _quick_stream(self, chunks):
+        for chunk in chunks:
+            yield chunk
+
+    async def test_stream_total_timeout_falls_back_before_emit(self):
+        # Primary times out before emitting; fallback allowed, so it should
+        # fall back to the secondary provider which succeeds.
+        primary = _provider("primary", total_timeout_seconds=0.01)
+        secondary = _provider("secondary", total_timeout_seconds=135.0)
+        settings = _settings(
+            [primary, secondary],
+            {
+                "zeaz-stream": ModelRoute(
+                    "zeaz-stream",
+                    RouteTarget("primary", "model-a"),
+                    fallbacks=(RouteTarget("secondary", "model-b"),),
+                )
+            },
+        )
+        router = ProviderRouter(settings, None)
+        route = router.route("zeaz-stream")
+
+        call_order = []
+
+        def operation(client, model):
+            call_order.append(client.config.name)
+            if client.config.name == "primary":
+                return self._never_ending_stream()
+            return self._quick_stream([b"data: ok\n\n"])
+
+        chunks = [c async for c in router.stream(route, operation)]
+        # Primary attempted first, then fallback to secondary.
+        self.assertEqual(call_order, ["primary", "secondary"])
+        self.assertEqual(chunks, [b"data: ok\n\n"])
+
+    async def test_stream_total_timeout_enforced(self):
+        # A single provider that times out before emitting must raise, not hang.
+        ollama = _provider("ollama", total_timeout_seconds=0.01)
+        settings = _settings(
+            [ollama],
+            {"zeaz-stream": ModelRoute("zeaz-stream", RouteTarget("ollama", "model"))},
+        )
+        router = ProviderRouter(settings, None)
+        route = router.route("zeaz-stream")
+
+        def operation(client, model):
+            return self._never_ending_stream()
+
+        with self.assertRaises(ProviderError) as ctx:
+            async for _ in router.stream(route, operation):
+                pass
+        # No fallback provider available -> all providers failed.
+        self.assertEqual(ctx.exception.status_code, 502)
 
 
 if __name__ == "__main__":

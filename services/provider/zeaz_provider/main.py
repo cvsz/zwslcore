@@ -396,12 +396,8 @@ async def live():
 
 
 @app.get("/health/ready")
-async def ready(request: Request):
-    return {
-        "status": "ready",
-        "providers": len(settings(request).providers),
-        "models": len(settings(request).models),
-    }
+async def ready():
+    return {"status": "ready"}
 
 
 @app.get("/metrics")

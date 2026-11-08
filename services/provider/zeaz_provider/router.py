@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any, TypeVar
@@ -153,10 +154,12 @@ class ProviderRouter:
                 )
             emitted = False
             started = time.monotonic()
+            total_timeout = client.config.total_timeout_seconds
             try:
-                async for chunk in operation(client, target.model):
-                    emitted = True
-                    yield chunk
+                async with asyncio.timeout(total_timeout):
+                    async for chunk in operation(client, target.model):
+                        emitted = True
+                        yield chunk
             except ProviderError as exc:
                 self._record_attempt(
                     target.provider,
@@ -167,6 +170,23 @@ class ProviderRouter:
                 if emitted or not exc.fallback_allowed:
                     raise
                 errors.append(f"{target.provider}/{target.model}: {exc}")
+            except TimeoutError as exc:
+                self._record_attempt(
+                    target.provider,
+                    target.model,
+                    started,
+                    error_class=ErrorKind.TIMEOUT.value,
+                )
+                timeout_error = ProviderError(
+                    "Provider stream deadline exceeded",
+                    504,
+                    kind=ErrorKind.TIMEOUT,
+                    fallback_allowed=not emitted,
+                    circuit_failure=True,
+                )
+                if emitted or not timeout_error.fallback_allowed:
+                    raise timeout_error from exc
+                errors.append(f"{target.provider}/{target.model}: {timeout_error}")
             except Exception:
                 self._record_attempt(
                     target.provider,

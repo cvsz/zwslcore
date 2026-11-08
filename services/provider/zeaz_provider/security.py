@@ -120,8 +120,9 @@ class InMemoryRateLimiter:
 
         remaining = max(0, self.limit - len(events))
         if not remaining:
-            # Reject: drop the bucket so it does not linger as an empty shell
-            self._events.pop(bucket, None)
+            # Reject while retaining the bucket's in-window timestamps so the
+            # rate-limit window continues to be enforced on the next request
+            # instead of resetting immediately.
             return False, 0
 
         events.append(now)
