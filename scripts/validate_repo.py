@@ -73,8 +73,16 @@ def tracked_markdown_files() -> list[Path]:
             capture_output=True,
         ).stdout.split(b"\0")
         others = subprocess.run(
-            ["git", "-C", str(ROOT), "ls-files", "-z", "--others",
-             "--exclude-standard", "*.md"],
+            [
+                "git",
+                "-C",
+                str(ROOT),
+                "ls-files",
+                "-z",
+                "--others",
+                "--exclude-standard",
+                "*.md",
+            ],
             check=True,
             capture_output=True,
         ).stdout.split(b"\0")
@@ -99,7 +107,11 @@ def validate_markdown_links() -> list[str]:
             target = normalize_link_target(raw)
             if not target:
                 continue
-            link_base = ROOT if md.relative_to(ROOT).as_posix() == "templates/project-readme.md" else md.parent
+            link_base = (
+                ROOT
+                if md.relative_to(ROOT).as_posix() == "templates/project-readme.md"
+                else md.parent
+            )
             resolved = (link_base / target).resolve()
             try:
                 resolved.relative_to(ROOT.resolve())

@@ -65,7 +65,10 @@ class ChangeSnapshotStore:
             meta_path,
             (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8"),
         )
-        return metadata | {"patch_path": str(patch_path), "metadata_path": str(meta_path)}
+        return metadata | {
+            "patch_path": str(patch_path),
+            "metadata_path": str(meta_path),
+        }
 
     def status(self, task_id: str) -> dict[str, Any]:
         directory = self.root / task_id
@@ -117,12 +120,22 @@ class ChangeSnapshotStore:
 
         patch_path = Path(metadata["patch_path"])
         result = subprocess.run(
-            ["git", "-C", str(target), "apply", "--binary", "--whitespace=nowarn", str(patch_path)],
+            [
+                "git",
+                "-C",
+                str(target),
+                "apply",
+                "--binary",
+                "--whitespace=nowarn",
+                str(patch_path),
+            ],
             capture_output=True,
             text=True,
         )
         if result.returncode != 0:
-            raise SnapshotError(f"redo patch apply failed: {result.stderr.strip()[:1000]}")
+            raise SnapshotError(
+                f"redo patch apply failed: {result.stderr.strip()[:1000]}"
+            )
         current = self._working_patch(target)
         if _sha256(current) != metadata["patch_sha256"]:
             self.worktrees.reset(target)
@@ -134,12 +147,32 @@ class ChangeSnapshotStore:
 
     def _working_patch(self, worktree: Path) -> bytes:
         tracked = subprocess.run(
-            ["git", "-C", str(worktree), "diff", "--binary", "--no-ext-diff", "HEAD", "--", "."],
+            [
+                "git",
+                "-C",
+                str(worktree),
+                "diff",
+                "--binary",
+                "--no-ext-diff",
+                "HEAD",
+                "--",
+                ".",
+            ],
             check=True,
             capture_output=True,
         ).stdout
         other = subprocess.run(
-            ["git", "-C", str(worktree), "ls-files", "--others", "--exclude-standard", "-z", "--", "."],
+            [
+                "git",
+                "-C",
+                str(worktree),
+                "ls-files",
+                "--others",
+                "--exclude-standard",
+                "-z",
+                "--",
+                ".",
+            ],
             check=True,
             capture_output=True,
         ).stdout
@@ -154,7 +187,17 @@ class ChangeSnapshotStore:
             if not path.is_file():
                 continue
             result = subprocess.run(
-                ["git", "-C", str(worktree), "diff", "--binary", "--no-index", "--", "/dev/null", rel],
+                [
+                    "git",
+                    "-C",
+                    str(worktree),
+                    "diff",
+                    "--binary",
+                    "--no-index",
+                    "--",
+                    "/dev/null",
+                    rel,
+                ],
                 capture_output=True,
             )
             if result.returncode not in {0, 1}:
@@ -190,7 +233,11 @@ class ChangeSnapshotStore:
         ).stdout
 
     def _write_metadata(self, task_id: str, metadata: dict[str, Any]) -> None:
-        payload = {key: value for key, value in metadata.items() if key not in {"patch_path", "metadata_path"}}
+        payload = {
+            key: value
+            for key, value in metadata.items()
+            if key not in {"patch_path", "metadata_path"}
+        }
         self._atomic_write(
             self.root / task_id / "snapshot.json",
             (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8"),

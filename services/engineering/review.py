@@ -20,7 +20,9 @@ class StaticReviewer:
         re.compile(r"^\+.*#\s*noqa\b"),
     )
 
-    def review(self, diff_text: str, allowed_paths: set[str] | None = None) -> list[ReviewFinding]:
+    def review(
+        self, diff_text: str, allowed_paths: set[str] | None = None
+    ) -> list[ReviewFinding]:
         findings: list[ReviewFinding] = []
         current_path = ""
 
@@ -70,6 +72,8 @@ class StaticReviewer:
 class SecurityGate:
     """Fail closed when deterministic blocking findings exist."""
 
-    def evaluate(self, findings: list[ReviewFinding]) -> tuple[bool, list[ReviewFinding]]:
+    def evaluate(
+        self, findings: list[ReviewFinding]
+    ) -> tuple[bool, list[ReviewFinding]]:
         blocking = [finding for finding in findings if finding.blocking]
         return (not blocking, blocking)

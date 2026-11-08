@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import json
 import os
@@ -14,7 +13,6 @@ from typing import Any
 from .models import EngineeringTask
 from .store import SQLiteEngineeringStore
 
-
 _SECRET_PATTERNS = (
     re.compile(r"(?i)(api[_-]?key|token|secret|password)\s*[=:]\s*[^\s,;]+"),
     re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"),
@@ -27,7 +25,9 @@ def _sha256_bytes(value: bytes) -> str:
 
 
 def _stable_json(value: Any) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode(
+        "utf-8"
+    )
 
 
 def redact_sensitive_text(value: str, limit: int = 1000) -> str:
@@ -60,7 +60,10 @@ class EvidenceExporter:
 
     def export(self, task: EngineeringTask) -> tuple[Path, str]:
         bundle = self._bundle(task)
-        encoded = json.dumps(bundle, indent=2, sort_keys=True, default=str).encode("utf-8") + b"\n"
+        encoded = (
+            json.dumps(bundle, indent=2, sort_keys=True, default=str).encode("utf-8")
+            + b"\n"
+        )
         digest = _sha256_bytes(encoded)
 
         target_dir = self.root / task.id
@@ -68,7 +71,7 @@ class EvidenceExporter:
         target = target_dir / "evidence.json"
         checksum = target_dir / "evidence.sha256"
         self._atomic_write(target, encoded)
-        self._atomic_write(checksum, f"{digest}  evidence.json\n".encode("utf-8"))
+        self._atomic_write(checksum, f"{digest}  evidence.json\n".encode())
         return target, digest
 
     def read(self, task_id: str) -> dict[str, Any] | None:
@@ -155,8 +158,12 @@ class EvidenceExporter:
                 {
                     "command": item.get("command", ""),
                     "returncode": item.get("returncode"),
-                    "stdout_sha256": _sha256_bytes(str(item.get("stdout", "")).encode("utf-8")),
-                    "stderr_sha256": _sha256_bytes(str(item.get("stderr", "")).encode("utf-8")),
+                    "stdout_sha256": _sha256_bytes(
+                        str(item.get("stdout", "")).encode("utf-8")
+                    ),
+                    "stderr_sha256": _sha256_bytes(
+                        str(item.get("stderr", "")).encode("utf-8")
+                    ),
                 }
                 for item in payload.get("results", [])
                 if isinstance(item, dict)
@@ -174,9 +181,7 @@ class EvidenceExporter:
             ]
         elif checkpoint.phase == "FAILED":
             summary["error"] = _redact_text(str(payload.get("error", "")))
-        elif checkpoint.phase == "BASELINE":
-            summary["branch"] = str(payload.get("branch", ""))
-        elif checkpoint.phase == "COMMIT":
+        elif checkpoint.phase == "BASELINE" or checkpoint.phase == "COMMIT":
             summary["branch"] = str(payload.get("branch", ""))
 
         return summary

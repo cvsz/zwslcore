@@ -83,11 +83,15 @@ class ContinuousEngineeringLoop:
         for iteration in range(1, self.policy.max_iterations + 1):
             if self.discover:
                 for item in self.discover():
-                    if item.fingerprint not in completed and item.fingerprint not in blocked:
+                    if (
+                        item.fingerprint not in completed
+                        and item.fingerprint not in blocked
+                    ):
                         queue.setdefault(item.fingerprint, item)
 
             candidates = [
-                item for fp, item in queue.items()
+                item
+                for fp, item in queue.items()
                 if fp not in completed and fp not in blocked
             ]
             if not candidates:
@@ -122,8 +126,12 @@ class ContinuousEngineeringLoop:
                     self.rollback(item, result)
                 if self.policy.stop_on_regression and regressions:
                     blocked.append(fp)
-                    self._checkpoint(iteration, item, "BLOCKED_REGRESSION", attempts[fp], regressions)
-                    return LoopResult(tuple(completed), tuple(blocked), iteration, "regression")
+                    self._checkpoint(
+                        iteration, item, "BLOCKED_REGRESSION", attempts[fp], regressions
+                    )
+                    return LoopResult(
+                        tuple(completed), tuple(blocked), iteration, "regression"
+                    )
                 exhausted = attempts[fp] >= item.max_attempts
                 if exhausted:
                     blocked.append(fp)
@@ -133,19 +141,37 @@ class ContinuousEngineeringLoop:
                     no_progress = 0
                 if no_progress >= self.policy.max_no_progress_iterations:
                     blocked.append(fp)
-                    self._checkpoint(iteration, item, "BLOCKED_NO_PROGRESS", attempts[fp], regressions)
-                    return LoopResult(tuple(completed), tuple(dict.fromkeys(blocked)), iteration, "no_progress")
+                    self._checkpoint(
+                        iteration,
+                        item,
+                        "BLOCKED_NO_PROGRESS",
+                        attempts[fp],
+                        regressions,
+                    )
+                    return LoopResult(
+                        tuple(completed),
+                        tuple(dict.fromkeys(blocked)),
+                        iteration,
+                        "no_progress",
+                    )
 
             previous_signature = signature
             self._checkpoint(
                 iteration,
                 item,
-                "SUCCEEDED" if passed else ("BLOCKED_ATTEMPTS" if exhausted else "RETRY"),
+                "SUCCEEDED"
+                if passed
+                else ("BLOCKED_ATTEMPTS" if exhausted else "RETRY"),
                 attempts[fp],
                 regressions,
             )
 
-        return LoopResult(tuple(completed), tuple(dict.fromkeys(blocked)), self.policy.max_iterations, "iteration_budget")
+        return LoopResult(
+            tuple(completed),
+            tuple(dict.fromkeys(blocked)),
+            self.policy.max_iterations,
+            "iteration_budget",
+        )
 
     def _checkpoint(
         self,

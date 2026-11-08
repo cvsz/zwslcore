@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 VALIDATION_MODES = {"strict", "delta"}
 
 
@@ -28,11 +27,7 @@ def evaluate_validation(
     }
 
     if mode == "strict":
-        failures = [
-            command
-            for command, code in final_codes.items()
-            if code != 0
-        ]
+        failures = [command for command, code in final_codes.items() if code != 0]
         return {
             **final,
             "mode": mode,

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
 
 from .ledger import JsonContinuousLedger
-from .models import EngineeringTask, TaskStatus
+from .models import TaskStatus
 from .store import SQLiteEngineeringStore
-
 
 TERMINAL_BLOCKED = {TaskStatus.BLOCKED, TaskStatus.FAILED}
 TERMINAL_DONE = {TaskStatus.SUCCEEDED, TaskStatus.CANCELLED}
@@ -111,7 +109,10 @@ class QueueReconciler:
                     )
                 )
 
-            if attempts != task.attempts and task.status in TERMINAL_DONE | TERMINAL_BLOCKED:
+            if (
+                attempts != task.attempts
+                and task.status in TERMINAL_DONE | TERMINAL_BLOCKED
+            ):
                 findings.append(
                     ReconcileFinding(
                         "attempt_drift",

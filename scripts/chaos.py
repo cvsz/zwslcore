@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run bounded local fault checks; Docker restarts require explicit opt-in."""
+
 from __future__ import annotations
 
 import argparse
@@ -21,7 +22,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.engineering.runtime import EngineeringRuntime, ProviderClient, ProviderTransportError
+from services.engineering.runtime import (
+    EngineeringRuntime,
+    ProviderClient,
+    ProviderTransportError,
+)
 
 
 class FaultHandler(http.server.BaseHTTPRequestHandler):
@@ -98,7 +103,9 @@ def _fault_request(scenario: str) -> None:
             client._request_json(request, timeout=0.1, attempts=2)
         except ProviderTransportError:
             return
-        raise RuntimeError(f"{scenario} was not classified as a provider infrastructure failure")
+        raise RuntimeError(
+            f"{scenario} was not classified as a provider infrastructure failure"
+        )
     finally:
         server.shutdown()
         server.server_close()
@@ -116,16 +123,26 @@ def _connection_refused() -> None:
         client._request_json(request, timeout=0.2, attempts=1)
     except ProviderTransportError:
         return
-    raise RuntimeError("connection refused was not classified as a provider infrastructure failure")
+    raise RuntimeError(
+        "connection refused was not classified as a provider infrastructure failure"
+    )
 
 
 def run_fault_suite() -> dict[str, Any]:
     scenarios = []
     for name in ("reset", "timeout", "malformed", "http-503"):
         _fault_request(name)
-        scenarios.append({"name": name, "result": "PASS", "classification": "infrastructure"})
+        scenarios.append(
+            {"name": name, "result": "PASS", "classification": "infrastructure"}
+        )
     _connection_refused()
-    scenarios.append({"name": "connection-refused", "result": "PASS", "classification": "infrastructure"})
+    scenarios.append(
+        {
+            "name": "connection-refused",
+            "result": "PASS",
+            "classification": "infrastructure",
+        }
+    )
 
     try:
         EngineeringRuntime._parse_changes('{"changes":{}}')
@@ -138,11 +155,17 @@ def run_fault_suite() -> dict[str, Any]:
     )
     if EngineeringRuntime._changes_within_scope(scope_case, {"services"}):
         raise RuntimeError("out-of-scope structured edit passed the path gate")
-    scenarios.append({"name": "structured-output-and-path-gate", "result": "PASS", "classification": "engineering-validation"})
+    scenarios.append(
+        {
+            "name": "structured-output-and-path-gate",
+            "result": "PASS",
+            "classification": "engineering-validation",
+        }
+    )
 
     return {
         "schema": 1,
-        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "created_at": dt.datetime.now(dt.UTC).isoformat(),
         "source": _source_metadata(),
         "mode": "loopback fault injection; no Docker service mutation",
         "status": "PASS",
@@ -162,7 +185,7 @@ def _dotenv_value(name: str, default: str = "") -> str:
     for line in path.read_text(encoding="utf-8").splitlines():
         item = line.strip()
         if item.startswith(prefix):
-            value = item[len(prefix):]
+            value = item[len(prefix) :]
             if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
                 value = value[1:-1]
             return value
@@ -171,7 +194,13 @@ def _dotenv_value(name: str, default: str = "") -> str:
 
 def _container_health(container: str) -> str:
     result = subprocess.run(
-        ["docker", "inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}", container],
+        [
+            "docker",
+            "inspect",
+            "--format",
+            "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}",
+            container,
+        ],
         capture_output=True,
         text=True,
         timeout=10,
@@ -206,7 +235,9 @@ def _wait_healthy(container: str, timeout: float = 180.0) -> float:
         if health in {"unhealthy", "none"}:
             raise RuntimeError(f"restart target {container} reported health={health}")
         time.sleep(2)
-    raise TimeoutError(f"restart target {container} did not become healthy within {timeout:g}s")
+    raise TimeoutError(
+        f"restart target {container} did not become healthy within {timeout:g}s"
+    )
 
 
 def _wait_provider_ready(api_port: str, timeout: float = 120.0) -> float:
@@ -224,32 +255,56 @@ def _wait_provider_ready(api_port: str, timeout: float = 120.0) -> float:
     raise TimeoutError("Provider readiness did not recover after the service restart")
 
 
-def _send_inference(api_url: str, token: str, model: str, result_queue: queue.Queue[dict[str, Any]]) -> None:
-    payload = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": "Write a numbered list of 30 brief facts about safe software maintenance."}],
-        "temperature": 0,
-        "max_tokens": 512,
-    }).encode("utf-8")
+def _send_inference(
+    api_url: str, token: str, model: str, result_queue: queue.Queue[dict[str, Any]]
+) -> None:
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Write a numbered list of 30 brief facts about safe software maintenance.",
+                }
+            ],
+            "temperature": 0,
+            "max_tokens": 512,
+        }
+    ).encode("utf-8")
     request = urllib.request.Request(
         api_url,
         data=payload,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
         method="POST",
     )
     try:
         with urllib.request.urlopen(request, timeout=180) as response:
             body = json.loads(response.read().decode("utf-8"))
             choices = body.get("choices")
-            content = choices[0].get("message", {}).get("content") if isinstance(choices, list) and choices else None
-            if response.status != 200 or not isinstance(content, str) or not content.strip():
-                result_queue.put({"outcome": "invalid_response", "http_status": response.status})
+            content = (
+                choices[0].get("message", {}).get("content")
+                if isinstance(choices, list) and choices
+                else None
+            )
+            if (
+                response.status != 200
+                or not isinstance(content, str)
+                or not content.strip()
+            ):
+                result_queue.put(
+                    {"outcome": "invalid_response", "http_status": response.status}
+                )
             else:
                 result_queue.put({"outcome": "success", "http_status": response.status})
     except urllib.error.HTTPError as exc:
         result_queue.put({"outcome": "http_error", "http_status": exc.code})
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        result_queue.put({"outcome": "transport_error", "error_type": type(exc).__name__})
+        result_queue.put(
+            {"outcome": "transport_error", "error_type": type(exc).__name__}
+        )
     except Exception as exc:
         result_queue.put({"outcome": "client_error", "error_type": type(exc).__name__})
 
@@ -293,10 +348,14 @@ def run_provider_restart_during_preflight() -> dict[str, Any]:
         ) -> dict[str, Any]:
             if request.full_url.endswith("/models") and not self.triggered:
                 self.triggered = True
-                self.restart_thread = threading.Thread(target=restart_provider, daemon=True)
+                self.restart_thread = threading.Thread(
+                    target=restart_provider, daemon=True
+                )
                 self.restart_thread.start()
                 if not restart_started.wait(timeout=5):
-                    raise TimeoutError("Provider restart did not start during preflight")
+                    raise TimeoutError(
+                        "Provider restart did not start during preflight"
+                    )
                 deadline = time.monotonic() + 15
                 restart_observed = False
                 while time.monotonic() < deadline:
@@ -309,17 +368,23 @@ def run_provider_restart_during_preflight() -> dict[str, Any]:
                         break
                     time.sleep(0.05)
                 if not restart_observed:
-                    raise TimeoutError("Provider restart was not observed during preflight")
+                    raise TimeoutError(
+                        "Provider restart was not observed during preflight"
+                    )
             return super()._request_json(request, timeout=timeout, attempts=attempts)
 
-    client = RestartingProviderClient(base_url=base_url, api_key=token, model="zeaz-fast", timeout=15)
+    client = RestartingProviderClient(
+        base_url=base_url, api_key=token, model="zeaz-fast", timeout=15
+    )
     first_preflight_outcome = "success"
     try:
         client.preflight()
     except ProviderTransportError:
         first_preflight_outcome = "infrastructure_error"
     except Exception as exc:
-        raise RuntimeError(f"unexpected Provider preflight result: {type(exc).__name__}") from exc
+        raise RuntimeError(
+            f"unexpected Provider preflight result: {type(exc).__name__}"
+        ) from exc
 
     if client.restart_thread is None:
         raise RuntimeError("Provider restart was not triggered during preflight")
@@ -327,7 +392,9 @@ def run_provider_restart_during_preflight() -> dict[str, Any]:
     if client.restart_thread.is_alive() or restart_result.get("returncode") != 0:
         raise RuntimeError("Provider restart failed during preflight")
     if "error_type" in restart_result:
-        raise RuntimeError(f"Provider restart failed during preflight: {restart_result['error_type']}")
+        raise RuntimeError(
+            f"Provider restart failed during preflight: {restart_result['error_type']}"
+        )
 
     healthy_wait = _wait_healthy(container)
     ready_wait = _wait_provider_ready(api_port)
@@ -362,7 +429,9 @@ def run_model_unavailable_check() -> dict[str, Any]:
         client.preflight()
     except RuntimeError as exc:
         if "is not advertised by provider" not in str(exc):
-            raise RuntimeError(f"unexpected model-unavailable classification: {type(exc).__name__}") from exc
+            raise RuntimeError(
+                f"unexpected model-unavailable classification: {type(exc).__name__}"
+            ) from exc
         return {
             "name": "model-unavailable-preflight",
             "result": "PASS",
@@ -396,7 +465,9 @@ def run_restart_during_inference(service: str) -> dict[str, Any]:
     time.sleep(2.0)
     if not worker.is_alive():
         result = result_queue.get_nowait()
-        raise RuntimeError(f"inference completed before {service} restart: {result['outcome']}")
+        raise RuntimeError(
+            f"inference completed before {service} restart: {result['outcome']}"
+        )
 
     restart_started = time.monotonic()
     restarted = subprocess.run(
@@ -415,12 +486,22 @@ def run_restart_during_inference(service: str) -> dict[str, Any]:
     if worker.is_alive():
         raise TimeoutError(f"inference request did not settle after {service} recovery")
     outcome = result_queue.get_nowait()
-    if outcome.get("outcome") == "transport_error" and outcome.get("error_type") == "TimeoutError":
+    if (
+        outcome.get("outcome") == "transport_error"
+        and outcome.get("error_type") == "TimeoutError"
+    ):
         raise TimeoutError(f"inference request timed out after {service} recovery")
-    if outcome.get("outcome") in {"http_error", "client_error", "invalid_response"} and int(outcome.get("http_status", 500)) < 500:
-        raise RuntimeError(f"inference returned an unexpected client failure during {service} restart")
+    if (
+        outcome.get("outcome") in {"http_error", "client_error", "invalid_response"}
+        and int(outcome.get("http_status", 500)) < 500
+    ):
+        raise RuntimeError(
+            f"inference returned an unexpected client failure during {service} restart"
+        )
     if outcome.get("outcome") not in {"success", "http_error", "transport_error"}:
-        raise RuntimeError(f"inference returned an unhandled outcome during {service} restart")
+        raise RuntimeError(
+            f"inference returned an unhandled outcome during {service} restart"
+        )
 
     return {
         "name": f"{service}-restart-during-inference",
@@ -466,13 +547,17 @@ def main() -> int:
         if args.check_model_unavailable:
             report["scenarios"].append(run_model_unavailable_check())
         if args.restart_service or args.restart_provider_during_preflight:
-            report["mode"] = "loopback fault injection and explicit local Docker restart scenarios"
+            report["mode"] = (
+                "loopback fault injection and explicit local Docker restart scenarios"
+            )
             report["limitations"] = [
                 "Disk pressure is not simulated by filling the host filesystem.",
                 "Cold model pull is not triggered to avoid large network and disk downloads.",
             ]
         elif args.check_model_unavailable:
-            report["mode"] = "loopback fault injection and explicit local model preflight check"
+            report["mode"] = (
+                "loopback fault injection and explicit local model preflight check"
+            )
             report["limitations"] = [
                 "Provider/container restart scenarios were not invoked in this report.",
                 "Disk pressure is not simulated by filling the host filesystem.",
@@ -488,7 +573,10 @@ def main() -> int:
             path.write_bytes(encoded_bytes)
             path.chmod(0o600)
             checksum = path.with_suffix(path.suffix + ".sha256")
-            checksum.write_text(f"{hashlib.sha256(encoded_bytes).hexdigest()}  {path.name}\n", encoding="utf-8")
+            checksum.write_text(
+                f"{hashlib.sha256(encoded_bytes).hexdigest()}  {path.name}\n",
+                encoding="utf-8",
+            )
             checksum.chmod(0o600)
         print(json.dumps(report, indent=2, sort_keys=True))
     except Exception as exc:

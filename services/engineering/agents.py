@@ -37,7 +37,8 @@ _BUILTINS: dict[str, AgentProfile] = {
         "Default implementation agent with bounded edit/validate/commit capabilities.",
         "primary",
         False,
-        _BASE + (
+        _BASE
+        + (
             PermissionRule("edit", "*", "allow"),
             PermissionRule("validate", "*", "allow"),
             PermissionRule("commit", "*", "allow"),
@@ -70,7 +71,8 @@ _BUILTINS: dict[str, AgentProfile] = {
         "General-purpose delegated agent with edit and validation capability but no commit.",
         "subagent",
         False,
-        _BASE + (
+        _BASE
+        + (
             PermissionRule("edit", "*", "allow"),
             PermissionRule("validate", "*", "allow"),
             PermissionRule("delegate", "*", "allow"),
@@ -94,7 +96,9 @@ class AgentRegistry:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise AgentConfigError(f"unable to read agent config {path}: {exc}") from exc
+            raise AgentConfigError(
+                f"unable to read agent config {path}: {exc}"
+            ) from exc
         if not isinstance(payload, dict):
             raise AgentConfigError("agent config root must be an object")
         raw_agents = payload.get("agents", {})
@@ -154,7 +158,9 @@ class AgentRegistry:
                 permission = item.get("permission")
                 pattern = item.get("pattern", "*")
                 action = item.get("action", "ask")
-                if not all(isinstance(value, str) for value in (permission, pattern, action)):
+                if not all(
+                    isinstance(value, str) for value in (permission, pattern, action)
+                ):
                     raise AgentConfigError(
                         f"agent {name!r} permission #{index} fields must be strings"
                     )

@@ -5,16 +5,16 @@ import sys
 import time
 from typing import Any
 
-from .hardware import detect_hardware
-from .ledger import JsonContinuousLedger
-from .reconcile import QueueReconciler
-from .store import SQLiteEngineeringStore
 from services.model_catalog.selector import (
     engineering_model_ladder,
     select_engineering_alias,
     snapshot_budget_for_context,
 )
 
+from .hardware import detect_hardware
+from .ledger import JsonContinuousLedger
+from .reconcile import QueueReconciler
+from .store import SQLiteEngineeringStore
 
 RESET = "\x1b[0m"
 BOLD = "\x1b[1m"
@@ -192,7 +192,11 @@ def build_dashboard(
     blocked_count = sum(
         1 for record in records if str(record.get("state", "")).upper() == "BLOCKED"
     )
-    if blocked_count or reconcile.orphan_tasks or any(item.safe_fix for item in reconcile.findings):
+    if (
+        blocked_count
+        or reconcile.orphan_tasks
+        or any(item.safe_fix for item in reconcile.findings)
+    ):
         lines.extend(_section("RECOVERY", width, color))
         context_length = int(env.get("ZEAZ_OLLAMA_CONTEXT_LENGTH", "4096") or 4096)
         if blocked_count:

@@ -46,11 +46,11 @@ from .streaming import (
 )
 
 __all__ = [
+    "SAMPLING_VALID_RANGES",
     "app",
-    "run",
     "authenticate",
     "body",
-    "SAMPLING_VALID_RANGES",
+    "run",
 ]
 
 
@@ -76,8 +76,12 @@ async def lifespan(app: FastAPI):
     app.state.observability = Observability(otlp_enabled=settings.otlp_metrics_enabled)
     app.state.router = ProviderRouter(settings, client, app.state.observability)
     app.state.rate_limiter = rate_limiter(settings)
-    app.state.concurrency_limiter = RequestConcurrencyLimiter(settings.max_concurrent_requests)
-    app.state.trusted_proxy_policy = TrustedProxyPolicy.from_cidrs(settings.trusted_proxy_cidrs)
+    app.state.concurrency_limiter = RequestConcurrencyLimiter(
+        settings.max_concurrent_requests
+    )
+    app.state.trusted_proxy_policy = TrustedProxyPolicy.from_cidrs(
+        settings.trusted_proxy_cidrs
+    )
     yield
     app.state.observability.shutdown()
     await app.state.rate_limiter.close()
@@ -184,7 +188,12 @@ async def request_boundary(request: Request, call_next):
             elif not allowed:
                 response = JSONResponse(
                     status_code=429,
-                    content={"error": {"type": "rate_limit_error", "message": "Rate limit exceeded"}},
+                    content={
+                        "error": {
+                            "type": "rate_limit_error",
+                            "message": "Rate limit exceeded",
+                        }
+                    },
                     headers={"Retry-After": "60"},
                 )
             else:
@@ -198,7 +207,9 @@ async def request_boundary(request: Request, call_next):
             async def limited_body():
                 nonlocal stream_status
                 try:
-                    async for chunk in bounded_stream(_bytes(source), settings(request).max_response_bytes):
+                    async for chunk in bounded_stream(
+                        _bytes(source), settings(request).max_response_bytes
+                    ):
                         yield chunk
                 except ResponseLimitExceeded:
                     stream_status = 502
@@ -208,7 +219,9 @@ async def request_boundary(request: Request, call_next):
 
             response.body_iterator = limited_body()
             return response
-        response = await _bounded_response(response, settings(request).max_response_bytes)
+        response = await _bounded_response(
+            response, settings(request).max_response_bytes
+        )
         status_code = response.status_code
         _security_headers(response, correlation_id, remaining)
         await finalize(status_code)
@@ -223,7 +236,9 @@ async def _bytes(source):
         yield chunk.encode() if isinstance(chunk, str) else bytes(chunk)
 
 
-def _validate_stream_request(provider_router, route, payload: dict[str, Any], protocol: str) -> None:
+def _validate_stream_request(
+    provider_router, route, payload: dict[str, Any], protocol: str
+) -> None:
     """Validate request conversion for every configured streaming candidate before headers are sent."""
     for target in (route.primary, *route.fallbacks):
         client = provider_router.clients.get(target.provider)
@@ -235,11 +250,15 @@ def _validate_stream_request(provider_router, route, payload: dict[str, Any], pr
             elif protocol == "anthropic" and client.config.api != "anthropic":
                 anthropic_to_openai({**payload, "stream": True}, target.model)
             elif protocol == "responses" and client.config.api != "responses":
-                chat_payload = responses_to_chat({**payload, "stream": True}, target.model)
+                chat_payload = responses_to_chat(
+                    {**payload, "stream": True}, target.model
+                )
                 if client.config.api == "anthropic":
                     openai_request_to_anthropic(chat_payload, target.model)
         except (TypeError, ValueError, KeyError, IndexError) as exc:
-            raise HTTPException(status_code=400, detail="Invalid request format") from exc
+            raise HTTPException(
+                status_code=400, detail="Invalid request format"
+            ) from exc
 
 
 def _provider_response(converter, *args) -> dict[str, Any]:
@@ -264,7 +283,11 @@ async def _bounded_response(response: Response, maximum: int) -> Response:
             if total > maximum:
                 return _response_limit_error()
             chunks.append(chunk)
-        headers = {key: value for key, value in response.headers.items() if key.lower() != "content-length"}
+        headers = {
+            key: value
+            for key, value in response.headers.items()
+            if key.lower() != "content-length"
+        }
         return Response(
             content=b"".join(chunks),
             status_code=response.status_code,
@@ -313,7 +336,10 @@ async def authenticate(
     authorization: str | None = Header(default=None),
 ) -> None:
     configured = settings(request).client_key_hashes
-    if not configured and os.getenv("ZEAZ_ALLOW_UNAUTHENTICATED", "false").lower() == "true":
+    if (
+        not configured
+        and os.getenv("ZEAZ_ALLOW_UNAUTHENTICATED", "false").lower() == "true"
+    ):
         return
     bearer = _bearer_token(authorization)
     if not configured or not (
@@ -354,16 +380,21 @@ async def body(request: Request) -> dict[str, Any]:
         for name in ("max_tokens", "max_output_tokens", "max_completion_tokens")
         if name in value
     ]
-    if any(
-        type(tokens) is not int
-        or tokens < 1
-        or tokens > settings(request).max_output_tokens
-        for tokens in token_values
-    ) or len(set(token_values)) > 1:
+    if (
+        any(
+            type(tokens) is not int
+            or tokens < 1
+            or tokens > settings(request).max_output_tokens
+            for tokens in token_values
+        )
+        or len(set(token_values)) > 1
+    ):
         raise HTTPException(status_code=400, detail="Invalid output token limit")
     for field_name in ("messages", "tools"):
         if field_name in value and not isinstance(value[field_name], list):
-            raise HTTPException(status_code=400, detail=f"{field_name} must be an array")
+            raise HTTPException(
+                status_code=400, detail=f"{field_name} must be an array"
+            )
     if "input" in value and not isinstance(value["input"], (str, list)):
         raise HTTPException(status_code=400, detail="input must be a string or array")
     # Validate sampling parameter ranges
@@ -373,7 +404,10 @@ async def body(request: Request) -> dict[str, Any]:
             if type(val) not in (int, float) or isinstance(val, bool):
                 raise HTTPException(status_code=400, detail=f"Invalid {param}")
             if not (min_val <= float(val) <= max_val):
-                raise HTTPException(status_code=400, detail=f"{param} must be between {min_val} and {max_val}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{param} must be between {min_val} and {max_val}",
+                )
     return value
 
 
@@ -421,7 +455,9 @@ async def refresh_models(provider_router: RouterDependency):
     errors: dict[str, str] = {}
     for name, client in provider_router.clients.items():
         try:
-            refreshed[name] = await provider_router.capabilities.refresh_provider(name, client)
+            refreshed[name] = await provider_router.capabilities.refresh_provider(
+                name, client
+            )
         except ProviderError as exc:
             errors[name] = f"{exc.kind}: {exc}"
     return {"refreshed": refreshed, "errors": errors}
@@ -444,9 +480,13 @@ async def chat_completions(request: Request, provider_router: RouterDependency):
             try:
                 anthropic_payload = openai_request_to_anthropic(outbound, model)
             except (TypeError, ValueError, KeyError, IndexError) as exc:
-                raise HTTPException(status_code=400, detail="Invalid request format") from exc
+                raise HTTPException(
+                    status_code=400, detail="Invalid request format"
+                ) from exc
             result = await client.messages(anthropic_payload)
-            return _provider_response(_anthropic_to_openai_response, result, route.alias)
+            return _provider_response(
+                _anthropic_to_openai_response, result, route.alias
+            )
         return _public_model_response(await client.chat(outbound), route.alias)
 
     return await provider_router.execute(route, call)
@@ -470,7 +510,9 @@ async def messages(request: Request, provider_router: RouterDependency):
         try:
             converted = anthropic_to_openai(outbound, model)
         except (TypeError, ValueError, KeyError, IndexError) as exc:
-            raise HTTPException(status_code=400, detail="Invalid request format") from exc
+            raise HTTPException(
+                status_code=400, detail="Invalid request format"
+            ) from exc
         result = await client.chat(converted)
         return _provider_response(openai_to_anthropic, result, route.alias)
 
@@ -495,14 +537,20 @@ async def responses(request: Request, provider_router: RouterDependency):
         try:
             chat_payload = responses_to_chat(outbound, model)
         except (TypeError, ValueError, KeyError, IndexError) as exc:
-            raise HTTPException(status_code=400, detail="Invalid request format") from exc
+            raise HTTPException(
+                status_code=400, detail="Invalid request format"
+            ) from exc
         if client.config.api == "anthropic":
             try:
                 anthropic_payload = openai_request_to_anthropic(chat_payload, model)
             except (TypeError, ValueError, KeyError, IndexError) as exc:
-                raise HTTPException(status_code=400, detail="Invalid request format") from exc
+                raise HTTPException(
+                    status_code=400, detail="Invalid request format"
+                ) from exc
             result = await client.messages(anthropic_payload)
-            chat = _provider_response(_anthropic_to_openai_response, result, route.alias)
+            chat = _provider_response(
+                _anthropic_to_openai_response, result, route.alias
+            )
         else:
             chat = await client.chat(chat_payload)
         return _provider_response(chat_to_responses, chat, route.alias)
@@ -537,7 +585,9 @@ async def _stream_anthropic(provider_router, route, payload):
                 "anthropic",
             )
         else:
-            source = client.stream("chat/completions", anthropic_to_openai(outbound, model))
+            source = client.stream(
+                "chat/completions", anthropic_to_openai(outbound, model)
+            )
             source = chat_to_anthropic_stream(source, route.alias)
         async for chunk in source:
             yield chunk
@@ -571,7 +621,9 @@ async def _stream_responses(provider_router, route, payload):
         yield chunk
 
 
-def _anthropic_to_openai_response(payload: dict[str, Any], model: str) -> dict[str, Any]:
+def _anthropic_to_openai_response(
+    payload: dict[str, Any], model: str
+) -> dict[str, Any]:
     content = payload.get("content")
     if not isinstance(content, list):
         raise ValueError("Anthropic response content is invalid")
@@ -590,18 +642,25 @@ def _anthropic_to_openai_response(payload: dict[str, Any], model: str) -> dict[s
             call_id = block.get("id")
             name = block.get("name")
             tool_input = block.get("input", {})
-            if not isinstance(call_id, str) or not call_id or not isinstance(name, str) or not name:
+            if (
+                not isinstance(call_id, str)
+                or not call_id
+                or not isinstance(name, str)
+                or not name
+            ):
                 raise ValueError("Anthropic response tool call is invalid")
             if not isinstance(tool_input, dict):
                 raise ValueError("Anthropic response tool input is invalid")
-            calls.append({
-                "id": call_id,
-                "type": "function",
-                "function": {
-                    "name": name,
-                    "arguments": json.dumps(tool_input, separators=(",", ":")),
-                },
-            })
+            calls.append(
+                {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": json.dumps(tool_input, separators=(",", ":")),
+                    },
+                }
+            )
     text = "".join(text_parts)
     message: dict[str, Any] = {"role": "assistant", "content": text or None}
     if calls:
@@ -613,21 +672,25 @@ def _anthropic_to_openai_response(payload: dict[str, Any], model: str) -> dict[s
     output_tokens = _safe_count(usage.get("output_tokens", 0))
     stop_reason = payload.get("stop_reason")
     return {
-        "id": payload.get("id") if isinstance(payload.get("id"), str) else "chatcmpl_zeaz",
+        "id": payload.get("id")
+        if isinstance(payload.get("id"), str)
+        else "chatcmpl_zeaz",
         "object": "chat.completion",
         "created": int(time.time()),
         "model": model,
-        "choices": [{
-            "index": 0,
-            "message": message,
-            "finish_reason": (
-                "tool_calls"
-                if calls
-                else "length"
-                if stop_reason == "max_tokens"
-                else "stop"
-            ),
-        }],
+        "choices": [
+            {
+                "index": 0,
+                "message": message,
+                "finish_reason": (
+                    "tool_calls"
+                    if calls
+                    else "length"
+                    if stop_reason == "max_tokens"
+                    else "stop"
+                ),
+            }
+        ],
         "usage": {
             "prompt_tokens": input_tokens,
             "completion_tokens": output_tokens,

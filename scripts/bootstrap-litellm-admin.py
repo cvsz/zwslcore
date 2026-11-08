@@ -49,7 +49,9 @@ def login_succeeds(base_url: str, username: str, password: str) -> bool:
     return status == 303 and location.endswith("/ui?login=success")
 
 
-def post_json(base_url: str, path: str, master_key: str, payload: dict[str, object]) -> None:
+def post_json(
+    base_url: str, path: str, master_key: str, payload: dict[str, object]
+) -> None:
     request = Request(
         f"{base_url}{path}",
         data=json.dumps(payload).encode(),
@@ -62,11 +64,17 @@ def post_json(base_url: str, path: str, master_key: str, payload: dict[str, obje
     try:
         with urlopen(request, timeout=30) as response:
             if response.status not in (200, 201):
-                raise RuntimeError(f"LiteLLM admin bootstrap failed: HTTP {response.status}")
+                raise RuntimeError(
+                    f"LiteLLM admin bootstrap failed: HTTP {response.status}"
+                )
     except HTTPError as error:
-        raise RuntimeError(f"LiteLLM admin bootstrap failed: HTTP {error.code}") from None
+        raise RuntimeError(
+            f"LiteLLM admin bootstrap failed: HTTP {error.code}"
+        ) from None
     except URLError:
-        raise RuntimeError("Could not reach LiteLLM while bootstrapping its UI admin") from None
+        raise RuntimeError(
+            "Could not reach LiteLLM while bootstrapping its UI admin"
+        ) from None
 
 
 def account_exists(base_url: str, master_key: str, username: str) -> bool:
@@ -77,7 +85,10 @@ def account_exists(base_url: str, master_key: str, username: str) -> bool:
     try:
         with urlopen(request, timeout=15) as response:
             account = json.load(response).get("user_info", {})
-            return account.get("user_id") == username and account.get("user_role") == "proxy_admin"
+            return (
+                account.get("user_id") == username
+                and account.get("user_role") == "proxy_admin"
+            )
     except (HTTPError, URLError, ValueError):
         return False
 
@@ -152,24 +163,34 @@ def main() -> int:
             if "=" in line:
                 key, value = line.split("=", 1)
                 saved[key] = value
-        if saved.get("username") and saved.get("password") and login_succeeds(
-            base_url, saved["username"], saved["password"]
+        if (
+            saved.get("username")
+            and saved.get("password")
+            and login_succeeds(base_url, saved["username"], saved["password"])
         ):
             os.chmod(credentials_path, 0o600)
             print("LiteLLM local password-based proxy admin is ready.")
             return 0
-        if saved.get("username") and account_exists(base_url, master_key, saved["username"]):
+        if saved.get("username") and account_exists(
+            base_url, master_key, saved["username"]
+        ):
             os.chmod(credentials_path, 0o600)
-            print("LiteLLM proxy admin exists; use its current password if you changed the bootstrap password.")
+            print(
+                "LiteLLM proxy admin exists; use its current password if you changed the bootstrap password."
+            )
             return 0
-        raise RuntimeError("Saved LiteLLM admin account is missing. Restore it before retrying; no duplicate admin was created.")
+        raise RuntimeError(
+            "Saved LiteLLM admin account is missing. Restore it before retrying; no duplicate admin was created."
+        )
 
     pending = load_record(pending_path) if pending_path.exists() else {}
     if pending:
         if login_succeeds(base_url, pending["username"], pending["password"]):
             return finalize_credentials(
-                credentials_path, pending_path,
-                pending["username"], pending["password"],
+                credentials_path,
+                pending_path,
+                pending["username"],
+                pending["password"],
             )
         if account_exists(base_url, master_key, pending["username"]):
             post_json(
@@ -183,15 +204,13 @@ def main() -> int:
                     "password": pending["password"],
                 },
             )
-            if not login_succeeds(
-                base_url, pending["username"], pending["password"]
-            ):
-                raise RuntimeError(
-                    "LiteLLM did not accept the recovered admin login"
-                )
+            if not login_succeeds(base_url, pending["username"], pending["password"]):
+                raise RuntimeError("LiteLLM did not accept the recovered admin login")
             return finalize_credentials(
-                credentials_path, pending_path,
-                pending["username"], pending["password"],
+                credentials_path,
+                pending_path,
+                pending["username"],
+                pending["password"],
             )
         pending_path.unlink(missing_ok=True)
         pending = {}

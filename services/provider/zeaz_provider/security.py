@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import ipaddress
@@ -65,7 +64,10 @@ class TrustedProxyPolicy:
             direct = ipaddress.ip_address(peer)
         except ValueError:
             return peer
-        if not any(direct.version == network.version and direct in network for network in self.networks):
+        if not any(
+            direct.version == network.version and direct in network
+            for network in self.networks
+        ):
             return direct.compressed
         if not cf_connecting_ip:
             return direct.compressed
@@ -89,7 +91,9 @@ class RateLimitBackend(Protocol):
 class InMemoryRateLimiter:
     MAX_BUCKETS = 10_000
 
-    def __init__(self, limit: int, window_seconds: float = 60.0, *, clock=time.monotonic):
+    def __init__(
+        self, limit: int, window_seconds: float = 60.0, *, clock=time.monotonic
+    ):
         self.limit = limit
         self.window_seconds = window_seconds
         self.clock = clock
@@ -177,9 +181,13 @@ class RedisRateLimiter:
                 uuid.uuid4().hex,
             )
         except RedisError as exc:
-            raise RateLimitBackendError("Distributed rate-limit backend unavailable") from exc
+            raise RateLimitBackendError(
+                "Distributed rate-limit backend unavailable"
+            ) from exc
         if not isinstance(result, (list, tuple)) or len(result) != 2:
-            raise RateLimitBackendError("Distributed rate-limit backend returned an invalid result")
+            raise RateLimitBackendError(
+                "Distributed rate-limit backend returned an invalid result"
+            )
         try:
             return bool(int(result[0])), max(0, int(result[1]))
         except (TypeError, ValueError) as exc:
@@ -192,14 +200,14 @@ class RedisRateLimiter:
 
 
 __all__ = [
-    "redact",
-    "request_id",
+    "InMemoryRateLimiter",
+    "RateLimitBackend",
+    "RateLimitBackendError",
+    "RedisRateLimiter",
+    "TrustedProxyPolicy",
     "client_bucket",
     "client_key_digest",
+    "redact",
+    "request_id",
     "verify_client_key",
-    "TrustedProxyPolicy",
-    "RateLimitBackendError",
-    "RateLimitBackend",
-    "InMemoryRateLimiter",
-    "RedisRateLimiter",
 ]

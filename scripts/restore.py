@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Verify a zwslcore backup into a new isolated directory without touching live state."""
+
 from __future__ import annotations
 
 import argparse
@@ -45,24 +46,34 @@ def _load_manifest(backup: Path) -> dict[str, Any]:
     manifest = json.loads(encoded)
     if not isinstance(manifest, dict):
         raise RestoreError("backup manifest root must be an object")
-    if manifest.get("schema") != BACKUP_SCHEMA or not isinstance(manifest.get("files"), dict):
+    if manifest.get("schema") != BACKUP_SCHEMA or not isinstance(
+        manifest.get("files"), dict
+    ):
         raise RestoreError("backup manifest schema is unsupported")
     if not isinstance(manifest.get("policy", {}), dict):
         raise RestoreError("backup manifest policy must be an object")
     excluded = manifest.get("excluded", [])
-    if not isinstance(excluded, list) or any(not isinstance(item, str) for item in excluded):
+    if not isinstance(excluded, list) or any(
+        not isinstance(item, str) for item in excluded
+    ):
         raise RestoreError("backup manifest exclusions must be a string list")
     return manifest
 
 
 def _safe_relative(raw: str) -> PurePosixPath:
     relative = PurePosixPath(raw)
-    if relative.is_absolute() or not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+    if (
+        relative.is_absolute()
+        or not relative.parts
+        or any(part in {"", ".", ".."} for part in relative.parts)
+    ):
         raise RestoreError(f"unsafe backup path: {raw!r}")
     return relative
 
 
-def _verify_and_copy_files(backup: Path, target: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+def _verify_and_copy_files(
+    backup: Path, target: Path, manifest: dict[str, Any]
+) -> dict[str, Any]:
     content = backup / "content"
     results: dict[str, Any] = {}
     for raw, metadata in manifest["files"].items():
@@ -76,7 +87,9 @@ def _verify_and_copy_files(backup: Path, target: Path, manifest: dict[str, Any])
             raise RestoreError(f"backup file is missing or not regular: {raw}")
         actual_hash = _sha256(source)
         actual_size = source.stat().st_size
-        if actual_hash != metadata.get("sha256") or actual_size != metadata.get("bytes"):
+        if actual_hash != metadata.get("sha256") or actual_size != metadata.get(
+            "bytes"
+        ):
             raise RestoreError(f"backup file checksum or size mismatch: {raw}")
         destination = target.joinpath(*relative.parts)
         destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -94,16 +107,31 @@ def _verify_sqlite(path: Path) -> dict[str, Any]:
     try:
         integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
         if integrity != "ok":
-            raise RestoreError(f"restored engineering database failed integrity check: {integrity}")
-        tables = {str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            raise RestoreError(
+                f"restored engineering database failed integrity check: {integrity}"
+            )
+        tables = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
         required = {"tasks", "checkpoints", "runner_leases"}
         if not required.issubset(tables):
-            raise RestoreError("restored engineering database is missing required tables")
+            raise RestoreError(
+                "restored engineering database is missing required tables"
+            )
         return {
             "integrity_check": integrity,
-            "schema_version": int(connection.execute("PRAGMA user_version").fetchone()[0]),
-            "tasks": int(connection.execute("SELECT count(*) FROM tasks").fetchone()[0]),
-            "checkpoints": int(connection.execute("SELECT count(*) FROM checkpoints").fetchone()[0]),
+            "schema_version": int(
+                connection.execute("PRAGMA user_version").fetchone()[0]
+            ),
+            "tasks": int(
+                connection.execute("SELECT count(*) FROM tasks").fetchone()[0]
+            ),
+            "checkpoints": int(
+                connection.execute("SELECT count(*) FROM checkpoints").fetchone()[0]
+            ),
         }
     finally:
         connection.close()
@@ -118,7 +146,11 @@ def _verify_ledger(path: Path) -> dict[str, Any]:
     archives = value.get("archives", {})
     if not isinstance(archives, dict):
         raise RestoreError("restored continuous ledger archives are invalid")
-    return {"schema_version": value["schema"], "active_records": len(value["records"]), "archived_records": len(archives)}
+    return {
+        "schema_version": value["schema"],
+        "active_records": len(value["records"]),
+        "archived_records": len(archives),
+    }
 
 
 def _verify_evidence(root: Path) -> dict[str, Any]:
@@ -129,9 +161,13 @@ def _verify_evidence(root: Path) -> dict[str, Any]:
     for evidence in evidence_root.rglob("evidence.json"):
         sidecar = evidence.with_name("evidence.sha256")
         if not sidecar.is_file():
-            raise RestoreError(f"restored evidence checksum is missing: {evidence.relative_to(evidence_root)}")
+            raise RestoreError(
+                f"restored evidence checksum is missing: {evidence.relative_to(evidence_root)}"
+            )
         if _sha256(evidence) != sidecar.read_text(encoding="utf-8").split()[0]:
-            raise RestoreError(f"restored evidence checksum failed: {evidence.relative_to(evidence_root)}")
+            raise RestoreError(
+                f"restored evidence checksum failed: {evidence.relative_to(evidence_root)}"
+            )
         checked += 1
     return {"bundles": checked, "checksums_passed": checked}
 
@@ -176,8 +212,16 @@ def restore_backup(backup: str | Path, target: str | Path | None = None) -> Path
             "continuous_ledger": ledger_result,
             "evidence": evidence_result,
             "cache": cache_result,
-            "rpo": {"target_hours": RPO_TARGET_HOURS, "backup_age_hours": round(rpo_hours, 4), "met": rpo_hours <= RPO_TARGET_HOURS},
-            "rto": {"target_minutes": RTO_TARGET_MINUTES, "restore_duration_seconds": elapsed, "met": elapsed <= RTO_TARGET_MINUTES * 60},
+            "rpo": {
+                "target_hours": RPO_TARGET_HOURS,
+                "backup_age_hours": round(rpo_hours, 4),
+                "met": rpo_hours <= RPO_TARGET_HOURS,
+            },
+            "rto": {
+                "target_minutes": RTO_TARGET_MINUTES,
+                "restore_duration_seconds": elapsed,
+                "met": elapsed <= RTO_TARGET_MINUTES * 60,
+            },
         }
         policy = manifest.get("policy", {})
         webui_excluded = any(
@@ -186,8 +230,14 @@ def restore_backup(backup: str | Path, target: str | Path | None = None) -> Path
         )
         webui_policy = policy.get("open_webui_user_data")
         if webui_policy is None:
-            webui_policy = "unspecified" if webui_excluded else (
-                "encrypted_backup" if manifest.get("docker_user_data") else "unspecified"
+            webui_policy = (
+                "unspecified"
+                if webui_excluded
+                else (
+                    "encrypted_backup"
+                    if manifest.get("docker_user_data")
+                    else "unspecified"
+                )
             )
         if not isinstance(webui_policy, str) or webui_policy not in {
             "unspecified",
@@ -196,16 +246,24 @@ def restore_backup(backup: str | Path, target: str | Path | None = None) -> Path
         }:
             raise RestoreError("backup Open WebUI user-data policy is unsupported")
         if webui_policy == "recreate" and not webui_excluded:
-            raise RestoreError("recreate policy is inconsistent with the backup exclusions")
+            raise RestoreError(
+                "recreate policy is inconsistent with the backup exclusions"
+            )
         if webui_policy == "recreate" and manifest.get("docker_user_data") is not None:
-            raise RestoreError("recreate policy cannot also include Open WebUI volume data")
+            raise RestoreError(
+                "recreate policy cannot also include Open WebUI volume data"
+            )
         if webui_policy == "encrypted_backup":
             user_data = manifest.get("docker_user_data")
             if not isinstance(user_data, dict) or not user_data.get("encrypted"):
-                raise RestoreError("encrypted Open WebUI policy is missing its encrypted volume record")
+                raise RestoreError(
+                    "encrypted Open WebUI policy is missing its encrypted volume record"
+                )
             user_data_path = user_data.get("path")
             if not isinstance(user_data_path, str) or user_data_path not in copied:
-                raise RestoreError("encrypted Open WebUI archive is missing from the restored copy")
+                raise RestoreError(
+                    "encrypted Open WebUI archive is missing from the restored copy"
+                )
         checks["open_webui_user_data"] = {
             "policy": webui_policy,
             "excluded_by_policy": webui_policy == "recreate",
@@ -215,12 +273,14 @@ def restore_backup(backup: str | Path, target: str | Path | None = None) -> Path
             "schema": 1,
             "status": (
                 "FAIL"
-                if not checks["file_checksums"]["passed"] or not checks["rpo"]["met"] or not checks["rto"]["met"]
+                if not checks["file_checksums"]["passed"]
+                or not checks["rpo"]["met"]
+                or not checks["rto"]["met"]
                 else "PARTIAL"
                 if webui_policy == "unspecified" and webui_excluded
                 else "PASS"
             ),
-            "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "created_at": dt.datetime.now(dt.UTC).isoformat(),
             "backup": str(backup_path),
             "backup_source": manifest.get("source", {}),
             "isolated_target": str(target_path),
@@ -230,7 +290,9 @@ def restore_backup(backup: str | Path, target: str | Path | None = None) -> Path
             ],
         }
         report_path = target_path / "restore-report.json"
-        report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        report_path.write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         os.chmod(report_path, 0o600)
         return target_path
     except Exception:
@@ -241,11 +303,20 @@ def restore_backup(backup: str | Path, target: str | Path | None = None) -> Path
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("backup", help="backup directory created by scripts/backup.sh")
-    parser.add_argument("--target", help="new isolated restore directory; defaults to a retained temporary directory")
+    parser.add_argument(
+        "--target",
+        help="new isolated restore directory; defaults to a retained temporary directory",
+    )
     args = parser.parse_args()
     try:
         result = restore_backup(args.backup, args.target)
-    except (RestoreError, OSError, ValueError, sqlite3.Error, json.JSONDecodeError) as exc:
+    except (
+        RestoreError,
+        OSError,
+        ValueError,
+        sqlite3.Error,
+        json.JSONDecodeError,
+    ) as exc:
         print(f"restore failed: {exc}", file=sys.stderr)
         return 2
     report = json.loads((result / "restore-report.json").read_text(encoding="utf-8"))

@@ -6,8 +6,8 @@ import socket
 import threading
 import time
 import uuid
-from pathlib import Path
 from collections.abc import Iterable
+from pathlib import Path
 
 from .store import SQLiteEngineeringStore
 
@@ -60,21 +60,31 @@ class SQLiteRunnerLease:
     ) -> None:
         if not name or ttl_seconds <= 0:
             raise ValueError("lease name and positive ttl_seconds are required")
-        interval = heartbeat_interval if heartbeat_interval is not None else ttl_seconds / 3
+        interval = (
+            heartbeat_interval if heartbeat_interval is not None else ttl_seconds / 3
+        )
         if interval <= 0 or interval >= ttl_seconds:
-            raise ValueError("heartbeat_interval must be positive and shorter than ttl_seconds")
+            raise ValueError(
+                "heartbeat_interval must be positive and shorter than ttl_seconds"
+            )
         self.store = store
         self.name = name
         self.ttl_seconds = ttl_seconds
         self.heartbeat_interval = interval
-        self.owner_id = owner_id or f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
+        self.owner_id = (
+            owner_id or f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
+        )
         self.fencing_token: int | None = None
         supplied_paths = list(lock_paths or ())
         if lock_path is not None:
             supplied_paths.append(lock_path)
         if not supplied_paths:
-            supplied_paths.append(store.path.with_name(f"{store.path.name}.{name}.lock"))
-        self._lock_paths = sorted({Path(path).resolve() for path in supplied_paths}, key=str)
+            supplied_paths.append(
+                store.path.with_name(f"{store.path.name}.{name}.lock")
+            )
+        self._lock_paths = sorted(
+            {Path(path).resolve() for path in supplied_paths}, key=str
+        )
         self._lock_fds: list[int] = []
         self._stop = threading.Event()
         self._lost = threading.Event()

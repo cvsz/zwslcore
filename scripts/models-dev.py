@@ -10,15 +10,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.engineering.hardware import detect_hardware  # noqa: E402
-from services.model_catalog.models_dev import (  # noqa: E402
+from services.engineering.hardware import detect_hardware
+from services.model_catalog.models_dev import (
     DEFAULT_CACHE,
     DEFAULT_URL,
     ModelsDevError,
     get_catalog,
     lookup_model,
 )
-from services.model_catalog.selector import (  # noqa: E402
+from services.model_catalog.selector import (
     ModelRequirements,
     local_alias_candidates,
     models_dev_candidates,
@@ -81,11 +81,16 @@ def main() -> int:
         return 1
 
     if args.command == "sync":
-        print(json.dumps({
-            "source": source,
-            "cache": str(Path(args.cache).expanduser()),
-            "stats": catalog["stats"],
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "source": source,
+                    "cache": str(Path(args.cache).expanduser()),
+                    "stats": catalog["stats"],
+                },
+                indent=2,
+            )
+        )
         return 0
 
     if args.command == "stats":
@@ -123,7 +128,9 @@ def main() -> int:
             ram_available_gb=profile.ram_available_gb,
         )
         if args.include_remote:
-            cloud_enabled = env.get("FREE_CLOUD_FALLBACK_ENABLED", "false").lower() == "true"
+            cloud_enabled = (
+                env.get("FREE_CLOUD_FALLBACK_ENABLED", "false").lower() == "true"
+            )
             enabled_remote = set()
             if cloud_enabled:
                 for provider_id, key_name in (
@@ -155,28 +162,33 @@ def main() -> int:
             zero_cost_only=not args.permit_paid,
         )
         ranked = rank_models(candidates, requirements)[: max(1, args.top)]
-        print(json.dumps({
-            "source": source,
-            "hardware": {
-                "profile": profile.profile,
-                "ram_available_gb": profile.ram_available_gb,
-                "accelerator_backend": profile.accelerator_backend,
-            },
-            "requirements": dataclasses.asdict(requirements),
-            "ranked": [
+        print(
+            json.dumps(
                 {
-                    "id": item.candidate.id,
-                    "alias": item.candidate.alias,
-                    "provider": item.candidate.provider,
-                    "source": item.candidate.source,
-                    "score": item.score,
-                    "eligible": item.eligible,
-                    "reasons": list(item.reasons),
-                    "blockers": list(item.blockers),
-                }
-                for item in ranked
-            ],
-        }, indent=2))
+                    "source": source,
+                    "hardware": {
+                        "profile": profile.profile,
+                        "ram_available_gb": profile.ram_available_gb,
+                        "accelerator_backend": profile.accelerator_backend,
+                    },
+                    "requirements": dataclasses.asdict(requirements),
+                    "ranked": [
+                        {
+                            "id": item.candidate.id,
+                            "alias": item.candidate.alias,
+                            "provider": item.candidate.provider,
+                            "source": item.candidate.source,
+                            "score": item.score,
+                            "eligible": item.eligible,
+                            "reasons": list(item.reasons),
+                            "blockers": list(item.blockers),
+                        }
+                        for item in ranked
+                    ],
+                },
+                indent=2,
+            )
+        )
         return 0
 
     if args.command == "lookup":

@@ -9,7 +9,9 @@ class WorktreeManager:
     """Ownership-aware isolated Git worktrees under ~/.zwslcore/worktrees."""
 
     def __init__(self, base_dir: str | Path | None = None) -> None:
-        self.base_dir = Path(base_dir or Path.home() / ".zwslcore" / "worktrees").resolve()
+        self.base_dir = Path(
+            base_dir or Path.home() / ".zwslcore" / "worktrees"
+        ).resolve()
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
@@ -19,7 +21,9 @@ class WorktreeManager:
         suffix = f"-{safe_slug}" if safe_slug else ""
         return f"agent/{safe_task}{suffix}"
 
-    def create(self, repository: str | Path, task_id: str, slug: str = "") -> tuple[Path, str]:
+    def create(
+        self, repository: str | Path, task_id: str, slug: str = ""
+    ) -> tuple[Path, str]:
         repo = Path(repository).resolve()
         self._assert_git_repo(repo)
         branch = self.safe_branch_name(task_id, slug)
@@ -33,7 +37,17 @@ class WorktreeManager:
             return target, branch
 
         subprocess.run(
-            ["git", "-C", str(repo), "worktree", "add", "-b", branch, str(target), "HEAD"],
+            [
+                "git",
+                "-C",
+                str(repo),
+                "worktree",
+                "add",
+                "-b",
+                branch,
+                str(target),
+                "HEAD",
+            ],
             check=True,
             capture_output=True,
             text=True,

@@ -35,7 +35,9 @@ class ProviderError(RuntimeError):
         self.status_code = status_code
         self.retryable = retryable
         self.kind = kind
-        self.fallback_allowed = retryable if fallback_allowed is None else fallback_allowed
+        self.fallback_allowed = (
+            retryable if fallback_allowed is None else fallback_allowed
+        )
         self.circuit_failure = retryable if circuit_failure is None else circuit_failure
         self.retry_after = retry_after
         self.details = details or {}

@@ -10,9 +10,8 @@ import sqlite3
 import stat
 import sys
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
-
 
 TASK_STATUSES = (
     "CREATED",
@@ -100,7 +99,14 @@ class EngineeringMetrics:
                 phase_counts[label] += int(row["total"])
                 if phase == "EDIT_RESPONSE_REPAIRED":
                     structured_repairs += int(row["total"])
-        except (OSError, sqlite3.Error, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        except (
+            OSError,
+            sqlite3.Error,
+            ValueError,
+            TypeError,
+            KeyError,
+            json.JSONDecodeError,
+        ):
             pass
 
         try:
@@ -213,7 +219,9 @@ class EngineeringMetrics:
             if not isinstance(record, dict):
                 raise ValueError("continuous ledger contains an invalid record")
             state = record.get("state")
-            label = state if isinstance(state, str) and state in QUEUE_STATES else "OTHER"
+            label = (
+                state if isinstance(state, str) and state in QUEUE_STATES else "OTHER"
+            )
             states[label] += 1
         return states
 
@@ -273,7 +281,10 @@ def serve(
             return
 
     with server_factory(("127.0.0.1", port), Handler) as server:
-        print(f"Engineering metrics listening on http://127.0.0.1:{port}/metrics", flush=True)
+        print(
+            f"Engineering metrics listening on http://127.0.0.1:{port}/metrics",
+            flush=True,
+        )
         try:
             server.serve_forever()
         except KeyboardInterrupt:
@@ -281,10 +292,18 @@ def serve(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Loopback-only engineering Prometheus exporter")
-    parser.add_argument("--db", default=str(Path.home() / ".zwslcore/state/engineering.db"))
-    parser.add_argument("--ledger", default=str(Path.home() / ".zwslcore/state/continuous.json"))
-    parser.add_argument("--evidence-root", default=str(Path.home() / ".zwslcore/evidence"))
+    parser = argparse.ArgumentParser(
+        description="Loopback-only engineering Prometheus exporter"
+    )
+    parser.add_argument(
+        "--db", default=str(Path.home() / ".zwslcore/state/engineering.db")
+    )
+    parser.add_argument(
+        "--ledger", default=str(Path.home() / ".zwslcore/state/continuous.json")
+    )
+    parser.add_argument(
+        "--evidence-root", default=str(Path.home() / ".zwslcore/evidence")
+    )
     parser.add_argument("--port", type=int, default=9464)
     args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535:

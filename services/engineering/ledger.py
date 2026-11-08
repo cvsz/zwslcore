@@ -5,9 +5,9 @@ import json
 import os
 import tempfile
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from collections.abc import Iterator
 from typing import Any
 
 from .evidence import redact_sensitive_text
@@ -22,7 +22,9 @@ class JsonContinuousLedger:
     SCHEMA = 1
 
     def __init__(self, path: str | Path | None = None) -> None:
-        self.path = Path(path or Path.home() / ".zwslcore" / "state" / "continuous.json")
+        self.path = Path(
+            path or Path.home() / ".zwslcore" / "state" / "continuous.json"
+        )
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     @contextmanager
@@ -45,7 +47,9 @@ class JsonContinuousLedger:
         try:
             value = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise ContinuousLedgerError(f"unable to read continuous ledger: {exc}") from exc
+            raise ContinuousLedgerError(
+                f"unable to read continuous ledger: {exc}"
+            ) from exc
         if (
             not isinstance(value, dict)
             or type(value.get("schema")) is not int
@@ -69,7 +73,9 @@ class JsonContinuousLedger:
 
     def _write(self, value: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, raw_path = tempfile.mkstemp(prefix=".continuous-", suffix=".json", dir=self.path.parent)
+        fd, raw_path = tempfile.mkstemp(
+            prefix=".continuous-", suffix=".json", dir=self.path.parent
+        )
         tmp = Path(raw_path)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -116,12 +122,22 @@ class JsonContinuousLedger:
                 data["records"][item.fingerprint] = record
             if initial_fields:
                 state = str(record.get("state", "PENDING"))
-                if state in {"RUNNING", "SUCCEEDED", "CANCELLED", "QUARANTINED", "DEAD_LETTER"}:
-                    raise ContinuousLedgerError(f"cannot relink work item in state {state}")
+                if state in {
+                    "RUNNING",
+                    "SUCCEEDED",
+                    "CANCELLED",
+                    "QUARANTINED",
+                    "DEAD_LETTER",
+                }:
+                    raise ContinuousLedgerError(
+                        f"cannot relink work item in state {state}"
+                    )
                 requested_task = str(initial_fields.get("task_id") or "")
                 existing_task = str(record.get("task_id") or "")
                 if existing_task and requested_task and existing_task != requested_task:
-                    raise ContinuousLedgerError("work item is already linked to a different task")
+                    raise ContinuousLedgerError(
+                        "work item is already linked to a different task"
+                    )
                 initial_fields = dict(initial_fields)
                 if "last_error" in initial_fields:
                     initial_fields["last_error"] = redact_sensitive_text(
@@ -138,10 +154,14 @@ class JsonContinuousLedger:
             try:
                 record = data["records"][fingerprint]
             except KeyError as exc:
-                raise ContinuousLedgerError(f"unknown work item: {fingerprint}") from exc
+                raise ContinuousLedgerError(
+                    f"unknown work item: {fingerprint}"
+                ) from exc
             changes = dict(changes)
             if "last_error" in changes:
-                changes["last_error"] = redact_sensitive_text(str(changes["last_error"]), 2000)
+                changes["last_error"] = redact_sensitive_text(
+                    str(changes["last_error"]), 2000
+                )
             record.update(changes)
             record["updated_at"] = time.time()
             self._write(data)
@@ -163,29 +183,35 @@ class JsonContinuousLedger:
             try:
                 record = data["records"][fingerprint]
             except KeyError as exc:
-                raise ContinuousLedgerError(f"unknown work item: {fingerprint}") from exc
+                raise ContinuousLedgerError(
+                    f"unknown work item: {fingerprint}"
+                ) from exc
             now = time.time()
             history = list(record.get("attempt_history") or [])
-            history.append({
-                "attempt": int(attempts),
-                "at": now,
-                "status": status,
-                "error": redact_sensitive_text(error, 1000),
-                "task_id": task_id,
-                "model": model,
-                "evidence_path": evidence_path,
-            })
+            history.append(
+                {
+                    "attempt": int(attempts),
+                    "at": now,
+                    "status": status,
+                    "error": redact_sensitive_text(error, 1000),
+                    "task_id": task_id,
+                    "model": model,
+                    "evidence_path": evidence_path,
+                }
+            )
             models = list(record.get("model_history") or [])
             if model:
                 models.append({"at": now, "attempt": int(attempts), "model": model})
-            record.update({
-                "attempts": int(attempts),
-                "attempt_history": history,
-                "model_history": models,
-                "last_error": redact_sensitive_text(error, 2000),
-                "task_id": task_id or record.get("task_id", ""),
-                "updated_at": now,
-            })
+            record.update(
+                {
+                    "attempts": int(attempts),
+                    "attempt_history": history,
+                    "model_history": models,
+                    "last_error": redact_sensitive_text(error, 2000),
+                    "task_id": task_id or record.get("task_id", ""),
+                    "updated_at": now,
+                }
+            )
             self._write(data)
             return dict(record)
 
@@ -201,9 +227,13 @@ class JsonContinuousLedger:
             try:
                 record = data["records"][fingerprint]
             except KeyError as exc:
-                raise ContinuousLedgerError(f"unknown work item: {fingerprint}") from exc
+                raise ContinuousLedgerError(
+                    f"unknown work item: {fingerprint}"
+                ) from exc
             history = list(record.get("infrastructure_history") or [])
-            history.append({"at": time.time(), "error": redact_sensitive_text(error, 1000)})
+            history.append(
+                {"at": time.time(), "error": redact_sensitive_text(error, 1000)}
+            )
             record["infrastructure_history"] = history
             record["last_error"] = redact_sensitive_text(error, 2000)
             if state is not None:
@@ -225,7 +255,9 @@ class JsonContinuousLedger:
     def cancel(self, fingerprint: str, reason: str) -> dict[str, Any]:
         return self._transition(fingerprint, "CANCELLED", reason, allowed_from=None)
 
-    def retry(self, fingerprint: str, reason: str = "operator requested retry") -> dict[str, Any]:
+    def retry(
+        self, fingerprint: str, reason: str = "operator requested retry"
+    ) -> dict[str, Any]:
         with self._exclusive():
             if not reason.strip():
                 raise ContinuousLedgerError("retry reason must not be empty")
@@ -244,20 +276,24 @@ class JsonContinuousLedger:
                 )
             now = time.time()
             history = list(record.get("retry_history") or [])
-            history.append({
-                "at": now,
-                "from_state": state,
-                "previous_attempts": attempts,
-                "reason": redact_sensitive_text(reason.strip(), 1000),
-            })
-            record.update({
-                "state": "PENDING",
-                "attempts": 0,
-                "retry_requested": True,
-                "retry_history": history,
-                "last_error": "",
-                "updated_at": now,
-            })
+            history.append(
+                {
+                    "at": now,
+                    "from_state": state,
+                    "previous_attempts": attempts,
+                    "reason": redact_sensitive_text(reason.strip(), 1000),
+                }
+            )
+            record.update(
+                {
+                    "state": "PENDING",
+                    "attempts": 0,
+                    "retry_requested": True,
+                    "retry_history": history,
+                    "last_error": "",
+                    "updated_at": now,
+                }
+            )
             self._write(data)
             return dict(record)
 
@@ -281,23 +317,27 @@ class JsonContinuousLedger:
             record = dict(record)
             now = time.time()
             history = list(record.get("requeue_history") or [])
-            history.append({
-                "at": now,
-                "from_state": state,
-                "previous_attempts": int(record.get("attempts", 0)),
-                "reason": redact_sensitive_text(reason.strip(), 1000),
-                "was_archived": archived,
-            })
+            history.append(
+                {
+                    "at": now,
+                    "from_state": state,
+                    "previous_attempts": int(record.get("attempts", 0)),
+                    "reason": redact_sensitive_text(reason.strip(), 1000),
+                    "was_archived": archived,
+                }
+            )
             if archived:
                 data["archives"].pop(fingerprint, None)
-            record.update({
-                "state": "PENDING",
-                "attempts": 0,
-                "retry_requested": True,
-                "requeue_history": history,
-                "last_error": "",
-                "updated_at": now,
-            })
+            record.update(
+                {
+                    "state": "PENDING",
+                    "attempts": 0,
+                    "retry_requested": True,
+                    "requeue_history": history,
+                    "last_error": "",
+                    "updated_at": now,
+                }
+            )
             record.pop("archived_at", None)
             record.pop("archive_reason", None)
             if record.get("dead_letter"):
@@ -341,13 +381,17 @@ class JsonContinuousLedger:
                 raise ContinuousLedgerError(f"cannot dead-letter work in state {state}")
             now = time.time()
             task = task or {}
-            metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
+            metadata = (
+                task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
+            )
             model_history = []
             for item in list(record.get("model_history") or []):
                 if isinstance(item, dict):
                     entry = dict(item)
                     if "error" in entry:
-                        entry["error"] = redact_sensitive_text(str(entry["error"]), 1000)
+                        entry["error"] = redact_sensitive_text(
+                            str(entry["error"]), 1000
+                        )
                     model_history.append(entry)
                 else:
                     model_history.append(item)
@@ -355,7 +399,9 @@ class JsonContinuousLedger:
                 if isinstance(item, dict):
                     entry = dict(item)
                     if "error" in entry:
-                        entry["error"] = redact_sensitive_text(str(entry["error"]), 1000)
+                        entry["error"] = redact_sensitive_text(
+                            str(entry["error"]), 1000
+                        )
                     model_history.append(entry)
             current_model = str(
                 metadata.get("model_working")
@@ -364,33 +410,49 @@ class JsonContinuousLedger:
                 or metadata.get("model_current")
                 or ""
             )
-            if current_model and not any(item.get("model") == current_model for item in model_history if isinstance(item, dict)):
-                model_history.append({"at": now, "model": current_model, "source": "last_task_model"})
+            if current_model and not any(
+                item.get("model") == current_model
+                for item in model_history
+                if isinstance(item, dict)
+            ):
+                model_history.append(
+                    {"at": now, "model": current_model, "source": "last_task_model"}
+                )
             attempt_history = []
             for item in list(record.get("attempt_history") or []):
                 if isinstance(item, dict):
                     entry = dict(item)
                     if "error" in entry:
-                        entry["error"] = redact_sensitive_text(str(entry["error"]), 1000)
+                        entry["error"] = redact_sensitive_text(
+                            str(entry["error"]), 1000
+                        )
                     attempt_history.append(entry)
                 else:
                     attempt_history.append(item)
             if not attempt_history and int(record.get("attempts", 0)):
-                attempt_history.append({
-                    "attempt": int(record["attempts"]),
-                    "at": record.get("updated_at", now),
-                    "status": state,
-                    "error": redact_sensitive_text(str(record.get("last_error") or reason), 1000),
-                    "task_id": str(record.get("task_id") or task.get("id") or ""),
-                    "model": current_model,
-                    "evidence_path": str(metadata.get("evidence_path") or ""),
-                    "source": "legacy_summary",
-                })
+                attempt_history.append(
+                    {
+                        "attempt": int(record["attempts"]),
+                        "at": record.get("updated_at", now),
+                        "status": state,
+                        "error": redact_sensitive_text(
+                            str(record.get("last_error") or reason), 1000
+                        ),
+                        "task_id": str(record.get("task_id") or task.get("id") or ""),
+                        "model": current_model,
+                        "evidence_path": str(metadata.get("evidence_path") or ""),
+                        "source": "legacy_summary",
+                    }
+                )
             task_id = str(record.get("task_id") or task.get("id") or "")
             latest_attempt = attempt_history[-1] if attempt_history else {}
             evidence_path = str(
                 metadata.get("evidence_path")
-                or (latest_attempt.get("evidence_path") if isinstance(latest_attempt, dict) else "")
+                or (
+                    latest_attempt.get("evidence_path")
+                    if isinstance(latest_attempt, dict)
+                    else ""
+                )
                 or ""
             )
             dead_letter = {
@@ -404,18 +466,22 @@ class JsonContinuousLedger:
                 "dead_lettered_at": now,
                 "updated_at": now,
             }
-            record.update({
-                "state": "DEAD_LETTER",
-                "last_error": redact_sensitive_text(reason.strip(), 2000),
-                "model_history": model_history,
-                "dead_letter": dead_letter,
-                "dead_lettered_at": now,
-                "updated_at": now,
-            })
+            record.update(
+                {
+                    "state": "DEAD_LETTER",
+                    "last_error": redact_sensitive_text(reason.strip(), 2000),
+                    "model_history": model_history,
+                    "dead_letter": dead_letter,
+                    "dead_lettered_at": now,
+                    "updated_at": now,
+                }
+            )
             self._write(data)
             return dict(record)
 
-    def archive(self, fingerprint: str, reason: str = "operator archived terminal work") -> dict[str, Any]:
+    def archive(
+        self, fingerprint: str, reason: str = "operator archived terminal work"
+    ) -> dict[str, Any]:
         with self._exclusive():
             if not reason.strip():
                 raise ContinuousLedgerError("archive reason must not be empty")
@@ -423,18 +489,33 @@ class JsonContinuousLedger:
             record = self._active_record(data, fingerprint)
             state = str(record.get("state", ""))
             if state not in {"SUCCEEDED", "CANCELLED", "DEAD_LETTER"}:
-                raise ContinuousLedgerError(f"only completed, cancelled, or dead-letter work can be archived (state={state})")
+                raise ContinuousLedgerError(
+                    f"only completed, cancelled, or dead-letter work can be archived (state={state})"
+                )
             if state == "DEAD_LETTER":
                 dead = record.get("dead_letter")
                 required = {
-                    "fingerprint", "task_id", "failure_reason", "attempt_history",
-                    "model_history", "evidence_path", "created_at", "dead_lettered_at",
+                    "fingerprint",
+                    "task_id",
+                    "failure_reason",
+                    "attempt_history",
+                    "model_history",
+                    "evidence_path",
+                    "created_at",
+                    "dead_lettered_at",
                 }
                 if not isinstance(dead, dict) or not required.issubset(dead):
-                    raise ContinuousLedgerError("dead-letter evidence is incomplete; refusing to archive")
+                    raise ContinuousLedgerError(
+                        "dead-letter evidence is incomplete; refusing to archive"
+                    )
             now = time.time()
             snapshot = dict(record)
-            snapshot.update({"archived_at": now, "archive_reason": redact_sensitive_text(reason.strip(), 1000)})
+            snapshot.update(
+                {
+                    "archived_at": now,
+                    "archive_reason": redact_sensitive_text(reason.strip(), 1000),
+                }
+            )
             data["archives"][fingerprint] = snapshot
             del data["records"][fingerprint]
             self._write(data)
@@ -457,21 +538,34 @@ class JsonContinuousLedger:
             if state == target:
                 return dict(record)
             if state == "RUNNING":
-                raise ContinuousLedgerError("cannot change lifecycle state while work is running")
+                raise ContinuousLedgerError(
+                    "cannot change lifecycle state while work is running"
+                )
             if target == "CANCELLED" and state == "SUCCEEDED":
                 raise ContinuousLedgerError("cannot cancel succeeded work")
             if allowed_from is not None and state not in allowed_from:
-                raise ContinuousLedgerError(f"cannot transition work from {state} to {target}")
+                raise ContinuousLedgerError(
+                    f"cannot transition work from {state} to {target}"
+                )
             now = time.time()
             history = list(record.get("lifecycle_history") or [])
             safe_reason = redact_sensitive_text(reason.strip(), 2000)
-            history.append({"at": now, "from_state": state, "to_state": target, "reason": safe_reason})
-            record.update({
-                "state": target,
-                "last_error": safe_reason,
-                "lifecycle_history": history,
-                "updated_at": now,
-            })
+            history.append(
+                {
+                    "at": now,
+                    "from_state": state,
+                    "to_state": target,
+                    "reason": safe_reason,
+                }
+            )
+            record.update(
+                {
+                    "state": target,
+                    "last_error": safe_reason,
+                    "lifecycle_history": history,
+                    "updated_at": now,
+                }
+            )
             if target == "CANCELLED":
                 record["cancelled_at"] = now
                 record["cancel_reason"] = safe_reason
@@ -483,7 +577,9 @@ class JsonContinuousLedger:
         try:
             return data["records"][fingerprint]
         except KeyError as exc:
-            raise ContinuousLedgerError(f"unknown active work item: {fingerprint}") from exc
+            raise ContinuousLedgerError(
+                f"unknown active work item: {fingerprint}"
+            ) from exc
 
     def pending(self, *, retry_blocked: bool = False) -> list[WorkItem]:
         with self._exclusive():
@@ -530,12 +626,18 @@ class JsonContinuousLedger:
         data = self._read()
         return sorted(
             (dict(record) for record in data["records"].values()),
-            key=lambda record: (-int(record.get("priority", 50)), record["fingerprint"]),
+            key=lambda record: (
+                -int(record.get("priority", 50)),
+                record["fingerprint"],
+            ),
         )
 
     def archived_records(self) -> list[dict[str, Any]]:
         data = self._read()
         return sorted(
             (dict(record) for record in data["archives"].values()),
-            key=lambda record: (float(record.get("archived_at", 0)), record["fingerprint"]),
+            key=lambda record: (
+                float(record.get("archived_at", 0)),
+                record["fingerprint"],
+            ),
         )

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Report workstation storage pressure and offer a guarded BuildKit-cache prune."""
+
 from __future__ import annotations
 
 import argparse
@@ -9,7 +10,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -62,7 +62,14 @@ def pressure_state(used_percent: float, warning: float, critical: float) -> str:
 def build_cache_prune_command(max_used_bytes: int) -> list[str]:
     if type(max_used_bytes) is not int or max_used_bytes <= 0:
         raise ValueError("max_used_bytes must be a positive integer")
-    return ["docker", "builder", "prune", "--max-used-space", str(max_used_bytes), "--force"]
+    return [
+        "docker",
+        "builder",
+        "prune",
+        "--max-used-space",
+        str(max_used_bytes),
+        "--force",
+    ]
 
 
 def prune_allowed(state: str) -> bool:
@@ -92,7 +99,9 @@ def filesystem_report(
             "available": False,
             "state": "unknown",
         }
-    used_percent = round((usage.total - usage.free) * 100 / usage.total, 1) if usage.total else 0.0
+    used_percent = (
+        round((usage.total - usage.free) * 100 / usage.total, 1) if usage.total else 0.0
+    )
     return {
         "label": label,
         "path_exists": path.exists(),
@@ -158,7 +167,9 @@ def parse_log_inspect_line(value: str) -> dict[str, Any] | None:
         options = {}
     max_size = options.get("max-size")
     max_files = options.get("max-file")
-    bounded = driver == "local" or (driver == "json-file" and bool(max_size) and bool(max_files))
+    bounded = driver == "local" or (
+        driver == "json-file" and bool(max_size) and bool(max_files)
+    )
     try:
         log_bytes = Path(log_path).stat().st_size if log_path else None
     except OSError:
@@ -172,7 +183,9 @@ def parse_log_inspect_line(value: str) -> dict[str, Any] | None:
     }
 
 
-def docker_run(args: list[str], *, timeout: int = DOCKER_TIMEOUT_SECONDS) -> tuple[str | None, str | None]:
+def docker_run(
+    args: list[str], *, timeout: int = DOCKER_TIMEOUT_SECONDS
+) -> tuple[str | None, str | None]:
     try:
         result = subprocess.run(
             ["docker", *args],
@@ -193,7 +206,9 @@ def docker_run(args: list[str], *, timeout: int = DOCKER_TIMEOUT_SECONDS) -> tup
 def docker_report() -> dict[str, Any]:
     root, root_error = docker_run(["info", "--format", "{{.DockerRootDir}}"])
     summary_raw, summary_error = docker_run(["system", "df", "--format", "json"])
-    details_raw, details_error = docker_run(["system", "df", "--verbose", "--format", "json"])
+    details_raw, details_error = docker_run(
+        ["system", "df", "--verbose", "--format", "json"]
+    )
     ids_raw, ids_error = docker_run(["ps", "--quiet"])
     report: dict[str, Any] = {
         "available": not (root_error and summary_error and details_error and ids_error),
@@ -202,7 +217,9 @@ def docker_report() -> dict[str, Any]:
         "volumes": [],
         "build_cache": {"entries": 0, "bytes": None, "in_use_entries": None},
         "logs": {"containers": 0, "unbounded_count": None, "entries": []},
-        "errors": sorted({e for e in (root_error, summary_error, details_error, ids_error) if e}),
+        "errors": sorted(
+            {e for e in (root_error, summary_error, details_error, ids_error) if e}
+        ),
     }
     if root:
         report["docker_root"] = root
@@ -231,19 +248,27 @@ def docker_report() -> dict[str, Any]:
                     for row in details.get("Volumes", [])
                     if isinstance(row, dict)
                 ]
-                cache_entries = [row for row in details.get("BuildCache", []) if isinstance(row, dict)]
+                cache_entries = [
+                    row
+                    for row in details.get("BuildCache", [])
+                    if isinstance(row, dict)
+                ]
                 cache_sizes = [size_bytes(row.get("Size")) for row in cache_entries]
                 report["build_cache"] = {
                     "entries": len(cache_entries),
                     "bytes": sum(x for x in cache_sizes if x is not None)
                     if cache_entries and all(x is not None for x in cache_sizes)
                     else None,
-                    "in_use_entries": sum(row.get("InUse") == "true" for row in cache_entries),
+                    "in_use_entries": sum(
+                        row.get("InUse") == "true" for row in cache_entries
+                    ),
                 }
         except (json.JSONDecodeError, TypeError):
             report["errors"].append("docker_details_unparseable")
     if ids_raw is not None:
-        ids = [value for value in ids_raw.splitlines() if value][:MAX_INSPECT_CONTAINERS]
+        ids = [value for value in ids_raw.splitlines() if value][
+            :MAX_INSPECT_CONTAINERS
+        ]
         report["logs"]["containers"] = len(ids)
         if ids:
             template = "{{.Name}}|{{.HostConfig.LogConfig.Type}}|{{json .HostConfig.LogConfig.Config}}|{{.LogPath}}"
@@ -253,9 +278,15 @@ def docker_report() -> dict[str, Any]:
             if inspected is None:
                 report["errors"].append(inspect_error or "docker_inspect_failed")
             else:
-                entries = [parsed for line in inspected.splitlines() if (parsed := parse_log_inspect_line(line))]
+                entries = [
+                    parsed
+                    for line in inspected.splitlines()
+                    if (parsed := parse_log_inspect_line(line))
+                ]
                 report["logs"]["entries"] = entries
-                report["logs"]["unbounded_count"] = sum(not row["bounded"] for row in entries)
+                report["logs"]["unbounded_count"] = sum(
+                    not row["bounded"] for row in entries
+                )
                 if len(report["logs"]["entries"]) == MAX_INSPECT_CONTAINERS:
                     report["logs"]["truncated"] = True
     return report
@@ -284,7 +315,9 @@ def report(args: argparse.Namespace) -> dict[str, Any]:
     if docker.get("docker_root"):
         filesystem_paths.append(("docker_root", Path(docker["docker_root"])))
     filesystems = [
-        filesystem_report(label, path, args.warning_used_percent, args.critical_used_percent)
+        filesystem_report(
+            label, path, args.warning_used_percent, args.critical_used_percent
+        )
         for label, path in filesystem_paths
     ]
     components = {
@@ -318,8 +351,12 @@ def parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--data-root", default=str(Path.home() / ".zwslcore"))
     p.add_argument("--workspace", default=str(Path.cwd()))
-    p.add_argument("--warning-used-percent", type=float, default=DEFAULT_WARNING_PERCENT)
-    p.add_argument("--critical-used-percent", type=float, default=DEFAULT_CRITICAL_PERCENT)
+    p.add_argument(
+        "--warning-used-percent", type=float, default=DEFAULT_WARNING_PERCENT
+    )
+    p.add_argument(
+        "--critical-used-percent", type=float, default=DEFAULT_CRITICAL_PERCENT
+    )
     p.add_argument(
         "--prune-build-cache-max-used-bytes",
         type=positive_bytes,

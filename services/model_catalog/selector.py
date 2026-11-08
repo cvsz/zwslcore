@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 
 @dataclasses.dataclass(frozen=True)
@@ -115,9 +116,7 @@ def rank_candidate(
         else:
             combined = max(0.0, candidate.input_cost) + max(0.0, candidate.output_cost)
             score -= min(300, int(combined * 10))
-            reasons.append(
-                f"cost={candidate.input_cost:g}/{candidate.output_cost:g}"
-            )
+            reasons.append(f"cost={candidate.input_cost:g}/{candidate.output_cost:g}")
 
     eligible = not blockers
     if not eligible:
@@ -295,9 +294,7 @@ def engineering_model_ladder(
     aliases = [
         item.candidate.alias
         for item in ranked
-        if item.eligible
-        and item.candidate.alias
-        and item.candidate.hardware_fit >= 0
+        if item.eligible and item.candidate.alias and item.candidate.hardware_fit >= 0
     ]
     return tuple(dict.fromkeys(aliases))
 

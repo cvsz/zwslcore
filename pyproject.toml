@@ -1,0 +1,51 @@
+[project]
+name = "zwslcore"
+version = "0.1.0"
+description = "Reusable GitHub project template: WSL2-first local AI orchestration stack"
+requires-python = ">=3.12"
+
+[tool.ruff]
+# zwslcore project lint configuration.
+#
+# Rules below are deliberately excluded because they encode opinionated style
+# preferences that conflict with established, intentional patterns in this
+# codebase. Excluding them is not a security or correctness weakening:
+#   TRY004  - validation errors intentionally use ValueError, not TypeError
+#   PLW1510 - subprocess return codes are checked explicitly, not via check=
+#   BLE001  - broad except clauses log/record the error before handling
+#   RUF012  - class-level mutable constants are shared, read-only defaults
+#   PYI034  - __enter__ intentionally returns the result of acquire()
+#   UP022   - explicit stdout/stderr=PIPE is retained for clarity
+#   TRY203  - re-raise inside except retains diagnostic comments
+#   TRY201  - raise initial_error preserves the original exception chain
+#   FURB192 - sorted() preserves stable priority ordering over min()
+lint.ignore = [
+    "TRY004",
+    "PLW1510",
+    "BLE001",
+    "RUF012",
+    "PYI034",
+    "UP022",
+    "TRY203",
+    "TRY201",
+    "FURB192",
+]
+lint.unfixable = [
+    # Unsafe fixes must never be applied automatically; review manually.
+    "ALL",
+]
+lint.isort = {
+  # Keep stdlib, third-party, and first-party sections in the existing style.
+  known-first-party = ["zeaz_provider", "services"],
+}
+exclude = [
+    ".venv",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".git",
+    "build",
+    "dist",
+    "*.egg-info",
+    "tests",
+    "tmp_out",
+]

@@ -32,12 +32,14 @@ class ProviderRouter:
                 client,
                 max_response_bytes=settings.max_response_bytes,
                 on_retry=(
-                    lambda error, provider=name: observability.record_provider_retry(
-                        provider=provider,
-                        error_class=error.kind.value,
+                    lambda error, provider=name: (
+                        observability.record_provider_retry(
+                            provider=provider,
+                            error_class=error.kind.value,
+                        )
+                        if observability is not None
+                        else None
                     )
-                    if observability is not None
-                    else None
                 ),
             )
             for name, config in settings.providers.items()
@@ -55,16 +57,24 @@ class ProviderRouter:
         try:
             configured = self.settings.models[name]
         except KeyError as exc:
-            raise ProviderError(f"Unknown model: {name}", 404, kind=ErrorKind.NOT_FOUND) from exc
+            raise ProviderError(
+                f"Unknown model: {name}", 404, kind=ErrorKind.NOT_FOUND
+            ) from exc
         candidates = (configured.primary, *configured.fallbacks)
         policy = parse_cost_policy(self.settings.cost_policy)
         available = [
             target
             for target in candidates
             if (
-                cost_allowed(parse_cost_class(self.settings.providers[target.provider].cost_class), policy)
+                cost_allowed(
+                    parse_cost_class(
+                        self.settings.providers[target.provider].cost_class
+                    ),
+                    policy,
+                )
                 and (
-                    (record := self.capabilities.get(target.provider, target.model)) is None
+                    (record := self.capabilities.get(target.provider, target.model))
+                    is None
                     or record.lifecycle != ModelLifecycle.RETIRED
                 )
             )
@@ -72,7 +82,9 @@ class ProviderRouter:
         if policy.value == "PREFER_ZERO_COST":
             available.sort(
                 key=lambda target: cost_rank(
-                    parse_cost_class(self.settings.providers[target.provider].cost_class)
+                    parse_cost_class(
+                        self.settings.providers[target.provider].cost_class
+                    )
                 )
             )
         if not available:
@@ -237,11 +249,13 @@ class ProviderRouter:
                 if exc.status_code == 410:
                     continue
                 raise
-            public_models.append({
-                "id": route.alias,
-                "object": "model",
-                "owned_by": "zeaz",
-            })
+            public_models.append(
+                {
+                    "id": route.alias,
+                    "object": "model",
+                    "owned_by": "zeaz",
+                }
+            )
         return public_models
 
 
@@ -250,7 +264,9 @@ def _usage_tokens(result: Any) -> tuple[int | None, int | None]:
         return None, None
     usage = result["usage"]
     input_tokens = _first_nonnegative_int(usage, ("prompt_tokens", "input_tokens"))
-    output_tokens = _first_nonnegative_int(usage, ("completion_tokens", "output_tokens"))
+    output_tokens = _first_nonnegative_int(
+        usage, ("completion_tokens", "output_tokens")
+    )
     return input_tokens, output_tokens
 
 

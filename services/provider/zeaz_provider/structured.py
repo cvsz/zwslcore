@@ -10,7 +10,10 @@ class StructuredOutputError(ValueError):
 
 def structured_schema(payload: dict[str, Any]) -> dict[str, Any] | None:
     response_format = payload.get("response_format")
-    if not isinstance(response_format, dict) or response_format.get("type") != "json_schema":
+    if (
+        not isinstance(response_format, dict)
+        or response_format.get("type") != "json_schema"
+    ):
         return None
     json_schema = response_format.get("json_schema")
     if not isinstance(json_schema, dict):
@@ -71,11 +74,13 @@ def ollama_chat_to_openai(
         "object": "chat.completion",
         "created": int(time.time()),
         "model": requested_model,
-        "choices": [{
-            "index": 0,
-            "message": {"role": "assistant", "content": content},
-            "finish_reason": finish_reason,
-        }],
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": finish_reason,
+            }
+        ],
         "usage": {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
@@ -86,7 +91,7 @@ def ollama_chat_to_openai(
 
 __all__ = [
     "StructuredOutputError",
-    "structured_schema",
-    "ollama_structured_payload",
     "ollama_chat_to_openai",
+    "ollama_structured_payload",
+    "structured_schema",
 ]

@@ -21,8 +21,16 @@ def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Capture or compare immutable identities from the local Ollama inventory."
     )
-    p.add_argument("--compare", metavar="MANIFEST", help="compare against a prior captured JSON manifest")
-    p.add_argument("--fail-on-drift", action="store_true", help="return 1 when a comparison detects identity drift")
+    p.add_argument(
+        "--compare",
+        metavar="MANIFEST",
+        help="compare against a prior captured JSON manifest",
+    )
+    p.add_argument(
+        "--fail-on-drift",
+        action="store_true",
+        help="return 1 when a comparison detects identity drift",
+    )
     return p
 
 
@@ -33,7 +41,11 @@ def main(argv: list[str] | None = None) -> int:
         p.error("--fail-on-drift requires --compare")
     try:
         current = collect_inventory()
-        result = compare_manifests(current, load_manifest(args.compare)) if args.compare else current
+        result = (
+            compare_manifests(current, load_manifest(args.compare))
+            if args.compare
+            else current
+        )
     except ModelInventoryError as exc:
         print(f"model-manifest: {exc}", file=sys.stderr)
         return 1

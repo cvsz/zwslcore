@@ -128,7 +128,9 @@ def write_cache(
         "catalog": catalog,
     }
     encoded = (
-        json.dumps(envelope, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8")
+        json.dumps(envelope, ensure_ascii=False, sort_keys=True, indent=2).encode(
+            "utf-8"
+        )
         + b"\n"
     )
     _atomic_write(target, encoded)
@@ -158,7 +160,10 @@ def read_cache(
     fetched_at = envelope.get("fetched_at")
     if not isinstance(fetched_at, (int, float)):
         raise ModelsDevError("models.dev cache is missing fetched_at")
-    if max_age_seconds is not None and time.time() - float(fetched_at) > max_age_seconds:
+    if (
+        max_age_seconds is not None
+        and time.time() - float(fetched_at) > max_age_seconds
+    ):
         raise ModelsDevError("models.dev cache is stale")
     catalog = envelope.get("catalog")
     if not isinstance(catalog, dict):
@@ -224,6 +229,10 @@ def lookup_model(catalog: dict[str, Any], model_id: str) -> dict[str, Any] | Non
 
     canonical = None
     models = catalog.get("models")
-    if canonical_id and isinstance(models, dict) and isinstance(models.get(canonical_id), dict):
+    if (
+        canonical_id
+        and isinstance(models, dict)
+        and isinstance(models.get(canonical_id), dict)
+    ):
         canonical = dict(models[canonical_id])
     return {"canonical": canonical, "providers": found}

@@ -11,8 +11,8 @@ from .agents import (
 from .change_snapshot import ChangeSnapshotStore, SnapshotError
 from .continuous import ContinuousEngineeringRunner
 from .delegation import (
-    Lineage,
     MAX_DELEGATION_DEPTH,
+    Lineage,
     children_of,
     descendants_of,
     make_child_task,
@@ -21,8 +21,7 @@ from .delegation import (
 from .evidence import EvidenceExporter
 from .hardware import HardwareProfile, detect_hardware
 from .ledger import JsonContinuousLedger
-from .reconcile import QueueReconciler, ReconcileFinding, ReconcileReport
-from .loop import ContinuousEngineeringLoop, LoopPolicy, WorkKind, WorkItem
+from .loop import ContinuousEngineeringLoop, LoopPolicy, WorkItem, WorkKind
 from .mcp import (
     MCPError,
     MCPServerConfig,
@@ -30,11 +29,19 @@ from .mcp import (
     StdioMCPSession,
     call_server_tool,
     list_server_tools,
-    load_config as load_mcp_config,
     split_qualified_tool,
 )
+from .mcp import (
+    load_config as load_mcp_config,
+)
 from .models import Checkpoint, EngineeringTask, PushPolicy, TaskRisk, TaskStatus
-from .permissions import PermissionDecision, PermissionRule, evaluate_permission, require_allowed
+from .permissions import (
+    PermissionDecision,
+    PermissionRule,
+    evaluate_permission,
+    require_allowed,
+)
+from .reconcile import QueueReconciler, ReconcileFinding, ReconcileReport
 from .review import SecurityGate, StaticReviewer
 from .runtime import EngineeringRuntime, ProviderClient
 from .snapshot import RepositorySnapshotter
@@ -44,24 +51,21 @@ from .validation import evaluate_validation, validate_mode
 from .worktree import WorktreeManager
 
 __all__ = [
+    "DEFAULT_AGENT_CONFIG",
+    "MAX_DELEGATION_DEPTH",
     "AgentConfigError",
     "AgentProfile",
     "AgentRegistry",
-    "DEFAULT_AGENT_CONFIG",
     "ChangeSnapshotStore",
     "Checkpoint",
-    "ContinuousEngineeringRunner",
     "ContinuousEngineeringLoop",
-    "Lineage",
-    "MAX_DELEGATION_DEPTH",
+    "ContinuousEngineeringRunner",
     "EngineeringRuntime",
+    "EngineeringTask",
     "EvidenceExporter",
     "HardwareProfile",
     "JsonContinuousLedger",
-    "QueueReconciler",
-    "ReconcileFinding",
-    "ReconcileReport",
-    "EngineeringTask",
+    "Lineage",
     "LoopPolicy",
     "MCPError",
     "MCPServerConfig",
@@ -70,6 +74,9 @@ __all__ = [
     "PermissionRule",
     "ProviderClient",
     "PushPolicy",
+    "QueueReconciler",
+    "ReconcileFinding",
+    "ReconcileReport",
     "RepositorySnapshotter",
     "SQLiteEngineeringStore",
     "SecurityGate",
@@ -78,15 +85,16 @@ __all__ = [
     "StdioMCPSession",
     "TaskRisk",
     "TaskStatus",
+    "ToolCapability",
     "WorkItem",
     "WorkKind",
-    "ToolCapability",
     "WorktreeManager",
     "call_server_tool",
     "children_of",
     "descendants_of",
     "detect_hardware",
     "evaluate_permission",
+    "evaluate_validation",
     "get_agent",
     "get_tool",
     "list_agents",
@@ -97,6 +105,5 @@ __all__ = [
     "require_allowed",
     "split_qualified_tool",
     "task_lineage",
-    "evaluate_validation",
     "validate_mode",
 ]

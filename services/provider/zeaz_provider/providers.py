@@ -30,22 +30,27 @@ class ProviderClient:
         self.config = config
         self.client = client
         self.max_response_bytes = max_response_bytes
-        self.resilience = ResilienceExecutor(ResiliencePolicy(
-            max_attempts=config.max_attempts,
-            base_delay_seconds=config.retry_base_seconds,
-            max_delay_seconds=config.retry_max_seconds,
-            failure_threshold=config.circuit_failure_threshold,
-            reset_timeout_seconds=config.circuit_reset_seconds,
-            total_timeout_seconds=config.total_timeout_seconds,
-        ), on_retry=on_retry)
+        self.resilience = ResilienceExecutor(
+            ResiliencePolicy(
+                max_attempts=config.max_attempts,
+                base_delay_seconds=config.retry_base_seconds,
+                max_delay_seconds=config.retry_max_seconds,
+                failure_threshold=config.circuit_failure_threshold,
+                reset_timeout_seconds=config.circuit_reset_seconds,
+                total_timeout_seconds=config.total_timeout_seconds,
+            ),
+            on_retry=on_retry,
+        )
 
     def headers(self) -> dict[str, str]:
         headers = dict(self.config.headers)
         if self.config.api == "anthropic":
-            headers.update({
-                "x-api-key": self.config.api_key,
-                "anthropic-version": self.config.api_version or "2023-06-01",
-            })
+            headers.update(
+                {
+                    "x-api-key": self.config.api_key,
+                    "anthropic-version": self.config.api_version or "2023-06-01",
+                }
+            )
         elif self.config.api == "azure":
             headers["api-key"] = self.config.api_key
         elif self.config.api_key:
@@ -59,11 +64,14 @@ class ProviderClient:
         return url
 
     async def chat(self, payload: dict[str, Any]) -> dict[str, Any]:
-        schema = structured_schema(payload) if self.config.native_structured_outputs else None
+        schema = (
+            structured_schema(payload)
+            if self.config.native_structured_outputs
+            else None
+        )
         if schema is not None:
             base = self.config.base_url.rstrip("/")
-            if base.endswith("/v1"):
-                base = base[:-3]
+            base = base.removesuffix("/v1")
             try:
                 native = ollama_structured_payload(payload, schema)
             except StructuredOutputError as exc:
@@ -99,7 +107,9 @@ class ProviderClient:
     async def models(self) -> dict[str, Any]:
         return await self._json("GET", self.url("models"), None)
 
-    async def stream(self, endpoint: str, payload: dict[str, Any]) -> AsyncIterator[bytes]:
+    async def stream(
+        self, endpoint: str, payload: dict[str, Any]
+    ) -> AsyncIterator[bytes]:
         url = self.url(endpoint)
         emitted_bytes = 0
         try:
@@ -111,7 +121,9 @@ class ProviderClient:
                 timeout=self.config.timeout_seconds,
             ) as response:
                 if response.status_code >= 400:
-                    body = (await _read_at_most(response, 8192)).decode(errors="replace")
+                    body = (await _read_at_most(response, 8192)).decode(
+                        errors="replace"
+                    )
                     raise classify_http_error(
                         response.status_code,
                         body,
@@ -192,7 +204,9 @@ class ProviderClient:
             try:
                 async with response_context as response:
                     if response.status_code >= 400:
-                        error_body = (await _read_at_most(response, 8192)).decode(errors="replace")
+                        error_body = (await _read_at_most(response, 8192)).decode(
+                            errors="replace"
+                        )
                         raise classify_http_error(
                             response.status_code,
                             error_body,

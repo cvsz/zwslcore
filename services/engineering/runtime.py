@@ -3,20 +3,18 @@ from __future__ import annotations
 import json
 import re
 import shlex
-import socket
 import subprocess
 import time
-import uuid
 import urllib.error
 import urllib.request
-from pathlib import Path
+import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from .agents import AgentProfile, AgentRegistry
 from .change_snapshot import ChangeSnapshotStore, SnapshotError
 from .evidence import EvidenceExporter
-from .permissions import require_allowed
 from .models import Checkpoint, EngineeringTask, TaskStatus
 from .observability import (
     emit_engineering_event,
@@ -24,6 +22,7 @@ from .observability import (
     task_work_fingerprint,
     valid_request_id,
 )
+from .permissions import require_allowed
 from .review import SecurityGate, StaticReviewer
 from .snapshot import RepositorySnapshotter
 from .store import SQLiteEngineeringStore
@@ -96,7 +95,13 @@ class ProviderClient:
             except urllib.error.URLError as exc:
                 last_transport = exc
                 reason = exc.reason
-            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, TimeoutError, socket.timeout, OSError) as exc:
+            except (
+                ConnectionResetError,
+                ConnectionAbortedError,
+                BrokenPipeError,
+                TimeoutError,
+                OSError,
+            ) as exc:
                 last_transport = exc
                 reason = exc
 
@@ -282,7 +287,8 @@ class EngineeringRuntime:
         self.provider.model = selected
         task.metadata["model_selected_for_run"] = selected
         task.metadata["model_selection_source"] = (
-            "persisted-task-cursor" if preferred and selected == preferred
+            "persisted-task-cursor"
+            if preferred and selected == preferred
             else "default-selector"
         )
         self.store.save_task(task)
@@ -358,7 +364,9 @@ class EngineeringRuntime:
             task.status = TaskStatus.BASELINING
             self.store.save_task(task)
             self.progress(f"[engineering] {task.id} BASELINING")
-            self.progress(f"[engineering] {task.id} PROVIDER_PREFLIGHT model={self.provider.model}")
+            self.progress(
+                f"[engineering] {task.id} PROVIDER_PREFLIGHT model={self.provider.model}"
+            )
             if isinstance(self.provider, ProviderClient):
                 self.provider.preflight(request_id=request_id)
             else:
@@ -372,7 +380,9 @@ class EngineeringRuntime:
                     task.worktree_path,
                 )
                 worktree = Path(task.worktree_path).resolve()
-                branch = task.branch_name or self.worktrees.safe_branch_name(task.id, task.title)
+                branch = task.branch_name or self.worktrees.safe_branch_name(
+                    task.id, task.title
+                )
                 task.metadata["resume_previous_head"] = previous_head
                 task.metadata["resume_source_head"] = source_head
                 self.store.save_task(task)
@@ -385,12 +395,16 @@ class EngineeringRuntime:
                         f"[engineering] WORKTREE_SYNC old={previous_head[:12]} new={source_head[:12]}"
                     )
             else:
-                worktree, branch = self.worktrees.create(task.repository, task.id, task.title)
+                worktree, branch = self.worktrees.create(
+                    task.repository, task.id, task.title
+                )
                 task.worktree_path = str(worktree)
                 task.branch_name = branch
                 self.progress(f"[engineering] worktree={worktree} branch={branch}")
 
-            baseline_head = self._git(worktree, ["rev-parse", "HEAD"], capture=True).strip()
+            baseline_head = self._git(
+                worktree, ["rev-parse", "HEAD"], capture=True
+            ).strip()
             task.metadata["baseline_head"] = baseline_head
 
             task.attempts += 1
@@ -418,7 +432,9 @@ class EngineeringRuntime:
             task.status = TaskStatus.PLANNING
             self.store.save_task(task)
             enter_phase("planning")
-            self.progress(f"[engineering] {task.id} PLANNING model={self.provider.model}")
+            self.progress(
+                f"[engineering] {task.id} PLANNING model={self.provider.model}"
+            )
             priority_terms = self._task_priority_terms(task)
             self._require_agent(agent, "snapshot")
             snapshot = RepositorySnapshotter(
@@ -439,7 +455,9 @@ class EngineeringRuntime:
                 f"sample={','.join(candidates[:6]) if candidates else 'none'}"
             )
             self._require_agent(agent, "plan")
-            plan_checkpoint = self.store.latest_checkpoint(task.id, "PLAN") if resume else None
+            plan_checkpoint = (
+                self.store.latest_checkpoint(task.id, "PLAN") if resume else None
+            )
             reusable_plan = ""
             if plan_checkpoint is not None:
                 checkpoint_head = str(plan_checkpoint.payload.get("baseline_head", ""))
@@ -592,7 +610,9 @@ class EngineeringRuntime:
             task.status = TaskStatus.VALIDATING
             self.store.save_task(task)
             enter_phase("validating")
-            self.progress(f"[engineering] {task.id} VALIDATING validators={len(validators)}")
+            self.progress(
+                f"[engineering] {task.id} VALIDATING validators={len(validators)}"
+            )
             final_validation = self._run_validators(worktree, validators)
             validation = evaluate_validation(
                 baseline_validation,
@@ -601,7 +621,11 @@ class EngineeringRuntime:
             )
             self._checkpoint(task, "VALIDATION", validation)
             if not validation["passed"]:
-                blocking = validation["regressions"] if validation_mode == "delta" else validation["failures"]
+                blocking = (
+                    validation["regressions"]
+                    if validation_mode == "delta"
+                    else validation["failures"]
+                )
                 self.progress(
                     f"[engineering] validation_failed mode={validation_mode} blocking={blocking}"
                 )
@@ -622,7 +646,9 @@ class EngineeringRuntime:
             # Intent-to-add makes new files visible to the deterministic diff reviewer
             # without staging their content for commit.
             self._git(worktree, ["add", "-N", "--", "."])
-            diff = self._git(worktree, ["diff", "--no-ext-diff", "--binary"], capture=True)
+            diff = self._git(
+                worktree, ["diff", "--no-ext-diff", "--binary"], capture=True
+            )
             findings = self.reviewer.review(diff, allowed_paths=allowed_paths)
             passed, blocking = self.gate.evaluate(findings)
             self._checkpoint(
@@ -637,14 +663,18 @@ class EngineeringRuntime:
                     + "; ".join(f"{f.category}:{f.path}" for f in blocking)
                 )
 
-            self.progress(f"[engineering] {task.id} SECURITY_GATE_PASS findings={len(findings)}")
+            self.progress(
+                f"[engineering] {task.id} SECURITY_GATE_PASS findings={len(findings)}"
+            )
 
             if commit:
                 self._require_agent(agent, "commit")
                 self._git(worktree, ["add", "-A"])
                 self._git(worktree, ["commit", "-m", f"engineering: {task.title[:72]}"])
                 self._checkpoint(task, "COMMIT", {"branch": task.branch_name})
-                self.progress(f"[engineering] {task.id} COMMITTED branch={task.branch_name}")
+                self.progress(
+                    f"[engineering] {task.id} COMMITTED branch={task.branch_name}"
+                )
             else:
                 # Clear intent-to-add entries while preserving working-tree edits.
                 self._git(worktree, ["reset"])
@@ -723,10 +753,25 @@ class EngineeringRuntime:
     @staticmethod
     def _task_priority_terms(task: EngineeringTask) -> set[str]:
         stop = {
-            "add", "and", "all", "the", "for", "fix", "improve", "repair",
-            "update", "with", "without", "from", "into", "this", "that",
+            "add",
+            "and",
+            "all",
+            "the",
+            "for",
+            "fix",
+            "improve",
+            "repair",
+            "update",
+            "with",
+            "without",
+            "from",
+            "into",
+            "this",
+            "that",
         }
-        tokens = re.findall(r"[a-z0-9_]{3,}", f"{task.title} {task.description}".lower())
+        tokens = re.findall(
+            r"[a-z0-9_]{3,}", f"{task.title} {task.description}".lower()
+        )
         return {token for token in tokens if token not in stop}
 
     def promote_model(self, error: str) -> str | None:
@@ -746,7 +791,7 @@ class EngineeringRuntime:
             current = self.model_ladder.index(self.provider.model)
         except ValueError:
             current = -1
-        for alias in self.model_ladder[current + 1:]:
+        for alias in self.model_ladder[current + 1 :]:
             if alias != self.provider.model:
                 previous = self.provider.model
                 self.provider.model = alias
@@ -760,9 +805,7 @@ class EngineeringRuntime:
     @staticmethod
     def _scope_instruction(allowed_paths: set[str] | None) -> str:
         if not allowed_paths:
-            return (
-                "Paths must be repository-relative and must not include a repository-name prefix."
-            )
+            return "Paths must be repository-relative and must not include a repository-name prefix."
         allowed = ", ".join(sorted(path.rstrip("/") for path in allowed_paths))
         return (
             "Every change path MUST be repository-relative, MUST NOT include the repository name "
@@ -839,7 +882,7 @@ class EngineeringRuntime:
             stripped = line.strip()
             if not stripped.startswith(prefix) or not stripped.endswith(" ---"):
                 continue
-            path = stripped[len(prefix):-4].strip()
+            path = stripped[len(prefix) : -4].strip()
             if path and path not in candidates:
                 candidates.append(path)
         return candidates
@@ -873,7 +916,9 @@ class EngineeringRuntime:
         fence = chr(96) * 3
         if text.startswith(fence):
             lines = text.splitlines()
-            text = "\n".join(lines[1:-1] if lines[-1].strip() == fence else lines[1:]).strip()
+            text = "\n".join(
+                lines[1:-1] if lines[-1].strip() == fence else lines[1:]
+            ).strip()
 
         value: Any
         try:
@@ -927,7 +972,12 @@ class EngineeringRuntime:
             if rel.is_absolute() or ".." in rel.parts:
                 raise ValueError(f"unsafe path: {rel}")
             rel_posix = rel.as_posix()
-            if rel_posix.startswith(".env") or rel.suffix.lower() in {".pem", ".key", ".p12", ".pfx"}:
+            if rel_posix.startswith(".env") or rel.suffix.lower() in {
+                ".pem",
+                ".key",
+                ".p12",
+                ".pfx",
+            }:
                 raise ValueError(f"secret-bearing path is forbidden: {rel}")
             if allowed_paths and not any(
                 rel_posix == p or rel_posix.startswith(p.rstrip("/") + "/")
@@ -969,7 +1019,9 @@ class EngineeringRuntime:
         return {"passed": not failures, "failures": failures, "results": results}
 
     @staticmethod
-    def _require_agent(agent: AgentProfile, permission: str, pattern: str = "*") -> None:
+    def _require_agent(
+        agent: AgentProfile, permission: str, pattern: str = "*"
+    ) -> None:
         require_allowed(permission, pattern, agent.rules)
 
     @staticmethod
@@ -979,7 +1031,9 @@ class EngineeringRuntime:
             return base
         return base + "\n\nAgent profile instructions:\n" + prompt
 
-    def _checkpoint(self, task: EngineeringTask, phase: str, payload: dict[str, Any]) -> None:
+    def _checkpoint(
+        self, task: EngineeringTask, phase: str, payload: dict[str, Any]
+    ) -> None:
         checkpoint = Checkpoint(task_id=task.id, phase=phase, payload=payload)
         self.store.save_checkpoint(checkpoint)
         task.metadata["phase_cursor"] = phase
@@ -1000,7 +1054,9 @@ class EngineeringRuntime:
         task.metadata["evidence_sha256"] = digest
         task.metadata.pop("evidence_error", None)
         self.store.save_task(task)
-        self.progress(f"[engineering] EVIDENCE_WRITTEN sha256={digest[:16]} path={path}")
+        self.progress(
+            f"[engineering] EVIDENCE_WRITTEN sha256={digest[:16]} path={path}"
+        )
 
     @staticmethod
     def _git(root: Path, args: list[str], *, capture: bool = False) -> str:

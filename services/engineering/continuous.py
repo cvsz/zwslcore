@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
 from typing import Any
 
-from .ledger import JsonContinuousLedger
 from .lease import RunnerLeaseError, SQLiteRunnerLease
+from .ledger import JsonContinuousLedger
 from .loop import ContinuousEngineeringLoop, LoopPolicy, LoopResult, WorkItem
 from .models import EngineeringTask, TaskRisk, TaskStatus
 from .observability import safe_error_class
@@ -52,7 +52,9 @@ class ContinuousEngineeringRunner:
         children = dict(parent.metadata.get("subagent_children") or {})
         children[task.id] = {
             "status": task.status.value,
-            "agent": str(task.metadata.get("agent") or task.metadata.get("delegated_agent") or ""),
+            "agent": str(
+                task.metadata.get("agent") or task.metadata.get("delegated_agent") or ""
+            ),
             "attempts": task.attempts,
             "last_error": task.last_error[:500],
             "evidence_path": str(task.metadata.get("evidence_path") or ""),
@@ -91,7 +93,9 @@ class ContinuousEngineeringRunner:
         lease.assert_owned()
         seed = self.ledger.pending(retry_blocked=retry_blocked)
         reset_once: set[str] = set()
-        self.progress(f"[continuous] pending={len(seed)} max_iterations={max_iterations} retry_blocked={retry_blocked}")
+        self.progress(
+            f"[continuous] pending={len(seed)} max_iterations={max_iterations} retry_blocked={retry_blocked}"
+        )
 
         def implement(item: WorkItem) -> ExecutionResult:
             lease.assert_owned()
@@ -106,14 +110,21 @@ class ContinuousEngineeringRunner:
             payload = item.payload
 
             retry_requested = retry_blocked or bool(record.get("retry_requested"))
-            if retry_requested and item.fingerprint not in reset_once and task is not None and (
-                task.status in {TaskStatus.BLOCKED, TaskStatus.FAILED}
-                or task.attempts >= task.max_attempts
+            if (
+                retry_requested
+                and item.fingerprint not in reset_once
+                and task is not None
+                and (
+                    task.status in {TaskStatus.BLOCKED, TaskStatus.FAILED}
+                    or task.attempts >= task.max_attempts
+                )
             ):
                 if task.worktree_path:
                     self.runtime.worktrees.reset(task.worktree_path)
                 task.attempts = 0
-                task.max_attempts = max(1, int(record.get("max_attempts", item.max_attempts)))
+                task.max_attempts = max(
+                    1, int(record.get("max_attempts", item.max_attempts))
+                )
                 task.status = TaskStatus.CREATED
                 task.last_error = ""
                 self.store.save_task(task)
@@ -167,10 +178,14 @@ class ContinuousEngineeringRunner:
                             or completed.metadata.get("model_current")
                             or ""
                         ),
-                        evidence_path=str(completed.metadata.get("evidence_path") or ""),
+                        evidence_path=str(
+                            completed.metadata.get("evidence_path") or ""
+                        ),
                     )
                 self._record_parent_state(completed)
-                self.progress(f"[continuous] task={completed.id} status={completed.status.value}")
+                self.progress(
+                    f"[continuous] task={completed.id} status={completed.status.value}"
+                )
                 return ExecutionResult(
                     passed=completed.status == TaskStatus.SUCCEEDED,
                     task=completed,
@@ -217,11 +232,13 @@ class ContinuousEngineeringRunner:
                         history = list(
                             latest.metadata.get("model_escalation_history") or []
                         )
-                        history.append({
-                            "from": previous_model,
-                            "to": promoted,
-                            "error": str(exc)[:500],
-                        })
+                        history.append(
+                            {
+                                "from": previous_model,
+                                "to": promoted,
+                                "error": str(exc)[:500],
+                            }
+                        )
                         latest.metadata["model_escalation_history"] = history[-20:]
                         self.store.save_task(latest)
                         updates["last_checkpoint"] = {
@@ -251,9 +268,13 @@ class ContinuousEngineeringRunner:
                 if updates:
                     self.ledger.update(item.fingerprint, **updates)
                 self._record_parent_state(latest)
-                return ExecutionResult(False, latest, str(exc), consume_attempt=consumed)
+                return ExecutionResult(
+                    False, latest, str(exc), consume_attempt=consumed
+                )
 
-        def validate(item: WorkItem, result: ExecutionResult) -> tuple[bool, tuple[str, ...]]:
+        def validate(
+            item: WorkItem, result: ExecutionResult
+        ) -> tuple[bool, tuple[str, ...]]:
             return result.passed, ()
 
         def rollback(item: WorkItem, result: ExecutionResult) -> None:
@@ -290,5 +311,5 @@ class ContinuousEngineeringRunner:
 
 
 def stable_work_id(title: str, kind: str, payload: dict[str, Any]) -> str:
-    raw = f"{kind}\n{title}\n{payload}".encode("utf-8")
+    raw = f"{kind}\n{title}\n{payload}".encode()
     return hashlib.sha256(raw).hexdigest()

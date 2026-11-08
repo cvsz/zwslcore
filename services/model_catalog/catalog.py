@@ -3,11 +3,19 @@ from __future__ import annotations
 import copy
 import json
 import re
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 MEDIA_TYPES = {
-    "audio", "embedding", "image", "moderation", "rerank",
-    "speech", "transcribe", "tts", "video",
+    "audio",
+    "embedding",
+    "image",
+    "moderation",
+    "rerank",
+    "speech",
+    "transcribe",
+    "tts",
+    "video",
 }
 MEDIA_OUTPUTS = {"audio", "image", "video"}
 

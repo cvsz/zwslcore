@@ -8,11 +8,24 @@ class RepositorySnapshotter:
     """Bounded, secret-aware repository text snapshot."""
 
     EXCLUDED_DIRS = {
-        ".git", ".zwslcore", ".venv", "venv", "node_modules", "vendor",
-        "dist", "build", "__pycache__", ".pytest_cache", ".mypy_cache",
+        ".git",
+        ".zwslcore",
+        ".venv",
+        "venv",
+        "node_modules",
+        "vendor",
+        "dist",
+        "build",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
     }
     SECRET_NAMES = {
-        ".env", ".env.local", ".env.production", "id_rsa", "id_ed25519",
+        ".env",
+        ".env.local",
+        ".env.production",
+        "id_rsa",
+        "id_ed25519",
     }
     SECRET_SUFFIXES = {".pem", ".key", ".p12", ".pfx"}
 
@@ -53,8 +66,10 @@ class RepositorySnapshotter:
                 for current, dirs, files in os.walk(start, followlinks=False):
                     current_path = Path(current)
                     dirs[:] = sorted(
-                        d for d in dirs
-                        if d not in self.EXCLUDED_DIRS and not (current_path / d).is_symlink()
+                        d
+                        for d in dirs
+                        if d not in self.EXCLUDED_DIRS
+                        and not (current_path / d).is_symlink()
                     )
                     candidates.extend(current_path / name for name in sorted(files))
 
@@ -86,7 +101,9 @@ class RepositorySnapshotter:
                 block = f"\n--- FILE: {rel} ---\n{text}\n"
                 block_bytes = len(block.encode("utf-8"))
                 if block_bytes > remaining:
-                    block = block.encode("utf-8")[:remaining].decode("utf-8", errors="ignore")
+                    block = block.encode("utf-8")[:remaining].decode(
+                        "utf-8", errors="ignore"
+                    )
                     block_bytes = len(block.encode("utf-8"))
                 chunks.append(block)
                 total += block_bytes

@@ -42,13 +42,17 @@ def _require_loopback_url(url: str) -> None:
         host = parsed.hostname
         address = ipaddress.ip_address(host) if host else None
     except ValueError as exc:
-        raise ModelInventoryError("Ollama inventory URL must use a loopback address") from exc
+        raise ModelInventoryError(
+            "Ollama inventory URL must use a loopback address"
+        ) from exc
     if parsed.scheme != "http" or not (
         host == "localhost" or (address is not None and address.is_loopback)
     ):
         raise ModelInventoryError("Ollama inventory URL must use HTTP on loopback")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise ModelInventoryError("Ollama inventory URL must not contain credentials or query data")
+        raise ModelInventoryError(
+            "Ollama inventory URL must not contain credentials or query data"
+        )
 
 
 def _fetch_json(url: str, *, timeout: int = REQUEST_TIMEOUT_SECONDS) -> dict[str, Any]:
@@ -88,18 +92,23 @@ def _normalize_model(value: Any) -> dict[str, Any]:
     if type(size) is not int or size < 0:
         raise ModelInventoryError("Ollama inventory contains an invalid model size")
     if not isinstance(modified_at, str):
-        raise ModelInventoryError("Ollama inventory contains an invalid modification time")
+        raise ModelInventoryError(
+            "Ollama inventory contains an invalid modification time"
+        )
     if not isinstance(details, dict):
         details = {}
     normalized_details: dict[str, Any] = {}
     for field in ("format", "family", "parameter_size", "quantization_level"):
         field_value = details.get(field)
         if field_value is not None and not isinstance(field_value, str):
-            raise ModelInventoryError(f"Ollama inventory contains invalid {field} metadata")
+            raise ModelInventoryError(
+                f"Ollama inventory contains invalid {field} metadata"
+            )
         normalized_details[field] = field_value
     families = details.get("families")
     if families is not None and (
-        not isinstance(families, list) or any(not isinstance(item, str) for item in families)
+        not isinstance(families, list)
+        or any(not isinstance(item, str) for item in families)
     ):
         raise ModelInventoryError("Ollama inventory contains invalid families metadata")
     normalized_details["families"] = sorted(set(families or []))
@@ -145,7 +154,10 @@ def load_manifest(path: str | Path) -> dict[str, Any]:
 
 
 def normalize_manifest(manifest: Any) -> dict[str, Any]:
-    if not isinstance(manifest, dict) or type(manifest.get("schema_version")) is not int:
+    if (
+        not isinstance(manifest, dict)
+        or type(manifest.get("schema_version")) is not int
+    ):
         raise ModelInventoryError("model inventory manifest has an invalid schema")
     if manifest["schema_version"] != 1:
         raise ModelInventoryError("unsupported model inventory manifest schema")
@@ -157,7 +169,9 @@ def normalize_manifest(manifest: Any) -> dict[str, Any]:
     normalized = [_normalize_manifest_model(item) for item in models]
     names = [item["name"] for item in normalized]
     if len(set(names)) != len(names):
-        raise ModelInventoryError("model inventory manifest contains duplicate model names")
+        raise ModelInventoryError(
+            "model inventory manifest contains duplicate model names"
+        )
     captured_at = manifest.get("captured_at")
     if not isinstance(captured_at, str):
         raise ModelInventoryError("model inventory manifest is missing captured_at")
@@ -171,7 +185,9 @@ def normalize_manifest(manifest: Any) -> dict[str, Any]:
 
 def _normalize_manifest_model(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise ModelInventoryError("model inventory manifest contains an invalid model record")
+        raise ModelInventoryError(
+            "model inventory manifest contains an invalid model record"
+        )
     normalized = _normalize_model(
         {
             "name": value.get("name"),
@@ -180,7 +196,13 @@ def _normalize_manifest_model(value: Any) -> dict[str, Any]:
             "modified_at": value.get("modified_at"),
             "details": {
                 field: value.get(field)
-                for field in ("format", "family", "families", "parameter_size", "quantization_level")
+                for field in (
+                    "format",
+                    "family",
+                    "families",
+                    "parameter_size",
+                    "quantization_level",
+                )
             },
         }
     )
@@ -189,7 +211,9 @@ def _normalize_manifest_model(value: Any) -> dict[str, Any]:
     return normalized
 
 
-def compare_manifests(current: dict[str, Any], reference: dict[str, Any]) -> dict[str, Any]:
+def compare_manifests(
+    current: dict[str, Any], reference: dict[str, Any]
+) -> dict[str, Any]:
     """Compare model identities, ignoring capture and local modification timestamps."""
     current = normalize_manifest(current)
     reference = normalize_manifest(reference)

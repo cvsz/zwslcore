@@ -106,13 +106,20 @@ def _cpu_name() -> str:
 def _gpu_info() -> tuple[str, bool, str, float]:
     try:
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
             capture_output=True,
             text=True,
             timeout=3,
         )
         if result.returncode == 0:
-            first = next((line.strip() for line in result.stdout.splitlines() if line.strip()), "")
+            first = next(
+                (line.strip() for line in result.stdout.splitlines() if line.strip()),
+                "",
+            )
             if first:
                 name, _, memory = first.rpartition(",")
                 memory_gb = float(memory.strip()) / 1024 if memory.strip() else 0.0
@@ -123,7 +130,11 @@ def _gpu_info() -> tuple[str, bool, str, float]:
     try:
         result = subprocess.run(["rocminfo"], capture_output=True, text=True, timeout=3)
         if result.returncode == 0:
-            lines = [line.strip() for line in result.stdout.splitlines() if "name:" in line.lower()]
+            lines = [
+                line.strip()
+                for line in result.stdout.splitlines()
+                if "name:" in line.lower()
+            ]
             if lines:
                 return lines[0][:240], True, "rocm", 0.0
     except (OSError, subprocess.TimeoutExpired):
@@ -135,7 +146,8 @@ def _gpu_info() -> tuple[str, bool, str, float]:
             lines = [
                 line.strip()
                 for line in result.stdout.splitlines()
-                if "vga compatible controller" in line.lower() or "3d controller" in line.lower()
+                if "vga compatible controller" in line.lower()
+                or "3d controller" in line.lower()
             ]
             if lines:
                 return lines[0][:240], False, "detected-only", 0.0

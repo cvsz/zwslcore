@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import fnmatch
-from typing import Iterable
-
+from collections.abc import Iterable
 
 VALID_ACTIONS = {"allow", "ask", "deny"}
 
@@ -38,7 +37,9 @@ def evaluate_permission(
 ) -> PermissionDecision:
     matched: PermissionRule | None = None
     for rule in [item for ruleset in rulesets for item in ruleset]:
-        if fnmatch.fnmatchcase(permission, rule.permission) and fnmatch.fnmatchcase(pattern, rule.pattern):
+        if fnmatch.fnmatchcase(permission, rule.permission) and fnmatch.fnmatchcase(
+            pattern, rule.pattern
+        ):
             matched = rule
     if matched is None:
         return PermissionDecision(permission, pattern, "ask", None)

@@ -129,7 +129,9 @@ class ResilienceExecutor:
                 if not exc.retryable or attempt + 1 >= self.policy.max_attempts:
                     raise
                 delay = self._delay(exc, attempt)
-                remaining = self.policy.total_timeout_seconds - (self.clock() - started_at)
+                remaining = self.policy.total_timeout_seconds - (
+                    self.clock() - started_at
+                )
                 if delay >= remaining:
                     raise self._deadline_error(exc) from exc
                 if self.on_retry is not None:
@@ -167,7 +169,7 @@ class ResilienceExecutor:
 
 
 __all__ = [
-    "ResiliencePolicy",
     "CircuitBreaker",
     "ResilienceExecutor",
+    "ResiliencePolicy",
 ]

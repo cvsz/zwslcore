@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
+from prometheus_client import (
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 
 
 class Observability:
@@ -73,7 +79,9 @@ class Observability:
             self._configure_otlp()
 
     def _configure_otlp(self) -> None:
-        from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+        from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+            OTLPMetricExporter,
+        )
         from opentelemetry.sdk.metrics import MeterProvider
         from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
@@ -130,7 +138,9 @@ class Observability:
         input_tokens: int | None = None,
         output_tokens: int | None = None,
     ) -> None:
-        self.provider_requests.labels(provider=provider, model=model, outcome=outcome).inc()
+        self.provider_requests.labels(
+            provider=provider, model=model, outcome=outcome
+        ).inc()
         self.provider_latency.labels(provider=provider, model=model).observe(
             max(0.0, duration_seconds)
         )

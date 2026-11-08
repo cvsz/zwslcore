@@ -90,10 +90,7 @@ class CapabilityRegistry:
         return record
 
     def list(self) -> list[CapabilityRecord]:
-        records = (
-            self.get(provider, model)
-            for provider, model in self._records
-        )
+        records = (self.get(provider, model) for provider, model in self._records)
         return sorted(
             (record for record in records if record is not None),
             key=lambda item: (item.provider, item.account, item.region, item.model),
@@ -163,8 +160,8 @@ def _lifecycle(value: Any) -> ModelLifecycle:
 
 
 __all__ = [
-    "ModelLifecycle",
-    "ModelCapabilities",
     "CapabilityRecord",
     "CapabilityRegistry",
+    "ModelCapabilities",
+    "ModelLifecycle",
 ]

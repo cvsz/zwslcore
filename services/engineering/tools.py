@@ -16,9 +16,15 @@ TOOLS: tuple[ToolCapability, ...] = (
     ToolCapability("plan", "plan", False, "Create an implementation plan."),
     ToolCapability("edit", "edit", True, "Apply model-proposed file changes."),
     ToolCapability("validate", "validate", False, "Run operator-declared validators."),
-    ToolCapability("review", "review", False, "Run deterministic static/security review."),
-    ToolCapability("commit", "commit", True, "Create a local commit in the managed worktree."),
-    ToolCapability("delegate", "delegate", False, "Delegate bounded work to a subagent."),
+    ToolCapability(
+        "review", "review", False, "Run deterministic static/security review."
+    ),
+    ToolCapability(
+        "commit", "commit", True, "Create a local commit in the managed worktree."
+    ),
+    ToolCapability(
+        "delegate", "delegate", False, "Delegate bounded work to a subagent."
+    ),
 )
 
 

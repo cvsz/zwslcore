@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Create an owner-only, checksummed backup of zwslcore's durable local state."""
+
 from __future__ import annotations
 
 import argparse
@@ -11,7 +12,6 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
 import tomllib
@@ -26,7 +26,6 @@ from services.engineering.lease import SQLiteRunnerLease
 from services.engineering.ledger import JsonContinuousLedger
 from services.engineering.models import TaskStatus
 from services.engineering.store import SQLiteEngineeringStore
-
 
 BACKUP_SCHEMA = 1
 RPO_TARGET_HOURS = 24
@@ -78,13 +77,17 @@ def _copy_tree(source: Path, relative_root: str, content: Path) -> None:
         relative = path.relative_to(source)
         target = content / relative_root / relative
         if path.is_symlink():
-            raise BackupError(f"refusing symbolic link in backup input: {relative_root}/{relative}")
+            raise BackupError(
+                f"refusing symbolic link in backup input: {relative_root}/{relative}"
+            )
         if path.is_dir():
             target.mkdir(mode=0o700, parents=True, exist_ok=True)
         elif path.is_file():
             _copy_file(path, f"{relative_root}/{relative.as_posix()}", content)
         else:
-            raise BackupError(f"refusing unsupported backup entry: {relative_root}/{relative}")
+            raise BackupError(
+                f"refusing unsupported backup entry: {relative_root}/{relative}"
+            )
 
 
 def _sqlite_online_backup(source: Path, destination: Path) -> dict[str, Any]:
@@ -95,17 +98,27 @@ def _sqlite_online_backup(source: Path, destination: Path) -> dict[str, Any]:
         src.backup(dst, pages=256, sleep=0.05)
         integrity = str(dst.execute("PRAGMA integrity_check").fetchone()[0])
         if integrity != "ok":
-            raise BackupError(f"SQLite online backup failed integrity check: {integrity}")
+            raise BackupError(
+                f"SQLite online backup failed integrity check: {integrity}"
+            )
         schema_version = int(dst.execute("PRAGMA user_version").fetchone()[0])
         tables = {
             str(row[0])
-            for row in dst.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            for row in dst.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
         }
         counts: dict[str, int] = {}
         for table in ("tasks", "checkpoints", "runner_leases"):
             if table in tables:
-                counts[table] = int(dst.execute(f'SELECT count(*) FROM "{table}"').fetchone()[0])
-        return {"integrity_check": integrity, "schema_version": schema_version, "row_counts": counts}
+                counts[table] = int(
+                    dst.execute(f'SELECT count(*) FROM "{table}"').fetchone()[0]
+                )
+        return {
+            "integrity_check": integrity,
+            "schema_version": schema_version,
+            "row_counts": counts,
+        }
     finally:
         dst.close()
         src.close()
@@ -141,13 +154,21 @@ def _runtime_metadata() -> dict[str, Any]:
         "zwslcore-open-webui",
     ):
         result = subprocess.run(
-            ["docker", "inspect", "--format", "{{.Config.Image}} {{.Image}} {{.State.Running}}", name],
+            [
+                "docker",
+                "inspect",
+                "--format",
+                "{{.Config.Image}} {{.Image}} {{.State.Running}}",
+                name,
+            ],
             capture_output=True,
             text=True,
             timeout=10,
         )
         if result.returncode == 0:
-            image_ref, image_id, running = (result.stdout.strip().split(" ", 2) + [""])[:3]
+            image_ref, image_id, running = (result.stdout.strip().split(" ", 2) + [""])[
+                :3
+            ]
             containers[name] = {
                 "image_ref": image_ref,
                 "image_id": image_id,
@@ -166,7 +187,9 @@ def _validate_evidence_tree(path: Path) -> None:
     for evidence in path.rglob("evidence.json"):
         sidecar = evidence.with_name("evidence.sha256")
         if not sidecar.exists():
-            raise BackupError(f"evidence checksum is missing: {evidence.relative_to(path)}")
+            raise BackupError(
+                f"evidence checksum is missing: {evidence.relative_to(path)}"
+            )
         expected = sidecar.read_text(encoding="utf-8").split()[0]
         if _sha256(evidence) != expected:
             raise BackupError(f"evidence checksum failed: {evidence.relative_to(path)}")
@@ -200,12 +223,15 @@ def _include_webui_volume(
         (
             item
             for item in mounts
-            if item.get("Type") == "volume" and item.get("Destination") == "/app/backend/data"
+            if item.get("Type") == "volume"
+            and item.get("Destination") == "/app/backend/data"
         ),
         None,
     )
     if not volume:
-        raise BackupError(f"expected Open WebUI data volume is not mounted in {container}")
+        raise BackupError(
+            f"expected Open WebUI data volume is not mounted in {container}"
+        )
     image = subprocess.run(
         ["docker", "inspect", "--format", "{{.Image}}", container],
         check=True,
@@ -213,13 +239,18 @@ def _include_webui_volume(
         text=True,
         timeout=15,
     ).stdout.strip()
-    running = subprocess.run(
-        ["docker", "inspect", "--format", "{{.State.Running}}", container],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=15,
-    ).stdout.strip().lower() == "true"
+    running = (
+        subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.Running}}", container],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        .stdout.strip()
+        .lower()
+        == "true"
+    )
     if not image:
         raise BackupError("could not resolve the local Open WebUI image identity")
 
@@ -228,7 +259,12 @@ def _include_webui_volume(
     stopped = False
     try:
         if running:
-            subprocess.run(["docker", "stop", "--time", "15", container], check=True, capture_output=True, timeout=30)
+            subprocess.run(
+                ["docker", "stop", "--time", "15", container],
+                check=True,
+                capture_output=True,
+                timeout=30,
+            )
             stopped = True
         tar_code = (
             "import sys,tarfile; "
@@ -237,14 +273,34 @@ def _include_webui_volume(
             "archive.close()"
         )
         docker_command = [
-            "docker", "run", "--rm", "--network", "none",
-            "--volumes-from", f"{container}:ro",
-            "--entrypoint", "python", image, "-c", tar_code,
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--volumes-from",
+            f"{container}:ro",
+            "--entrypoint",
+            "python",
+            image,
+            "-c",
+            tar_code,
         ]
-        producer = subprocess.Popen(docker_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        producer = subprocess.Popen(
+            docker_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
         assert producer.stdout is not None
         encryptor = subprocess.Popen(
-            ["gpg", "--batch", "--yes", "--output", str(target), "--recipient", recipient, "--encrypt"],
+            [
+                "gpg",
+                "--batch",
+                "--yes",
+                "--output",
+                str(target),
+                "--recipient",
+                recipient,
+                "--encrypt",
+            ],
             stdin=producer.stdout,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
@@ -263,7 +319,12 @@ def _include_webui_volume(
         os.chmod(target, 0o600)
     finally:
         if stopped:
-            subprocess.run(["docker", "start", container], check=True, capture_output=True, timeout=60)
+            subprocess.run(
+                ["docker", "start", container],
+                check=True,
+                capture_output=True,
+                timeout=60,
+            )
     return {
         "path": "docker/open-webui-data.tar.gz.gpg",
         "volume_name": str(volume.get("Name") or ""),
@@ -286,7 +347,9 @@ def create_backup(
     webui_container: str = "zwslcore-open-webui",
 ) -> Path:
     if include_webui_volume and recreate_webui_data:
-        raise BackupError("choose either encrypted Open WebUI capture or the recreate policy")
+        raise BackupError(
+            "choose either encrypted Open WebUI capture or the recreate policy"
+        )
     started = time.monotonic()
     source = Path(source_root or Path.home() / ".zwslcore").expanduser().resolve()
     repository = Path(repository_root).expanduser().resolve()
@@ -294,14 +357,16 @@ def create_backup(
     db_path = state / "engineering.db"
     ledger_path = state / "continuous.json"
     if not db_path.is_file() or not ledger_path.is_file():
-        raise BackupError("engineering.db and continuous.json must both exist before backup")
+        raise BackupError(
+            "engineering.db and continuous.json must both exist before backup"
+        )
 
     if output:
         target = Path(output).expanduser().resolve()
         backup_parent = target.parent
     else:
         backup_parent = source / "backups"
-        stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
         target = backup_parent / f"zwslcore-{stamp}-{uuid.uuid4().hex[:8]}"
     if target.exists():
         raise BackupError(f"backup destination already exists: {target}")
@@ -321,9 +386,15 @@ def create_backup(
         ledger = JsonContinuousLedger(ledger_path)
         lock_paths = SQLiteRunnerLease.queue_lock_paths(store, ledger.path)
         with SQLiteRunnerLease(store, lock_paths=lock_paths):
-            active = [task.id for task in store.list_tasks() if task.status in ACTIVE_TASK_STATES]
+            active = [
+                task.id
+                for task in store.list_tasks()
+                if task.status in ACTIVE_TASK_STATES
+            ]
             if active:
-                raise BackupError(f"backup refused while engineering tasks are active: {len(active)}")
+                raise BackupError(
+                    f"backup refused while engineering tasks are active: {len(active)}"
+                )
 
             db_target = content / "state" / "engineering.db"
             db_target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -358,7 +429,10 @@ def create_backup(
         for path in sorted(content.rglob("*")):
             if path.is_file():
                 relative = path.relative_to(content).as_posix()
-                files[relative] = {"bytes": path.stat().st_size, "sha256": _sha256(path)}
+                files[relative] = {
+                    "bytes": path.stat().st_size,
+                    "sha256": _sha256(path),
+                }
 
         docker_state: dict[str, Any] | None = None
         excluded = [
@@ -378,10 +452,14 @@ def create_backup(
                 "classification": "restricted encrypted user data",
             }
             excluded = [item for item in excluded if not item.startswith("Ollama")]
-            excluded.append("Open WebUI data volume is included as GPG-encrypted user data")
+            excluded.append(
+                "Open WebUI data volume is included as GPG-encrypted user data"
+            )
             webui_policy = "encrypted_backup"
         elif recreate_webui_data:
-            excluded.append("Open WebUI persistent volume (user-authorized recreate policy; not backed up)")
+            excluded.append(
+                "Open WebUI persistent volume (user-authorized recreate policy; not backed up)"
+            )
             webui_policy = "recreate"
         else:
             excluded.append(
@@ -393,10 +471,12 @@ def create_backup(
         pyproject = repository / "services/provider/pyproject.toml"
         if pyproject.is_file():
             with pyproject.open("rb") as handle:
-                version = str(tomllib.load(handle).get("project", {}).get("version", ""))
+                version = str(
+                    tomllib.load(handle).get("project", {}).get("version", "")
+                )
         manifest = {
             "schema": BACKUP_SCHEMA,
-            "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "created_at": dt.datetime.now(dt.UTC).isoformat(),
             "created_at_epoch": time.time(),
             "source": {
                 "root": str(source),
@@ -425,9 +505,14 @@ def create_backup(
             "excluded": excluded,
             "duration_seconds": round(time.monotonic() - started, 3),
         }
-        encoded = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        encoded = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode(
+            "utf-8"
+        )
         _write_private(stage / "manifest.json", encoded)
-        _write_private(stage / "manifest.sha256", f"{hashlib.sha256(encoded).hexdigest()}  manifest.json\n".encode())
+        _write_private(
+            stage / "manifest.sha256",
+            f"{hashlib.sha256(encoded).hexdigest()}  manifest.json\n".encode(),
+        )
         os.replace(stage, target)
         os.chmod(target, 0o700)
         return target
@@ -440,7 +525,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", default=str(Path.home() / ".zwslcore"))
     parser.add_argument("--repository", default=str(ROOT))
-    parser.add_argument("--output", help="destination directory; defaults to SOURCE_ROOT/backups")
+    parser.add_argument(
+        "--output", help="destination directory; defaults to SOURCE_ROOT/backups"
+    )
     webui_policy = parser.add_mutually_exclusive_group()
     webui_policy.add_argument("--include-webui-volume", action="store_true")
     webui_policy.add_argument(
@@ -461,7 +548,13 @@ def main() -> int:
             gpg_recipient=args.gpg_recipient,
             webui_container=args.webui_container,
         )
-    except (BackupError, OSError, ValueError, sqlite3.Error, subprocess.SubprocessError) as exc:
+    except (
+        BackupError,
+        OSError,
+        ValueError,
+        sqlite3.Error,
+        subprocess.SubprocessError,
+    ) as exc:
         print(f"backup failed: {exc}", file=sys.stderr)
         return 2
     print(result)

@@ -6,9 +6,8 @@ import os
 import selectors
 import subprocess
 import time
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 DEFAULT_CONFIG = Path.home() / ".zwslcore" / "mcp" / "servers.json"
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
@@ -45,7 +44,10 @@ class MCPTool:
 
 def _validate_server_name(value: str) -> str:
     name = value.strip()
-    if not name or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-." for ch in name):
+    if not name or any(
+        ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-."
+        for ch in name
+    ):
         raise MCPError(f"invalid MCP server name: {value!r}")
     return name
 
@@ -71,13 +73,19 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> dict[str, MCPServerConfig]
             raise MCPError("MCP server entries must be named objects")
         name = _validate_server_name(raw_name)
         raw_command = raw.get("command")
-        if not isinstance(raw_command, list) or not raw_command or not all(
-            isinstance(item, str) and item for item in raw_command
+        if (
+            not isinstance(raw_command, list)
+            or not raw_command
+            or not all(isinstance(item, str) and item for item in raw_command)
         ):
-            raise MCPError(f"MCP server {name!r} command must be a non-empty string array")
+            raise MCPError(
+                f"MCP server {name!r} command must be a non-empty string array"
+            )
 
         raw_inherit = raw.get("inherit_env", [])
-        if not isinstance(raw_inherit, list) or not all(isinstance(item, str) and item for item in raw_inherit):
+        if not isinstance(raw_inherit, list) or not all(
+            isinstance(item, str) and item for item in raw_inherit
+        ):
             raise MCPError(f"MCP server {name!r} inherit_env must be a string array")
 
         raw_env = raw.get("environment", {})
@@ -89,7 +97,9 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> dict[str, MCPServerConfig]
 
         timeout = raw.get("timeout_seconds", 30)
         if not isinstance(timeout, (int, float)) or timeout <= 0 or timeout > 300:
-            raise MCPError(f"MCP server {name!r} timeout_seconds must be within (0, 300]")
+            raise MCPError(
+                f"MCP server {name!r} timeout_seconds must be within (0, 300]"
+            )
 
         protocol = raw.get("protocol_version", DEFAULT_PROTOCOL_VERSION)
         if not isinstance(protocol, str) or not protocol.strip():
@@ -123,7 +133,7 @@ class StdioMCPSession:
         self._next_id = 1
         self._selector: selectors.BaseSelector | None = None
 
-    def __enter__(self) -> "StdioMCPSession":
+    def __enter__(self) -> StdioMCPSession:
         if not self.config.enabled:
             raise MCPError(f"MCP server {self.config.name!r} is disabled")
 
@@ -153,7 +163,9 @@ class StdioMCPSession:
                 bufsize=0,
             )
         except OSError as exc:
-            raise MCPError(f"unable to start MCP server {self.config.name!r}: {exc}") from exc
+            raise MCPError(
+                f"unable to start MCP server {self.config.name!r}: {exc}"
+            ) from exc
 
         assert self.process.stdout is not None
         self._selector = selectors.DefaultSelector()
@@ -214,10 +226,16 @@ class StdioMCPSession:
             self.process.stdin.write(raw)
             self.process.stdin.flush()
         except (BrokenPipeError, OSError) as exc:
-            raise MCPError(f"MCP server {self.config.name!r} stdin failed: {exc}") from exc
+            raise MCPError(
+                f"MCP server {self.config.name!r} stdin failed: {exc}"
+            ) from exc
 
     def _read_message(self, deadline: float) -> dict[str, Any]:
-        if self.process is None or self.process.stdout is None or self._selector is None:
+        if (
+            self.process is None
+            or self.process.stdout is None
+            or self._selector is None
+        ):
             raise MCPError("MCP session is not connected")
 
         while True:

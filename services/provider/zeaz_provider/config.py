@@ -20,6 +20,7 @@ CLIENT_KEY_HASH_PATTERN = re.compile(r"^(?:sha256:)?([a-fA-F0-9]{64})$")
 
 def _expand(value: Any) -> Any:
     if isinstance(value, str):
+
         def replace(match: re.Match[str]) -> str:
             name, default = match.group(1), match.group(2)
             return os.getenv(name, default or "")
@@ -67,7 +68,9 @@ class ProviderConfig:
             "openai",
             "responses",
         }:
-            raise ValueError("provider API must be anthropic, azure, openai, or responses")
+            raise ValueError(
+                "provider API must be anthropic, azure, openai, or responses"
+            )
         _validate_origin(self.base_url, "provider base_url")
         parse_cost_class(self.cost_class)
         if type(self.native_structured_outputs) is not bool:
@@ -95,18 +98,25 @@ class ProviderConfig:
         if (
             not isinstance(self.api_version, str)
             or len(self.api_version) > 128
-            or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
-                   for character in self.api_version)
+            or any(
+                character
+                not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+                for character in self.api_version
+            )
         ):
             raise ValueError("provider api_version is invalid")
-        _require_number(self.timeout_seconds, "provider timeout_seconds", minimum=0.001, maximum=600)
+        _require_number(
+            self.timeout_seconds, "provider timeout_seconds", minimum=0.001, maximum=600
+        )
         _require_number(
             self.total_timeout_seconds,
             "provider total_timeout_seconds",
             minimum=0.001,
             maximum=3600,
         )
-        _require_integer(self.max_attempts, "provider max_attempts", minimum=1, maximum=10)
+        _require_integer(
+            self.max_attempts, "provider max_attempts", minimum=1, maximum=10
+        )
         _require_number(
             self.retry_base_seconds,
             "provider retry_base_seconds",
@@ -120,7 +130,9 @@ class ProviderConfig:
             maximum=120,
         )
         if self.retry_max_seconds < self.retry_base_seconds:
-            raise ValueError("provider retry_max_seconds cannot be lower than retry_base_seconds")
+            raise ValueError(
+                "provider retry_max_seconds cannot be lower than retry_base_seconds"
+            )
         _require_integer(
             self.circuit_failure_threshold,
             "provider circuit_failure_threshold",
@@ -227,7 +239,11 @@ def load_settings(path: str | Path | None = None) -> Settings:
             raise RuntimeError(f"Invalid model route fallbacks: {alias}")
         fallbacks: list[RouteTarget] = []
         for item in raw_fallbacks:
-            if not isinstance(item, Mapping) or "provider" not in item or "model" not in item:
+            if (
+                not isinstance(item, Mapping)
+                or "provider" not in item
+                or "model" not in item
+            ):
                 raise RuntimeError(f"Invalid model route fallback: {alias}")
             try:
                 fallback = RouteTarget(provider=item["provider"], model=item["model"])
@@ -237,7 +253,9 @@ def load_settings(path: str | Path | None = None) -> Settings:
                 continue
             fallbacks.append(fallback)
         try:
-            models[alias] = ModelRoute(alias=alias, primary=primary, fallbacks=tuple(fallbacks))
+            models[alias] = ModelRoute(
+                alias=alias, primary=primary, fallbacks=tuple(fallbacks)
+            )
         except (TypeError, ValueError) as exc:
             raise RuntimeError(f"Invalid model route: {alias}") from exc
     key_hashes: set[bytes] = {
@@ -250,7 +268,9 @@ def load_settings(path: str | Path | None = None) -> Settings:
             continue
         match = CLIENT_KEY_HASH_PATTERN.fullmatch(configured_hash.strip())
         if not match:
-            raise RuntimeError("ZEAZ_CLIENT_KEY_HASHES contains an invalid SHA-256 hash")
+            raise RuntimeError(
+                "ZEAZ_CLIENT_KEY_HASHES contains an invalid SHA-256 hash"
+            )
         key_hashes.add(bytes.fromhex(match.group(1)))
     if not providers:
         raise RuntimeError("No providers are enabled")
@@ -266,7 +286,9 @@ def load_settings(path: str | Path | None = None) -> Settings:
         raise RuntimeError("ZEAZ_RATE_LIMIT_BACKEND must be memory or redis")
     redis_url = os.getenv("ZEAZ_REDIS_URL", "")
     if rate_limit_backend == "redis" and not redis_url:
-        raise RuntimeError("ZEAZ_REDIS_URL is required for the Redis rate-limit backend")
+        raise RuntimeError(
+            "ZEAZ_REDIS_URL is required for the Redis rate-limit backend"
+        )
     trusted_proxy_cidrs = tuple(
         item.strip()
         for item in os.getenv("ZEAZ_TRUSTED_PROXY_CIDRS", "").split(",")
@@ -274,7 +296,8 @@ def load_settings(path: str | Path | None = None) -> Settings:
     )
     try:
         trusted_proxy_cidrs = tuple(
-            str(ipaddress.ip_network(item, strict=False)) for item in trusted_proxy_cidrs
+            str(ipaddress.ip_network(item, strict=False))
+            for item in trusted_proxy_cidrs
         )
     except ValueError as exc:
         raise RuntimeError("ZEAZ_TRUSTED_PROXY_CIDRS contains an invalid CIDR") from exc
@@ -309,13 +332,14 @@ def load_settings(path: str | Path | None = None) -> Settings:
         maximum=1_073_741_824,
     )
     rate_limit_key_prefix = os.getenv("ZEAZ_RATE_LIMIT_KEY_PREFIX", "zeaz:rate-limit:")
-    if (
-        not 1 <= len(rate_limit_key_prefix) <= 128
-        or any(character in rate_limit_key_prefix for character in "\r\n\x00")
+    if not 1 <= len(rate_limit_key_prefix) <= 128 or any(
+        character in rate_limit_key_prefix for character in "\r\n\x00"
     ):
         raise RuntimeError("ZEAZ_RATE_LIMIT_KEY_PREFIX is invalid")
     try:
-        cost_policy = parse_cost_policy(os.getenv("ZEAZ_COST_POLICY", CostPolicy.ZERO_COST_ONLY.value))
+        cost_policy = parse_cost_policy(
+            os.getenv("ZEAZ_COST_POLICY", CostPolicy.ZERO_COST_ONLY.value)
+        )
     except ValueError as exc:
         raise RuntimeError("ZEAZ_COST_POLICY is invalid") from exc
     return Settings(
@@ -327,7 +351,9 @@ def load_settings(path: str | Path | None = None) -> Settings:
         max_output_tokens=max_output_tokens,
         rate_limit_per_minute=rate_limit_per_minute,
         metrics_enabled=_enabled(os.getenv("ZEAZ_METRICS_ENABLED", "true")),
-        otlp_metrics_enabled=_enabled(os.getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "")),
+        otlp_metrics_enabled=_enabled(
+            os.getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "")
+        ),
         rate_limit_backend=rate_limit_backend,
         redis_url=redis_url,
         rate_limit_key_prefix=rate_limit_key_prefix,
@@ -360,7 +386,11 @@ def _require_integer(value: Any, label: str, *, minimum: int, maximum: int) -> N
 
 
 def _require_number(value: Any, label: str, *, minimum: float, maximum: float) -> None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not minimum <= value <= maximum:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not minimum <= value <= maximum
+    ):
         raise ValueError(f"{label} must be between {minimum} and {maximum}")
 
 
@@ -378,9 +408,9 @@ def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
 
 
 __all__ = [
+    "ModelRoute",
     "ProviderConfig",
     "RouteTarget",
-    "ModelRoute",
     "Settings",
     "load_settings",
 ]

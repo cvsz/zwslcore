@@ -31,28 +31,34 @@ def anthropic_to_openai(payload: dict[str, Any], model: str) -> dict[str, Any]:
             elif kind == "image":
                 source = _object(block.get("source", {}), "image source")
                 source_type = source.get("type")
-                data = source.get("data") if source_type == "base64" else source.get("url")
+                data = (
+                    source.get("data") if source_type == "base64" else source.get("url")
+                )
                 if isinstance(data, str) and data:
                     if source_type == "base64":
-                        data = (
-                            f"data:{source.get('media_type', 'image/png')};base64,{data}"
-                        )
+                        data = f"data:{source.get('media_type', 'image/png')};base64,{data}"
                     text_parts.append({"type": "image_url", "image_url": {"url": data}})
             elif kind == "tool_use":
-                tool_calls.append({
-                    "id": block.get("id"),
-                    "type": "function",
-                    "function": {
-                        "name": block.get("name"),
-                        "arguments": json.dumps(block.get("input", {}), separators=(",", ":")),
-                    },
-                })
+                tool_calls.append(
+                    {
+                        "id": block.get("id"),
+                        "type": "function",
+                        "function": {
+                            "name": block.get("name"),
+                            "arguments": json.dumps(
+                                block.get("input", {}), separators=(",", ":")
+                            ),
+                        },
+                    }
+                )
             elif kind == "tool_result":
-                tool_results.append({
-                    "role": "tool",
-                    "tool_call_id": block.get("tool_use_id"),
-                    "content": _blocks_to_text(block.get("content", "")),
-                })
+                tool_results.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": block.get("tool_use_id"),
+                        "content": _blocks_to_text(block.get("content", "")),
+                    }
+                )
         if text_parts or tool_calls:
             converted: dict[str, Any] = {
                 "role": role,
@@ -68,14 +74,16 @@ def anthropic_to_openai(payload: dict[str, Any], model: str) -> dict[str, Any]:
         tool = _object(raw_tool, "tool")
         if not isinstance(tool.get("name"), str) or not tool["name"]:
             raise ValueError("Anthropic tool name is invalid")
-        tools.append({
-            "type": "function",
-            "function": {
-                "name": tool["name"],
-                "description": tool.get("description", ""),
-                "parameters": tool.get("input_schema", {"type": "object"}),
-            },
-        })
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool.get("description", ""),
+                    "parameters": tool.get("input_schema", {"type": "object"}),
+                },
+            }
+        )
     result: dict[str, Any] = {
         "model": model,
         "messages": messages,
@@ -102,7 +110,9 @@ def anthropic_to_openai(payload: dict[str, Any], model: str) -> dict[str, Any]:
     return result
 
 
-def openai_to_anthropic(response: dict[str, Any], requested_model: str) -> dict[str, Any]:
+def openai_to_anthropic(
+    response: dict[str, Any], requested_model: str
+) -> dict[str, Any]:
     choice = _first_choice(response)
     message = _object(choice.get("message") or {}, "provider message")
     content: list[dict[str, Any]] = []
@@ -111,12 +121,14 @@ def openai_to_anthropic(response: dict[str, Any], requested_model: str) -> dict[
     for raw_call in _array(message.get("tool_calls", []), "tool calls"):
         call = _object(raw_call, "tool call")
         function = _object(call.get("function") or {}, "tool function")
-        content.append({
-            "type": "tool_use",
-            "id": call.get("id"),
-            "name": function.get("name"),
-            "input": _json_object(function.get("arguments", "{}")),
-        })
+        content.append(
+            {
+                "type": "tool_use",
+                "id": call.get("id"),
+                "name": function.get("name"),
+                "input": _json_object(function.get("arguments", "{}")),
+            }
+        )
     finish = choice.get("finish_reason")
     stop_reason = {
         "tool_calls": "tool_use",
@@ -151,14 +163,20 @@ def openai_request_to_anthropic(
             systems.append(message.get("content", ""))
             continue
         if role == "tool":
-            messages.append({
-                "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": message.get("tool_call_id"),
-                    "content": _openai_content_to_anthropic(message.get("content", "")),
-                }],
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": message.get("tool_call_id"),
+                            "content": _openai_content_to_anthropic(
+                                message.get("content", "")
+                            ),
+                        }
+                    ],
+                }
+            )
             continue
         if role not in {"user", "assistant"}:
             raise ValueError("OpenAI message role is invalid")
@@ -167,12 +185,14 @@ def openai_request_to_anthropic(
             for raw_call in _array(message.get("tool_calls", []), "tool calls"):
                 call = _object(raw_call, "tool call")
                 function = _object(call.get("function") or {}, "tool function")
-                content.append({
-                    "type": "tool_use",
-                    "id": call.get("id"),
-                    "name": function.get("name"),
-                    "input": _json_object(function.get("arguments", "{}")),
-                })
+                content.append(
+                    {
+                        "type": "tool_use",
+                        "id": call.get("id"),
+                        "name": function.get("name"),
+                        "input": _json_object(function.get("arguments", "{}")),
+                    }
+                )
         messages.append({"role": role, "content": content})
 
     result: dict[str, Any] = {
@@ -196,11 +216,13 @@ def openai_request_to_anthropic(
         if item.get("type") != "function":
             continue
         function = _object(item.get("function") or {}, "tool function")
-        tools.append({
-            "name": function.get("name"),
-            "description": function.get("description", ""),
-            "input_schema": function.get("parameters", {"type": "object"}),
-        })
+        tools.append(
+            {
+                "name": function.get("name"),
+                "description": function.get("description", ""),
+                "input_schema": function.get("parameters", {"type": "object"}),
+            }
+        )
     if tools:
         result["tools"] = tools
     tool_choice = payload.get("tool_choice")
@@ -211,13 +233,22 @@ def openai_request_to_anthropic(
     elif isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
         result["tool_choice"] = {
             "type": "tool",
-            "name": (_object(tool_choice.get("function") or {}, "tool choice")).get("name"),
+            "name": (_object(tool_choice.get("function") or {}, "tool choice")).get(
+                "name"
+            ),
         }
     response_format = payload.get("response_format") or {}
-    if isinstance(response_format, dict) and response_format.get("type") == "json_schema":
-        schema = (_object(response_format.get("json_schema") or {}, "JSON schema")).get("schema")
+    if (
+        isinstance(response_format, dict)
+        and response_format.get("type") == "json_schema"
+    ):
+        schema = (_object(response_format.get("json_schema") or {}, "JSON schema")).get(
+            "schema"
+        )
         if isinstance(schema, dict):
-            result["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
+            result["output_config"] = {
+                "format": {"type": "json_schema", "schema": schema}
+            }
     return result
 
 
@@ -230,29 +261,39 @@ def responses_to_chat(payload: dict[str, Any], model: str) -> dict[str, Any]:
         for raw_item in _array(input_value, "input"):
             item = _object(raw_item, "Responses input item")
             if item.get("type") == "function_call_output":
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": item.get("call_id"),
-                    "content": _json_text(item.get("output", "")),
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": item.get("call_id"),
+                        "content": _json_text(item.get("output", "")),
+                    }
+                )
             elif item.get("type") == "function_call":
-                messages.append({
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [{
-                        "id": item.get("call_id", item.get("id")),
-                        "type": "function",
-                        "function": {
-                            "name": item.get("name"),
-                            "arguments": _json_text(item.get("arguments", "{}")),
-                        },
-                    }],
-                })
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": item.get("call_id", item.get("id")),
+                                "type": "function",
+                                "function": {
+                                    "name": item.get("name"),
+                                    "arguments": _json_text(
+                                        item.get("arguments", "{}")
+                                    ),
+                                },
+                            }
+                        ],
+                    }
+                )
             elif item.get("role") in {"system", "developer", "user", "assistant"}:
-                messages.append({
-                    "role": item["role"],
-                    "content": _responses_content_to_chat(item.get("content", "")),
-                })
+                messages.append(
+                    {
+                        "role": item["role"],
+                        "content": _responses_content_to_chat(item.get("content", "")),
+                    }
+                )
             else:
                 raise ValueError("Responses input item is unsupported")
     tools = []
@@ -260,16 +301,20 @@ def responses_to_chat(payload: dict[str, Any], model: str) -> dict[str, Any]:
         tool = _object(raw_tool, "tool")
         if tool.get("type") != "function":
             continue
-        function = tool.get("function") if isinstance(tool.get("function"), dict) else tool
+        function = (
+            tool.get("function") if isinstance(tool.get("function"), dict) else tool
+        )
         function = _object(function, "tool function")
-        tools.append({
-            "type": "function",
-            "function": {
-                "name": function.get("name"),
-                "description": function.get("description", ""),
-                "parameters": function.get("parameters", {"type": "object"}),
-            },
-        })
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": function.get("name"),
+                    "description": function.get("description", ""),
+                    "parameters": function.get("parameters", {"type": "object"}),
+                },
+            }
+        )
     result: dict[str, Any] = {
         "model": model,
         "messages": messages,
@@ -283,7 +328,10 @@ def responses_to_chat(payload: dict[str, Any], model: str) -> dict[str, Any]:
     if "instructions" in payload:
         result["messages"].insert(
             0,
-            {"role": "developer", "content": _responses_content_to_chat(payload["instructions"])},
+            {
+                "role": "developer",
+                "content": _responses_content_to_chat(payload["instructions"]),
+            },
         )
     for key in (
         "temperature",
@@ -306,32 +354,38 @@ def chat_to_responses(response: dict[str, Any], requested_model: str) -> dict[st
     output: list[dict[str, Any]] = []
     text_parts = _chat_text_parts(message.get("content"))
     if text_parts:
-        output.append({
-            "id": "msg_zeaz",
-            "type": "message",
-            "role": "assistant",
-            "status": "completed",
-            "content": [
-                {"type": "output_text", "text": text, "annotations": []}
-                for text in text_parts
-            ],
-        })
+        output.append(
+            {
+                "id": "msg_zeaz",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                    {"type": "output_text", "text": text, "annotations": []}
+                    for text in text_parts
+                ],
+            }
+        )
     for raw_call in _array(message.get("tool_calls", []), "tool calls"):
         call = _object(raw_call, "tool call")
         function = _object(call.get("function") or {}, "tool function")
         arguments = function.get("arguments", "{}")
-        output.append({
-            "id": call.get("id"),
-            "type": "function_call",
-            "call_id": call.get("id"),
-            "name": function.get("name"),
-            "arguments": _json_text(arguments),
-            "status": "completed",
-        })
+        output.append(
+            {
+                "id": call.get("id"),
+                "type": "function_call",
+                "call_id": call.get("id"),
+                "name": function.get("name"),
+                "arguments": _json_text(arguments),
+                "status": "completed",
+            }
+        )
     usage = _object(response.get("usage") or {}, "usage")
     input_tokens = _nonnegative_int(usage.get("prompt_tokens", 0))
     output_tokens = _nonnegative_int(usage.get("completion_tokens", 0))
-    total_tokens = _nonnegative_int(usage.get("total_tokens", input_tokens + output_tokens))
+    total_tokens = _nonnegative_int(
+        usage.get("total_tokens", input_tokens + output_tokens)
+    )
     return {
         "id": response.get("id", "resp_zeaz"),
         "object": "response",
@@ -364,14 +418,16 @@ def _openai_content_to_anthropic(value: Any) -> list[dict[str, Any]]:
             url = raw.get("url", "") if isinstance(raw, dict) else raw
             if isinstance(url, str) and url.startswith("data:") and ";base64," in url:
                 metadata, data = url.split(";base64,", 1)
-                blocks.append({
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": metadata.removeprefix("data:"),
-                        "data": data,
-                    },
-                })
+                blocks.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": metadata.removeprefix("data:"),
+                            "data": data,
+                        },
+                    }
+                )
             elif isinstance(url, str) and url:
                 blocks.append({"type": "image", "source": {"type": "url", "url": url}})
     return blocks
@@ -467,8 +523,8 @@ def _nonnegative_int(value: Any) -> int:
 
 __all__ = [
     "anthropic_to_openai",
-    "openai_to_anthropic",
-    "openai_request_to_anthropic",
-    "responses_to_chat",
     "chat_to_responses",
+    "openai_request_to_anthropic",
+    "openai_to_anthropic",
+    "responses_to_chat",
 ]

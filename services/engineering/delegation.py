@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Iterable
 
 from .agents import AgentRegistry
 from .models import EngineeringTask, TaskRisk
-
 
 MAX_DELEGATION_DEPTH = 4
 
@@ -19,9 +18,7 @@ def delegated_allowed_paths(
     """Inherit the parent's scope and reject delegated scope expansion."""
     run_config = parent.metadata.get("run_config")
     parent_paths = _normalize_allowed_paths(
-        run_config.get("allowed_paths", ())
-        if isinstance(run_config, dict)
-        else ()
+        run_config.get("allowed_paths", ()) if isinstance(run_config, dict) else ()
     )
     child_paths = _normalize_allowed_paths(requested_paths)
 
@@ -132,7 +129,9 @@ def make_child_task(
     return child
 
 
-def children_of(tasks: list[EngineeringTask], parent_task_id: str) -> list[EngineeringTask]:
+def children_of(
+    tasks: list[EngineeringTask], parent_task_id: str
+) -> list[EngineeringTask]:
     return sorted(
         [
             task
@@ -143,7 +142,9 @@ def children_of(tasks: list[EngineeringTask], parent_task_id: str) -> list[Engin
     )
 
 
-def descendants_of(tasks: list[EngineeringTask], root_task_id: str) -> list[EngineeringTask]:
+def descendants_of(
+    tasks: list[EngineeringTask], root_task_id: str
+) -> list[EngineeringTask]:
     return sorted(
         [
             task
@@ -151,5 +152,9 @@ def descendants_of(tasks: list[EngineeringTask], root_task_id: str) -> list[Engi
             if str(task.metadata.get("root_task_id") or task.id) == root_task_id
             and task.id != root_task_id
         ],
-        key=lambda task: (int(task.metadata.get("delegation_depth", 0) or 0), task.created_at, task.id),
+        key=lambda task: (
+            int(task.metadata.get("delegation_depth", 0) or 0),
+            task.created_at,
+            task.id,
+        ),
     )

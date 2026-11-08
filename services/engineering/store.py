@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import dataclasses
 import json
 import sqlite3
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from collections.abc import Iterator
 
 from .models import Checkpoint, EngineeringTask, PushPolicy, TaskRisk, TaskStatus
 
@@ -233,13 +232,17 @@ class SQLiteEngineeringStore:
 
     def get_task(self, task_id: str) -> EngineeringTask | None:
         with self._connect() as conn:
-            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
         return self._row_to_task(row) if row else None
 
     def list_tasks(self, status: TaskStatus | None = None) -> list[EngineeringTask]:
         with self._connect() as conn:
             if status is None:
-                rows = conn.execute("SELECT * FROM tasks ORDER BY updated_at DESC").fetchall()
+                rows = conn.execute(
+                    "SELECT * FROM tasks ORDER BY updated_at DESC"
+                ).fetchall()
             else:
                 rows = conn.execute(
                     "SELECT * FROM tasks WHERE status = ? ORDER BY updated_at DESC",
@@ -285,7 +288,9 @@ class SQLiteEngineeringStore:
             for row in rows
         ]
 
-    def latest_checkpoint(self, task_id: str, phase: str | None = None) -> Checkpoint | None:
+    def latest_checkpoint(
+        self, task_id: str, phase: str | None = None
+    ) -> Checkpoint | None:
         with self._connect() as conn:
             if phase is None:
                 row = conn.execute(
