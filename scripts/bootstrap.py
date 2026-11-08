@@ -4,10 +4,9 @@
 import argparse
 import json
 import os
-from pathlib import Path
 import re
 import tempfile
-from datetime import date
+from pathlib import Path
 
 OWNER_RE = re.compile(r"^(?!-)[A-Za-z0-9-]{1,39}(?<!-)$")
 CODEOWNER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:/[A-Za-z0-9][A-Za-z0-9-]{0,99})?$")
