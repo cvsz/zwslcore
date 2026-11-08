@@ -60,3 +60,4 @@ tmp/
 .agents/skills/.cvsz-skill-catalog.json
 *.egg-info/
 tmp_out/
+services/provider/config/s3.local.yaml

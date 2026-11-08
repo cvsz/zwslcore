@@ -13,7 +13,6 @@ from collections import Counter
 from pathlib import Path
 from typing import Callable
 
-
 TASK_STATUSES = (
     "CREATED",
     "BASELINING",

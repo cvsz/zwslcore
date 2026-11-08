@@ -4,7 +4,6 @@ import json
 import unittest
 
 import httpx
-
 from zeaz_provider.audit import emit_request_audit
 from zeaz_provider.config import ModelRoute, ProviderConfig, RouteTarget, Settings
 from zeaz_provider.errors import ErrorKind, ProviderError

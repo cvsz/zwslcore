@@ -6,8 +6,8 @@ import socket
 import threading
 import time
 import uuid
-from pathlib import Path
 from collections.abc import Iterable
+from pathlib import Path
 
 from .store import SQLiteEngineeringStore
 

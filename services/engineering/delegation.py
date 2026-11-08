@@ -8,7 +8,6 @@ from typing import Iterable
 from .agents import AgentRegistry
 from .models import EngineeringTask, TaskRisk
 
-
 MAX_DELEGATION_DEPTH = 4
 
 

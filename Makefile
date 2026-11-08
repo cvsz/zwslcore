@@ -44,11 +44,11 @@ help:
 	  'config        validate Compose configuration' \
 	  'production-config validate production Compose configuration' \
 	  'production-up start with .env.production' \
-  'provider-build build the in-repo provider gateway' \
-  'provider-lock update the hashed Provider dependency lock' \
-  'provider-lock-check verify Provider dependency lock drift' \
-  'cloudflare-up start zwslcore on the Cloudflare loopback ports' \
-  'release        pre-flight checks before creating a release tag' \
+	'provider-build build the in-repo provider gateway' \
+	'provider-lock update the hashed Provider dependency lock' \
+	'provider-lock-check verify Provider dependency lock drift' \
+	'cloudflare-up start zwslcore on the Cloudflare loopback ports' \
+	'release        pre-flight checks before creating a release tag' \
 	  'ci            repository + stack static validation'
 
 validate-template:

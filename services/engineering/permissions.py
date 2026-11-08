@@ -4,7 +4,6 @@ import dataclasses
 import fnmatch
 from typing import Iterable
 
-
 VALID_ACTIONS = {"allow", "ask", "deny"}
 
 

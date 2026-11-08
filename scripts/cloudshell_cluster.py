@@ -14,6 +14,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+
 def endpoints():
     raw = os.environ.get("ZWSL_OLLAMA_ENDPOINTS", "http://127.0.0.1:11434")
     values = [s.strip().rstrip("/") for s in raw.split(",") if s.strip()]

@@ -6,9 +6,8 @@ import os
 import selectors
 import subprocess
 import time
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 DEFAULT_CONFIG = Path.home() / ".zwslcore" / "mcp" / "servers.json"
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"

@@ -21,7 +21,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.engineering.runtime import EngineeringRuntime, ProviderClient, ProviderTransportError
+from services.engineering.runtime import (
+    EngineeringRuntime,
+    ProviderClient,
+    ProviderTransportError,
+)
 
 
 class FaultHandler(http.server.BaseHTTPRequestHandler):
