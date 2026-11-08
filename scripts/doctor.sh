@@ -21,7 +21,6 @@ LITELLM_PORT="$(dotenv_get "$ENV_FILE" LITELLM_PORT 4000)"
 PROVIDER_PORT="$(dotenv_get "$ENV_FILE" PROVIDER_PORT 8080)"
 OPENWEBUI_PORT="$(dotenv_get "$ENV_FILE" OPENWEBUI_PORT 3000)"
 PROVIDER_CLIENT_KEY="$(dotenv_get "$ENV_FILE" PROVIDER_CLIENT_KEY)"
-LITELLM_MASTER_KEY="$(dotenv_get "$ENV_FILE" LITELLM_MASTER_KEY)"
 
 fail=0
 
@@ -36,11 +35,13 @@ check() {
   fi
 }
 
+# shellcheck disable=SC2329
 container_running() {
   local name="$1"
   [[ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || true)" == "true" ]]
 }
 
+# shellcheck disable=SC2329
 container_healthy() {
   local name="$1"
   local status

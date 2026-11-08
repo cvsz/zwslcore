@@ -11,7 +11,6 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
 import tomllib
@@ -26,7 +25,6 @@ from services.engineering.lease import SQLiteRunnerLease
 from services.engineering.ledger import JsonContinuousLedger
 from services.engineering.models import TaskStatus
 from services.engineering.store import SQLiteEngineeringStore
-
 
 BACKUP_SCHEMA = 1
 RPO_TARGET_HOURS = 24
@@ -301,7 +299,7 @@ def create_backup(
         backup_parent = target.parent
     else:
         backup_parent = source / "backups"
-        stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
         target = backup_parent / f"zwslcore-{stamp}-{uuid.uuid4().hex[:8]}"
     if target.exists():
         raise BackupError(f"backup destination already exists: {target}")
@@ -396,7 +394,7 @@ def create_backup(
                 version = str(tomllib.load(handle).get("project", {}).get("version", ""))
         manifest = {
             "schema": BACKUP_SCHEMA,
-            "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "created_at": dt.datetime.now(dt.UTC).isoformat(),
             "created_at_epoch": time.time(),
             "source": {
                 "root": str(source),

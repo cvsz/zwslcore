@@ -15,6 +15,7 @@ if [[ ! -r /etc/os-release ]]; then
   exit 1
 fi
 
+# shellcheck disable=SC1091
 . /etc/os-release
 if [[ "${ID:-}" != "ubuntu" ]]; then
   echo "Ubuntu is required; detected ${ID:-unknown}." >&2
