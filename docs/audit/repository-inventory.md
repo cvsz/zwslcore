@@ -1,7 +1,7 @@
 # Repository Inventory — cvsz/zwslcore
 
 **Generated:** 2026-11-08  
-**Branch:** `main` at `bc1eb1c`  
+**Branch:** `feat/zwslcore-enterprise-hardening` at `40fdd84`  
 **Working tree:** Clean (1 untracked operator-local file: `services/provider/config/s3.local.yaml`)
 
 ---

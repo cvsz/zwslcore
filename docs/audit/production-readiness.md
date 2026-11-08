@@ -7,7 +7,7 @@
 
 | Gate | ID | Status | Evidence |
 |------|----|--------|----------|
-| Repository baseline | G1 | PASS | HEAD bc1eb1c matches origin/main |
+| Repository baseline | G1 | PASS | HEAD 40fdd84 on feat/zwslcore-enterprise-hardening |
 | Architecture review | G2 | PASS | docs/architecture.md |
 | Application security | G3 | PASS | CVE documented; compensating controls |
 | Secrets handling | G4 | PASS | Dotenv tested; no committed secrets |
