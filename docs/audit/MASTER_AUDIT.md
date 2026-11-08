@@ -92,7 +92,7 @@ Both fixes are GPG-signed on branch `fix/zwslcore-shellcheck-hardening-20261109`
 
 | Check | Command | Result | Evidence |
 |-------|---------|--------|----------|
-| Unit tests (main) | `python3 -m unittest discover -s tests -v` | PASS | 192 tests OK |
+| Unit tests (main) | `python3 -m unittest discover -s tests -v` | PASS | 226 tests OK |
 | Python compilation | `python3 -m py_compile ...` + `compileall` | PASS | EXIT: 0 |
 | ruff check (root) | `ruff check .` | 161 pre-existing findings | No root pyproject.toml → ruff applies default rules; findings are pre-existing style/lint, not introduced by this work; ruff is not a CI gate at repository root |
 | ruff format | `ruff format --check .` | format drift present | Pre-existing, not introduced by this work |

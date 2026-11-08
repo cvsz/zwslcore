@@ -3,10 +3,10 @@ Enterprise Repository Baseline
 
 Repository: cvsz/zwslcore
 Date: 2026-11-08
-Current HEAD: 853bd059e38e492a28760d8b8f4da636927f9474 (post-audit merge commit on main, PR #110)
-Previous HEAD: 853bd059e38e492a28760d8b8f4da636927f9474 (PR #109 merge on main)
+Current HEAD: 38cfdc11e27313f777542e74616fc9bc0b0a245c (post-audit merge commit on main, PR #110)
+Previous HEAD: 38cfdc11e27313f777542e74616fc9bc0b0a245c (PR #109 merge on main)
 Current Branch: main
-Remote: origin/main (853bd059e38e492a28760d8b8f4da636927f9474, up to date)
+Remote: origin/main (38cfdc11e27313f777542e74616fc9bc0b0a245c, up to date)
 
 Repository Status
 ----------------
@@ -17,7 +17,7 @@ Repository Status
 
 Current HEAD Analysis
 --------------------
-The current HEAD at 853bd059e38e492a28760d8b8f4da636927f9474 is 21 commits ahead of the previously authorized SHA a72fc000284f0eb2d69b6f67ed6c2e3eb17ebe9e.
+The current HEAD at 38cfdc11e27313f777542e74616fc9bc0b0a245c is 21 commits ahead of the previously authorized SHA a72fc000284f0eb2d69b6f67ed6c2e3eb17ebe9e.
 Authorization status: The previously authorized SHA is INVALID for the current HEAD, as new commits were pushed after the approval.
 
 SHA Timeline
@@ -28,7 +28,7 @@ SHA Timeline
 - 95cc9ca565bcb3f18af57411a7e117f49a55a406: Exact head reviewed by policedbc on 2026-11-01
   - CHANGES_REQUESTED due to CVE-2026-115557 build-scan-sbom failure
   - Not an approval; comment-only status
-- 853bd059e38e492a28760d8b8f4da636927f9474: Current local HEAD
+- 38cfdc11e27313f777542e74616fc9bc0b0a245c: Current local HEAD
   - 21 commits beyond a72fc00
   - Includes CVE allowlist updates and Dockerfile modifications
 

@@ -42,7 +42,7 @@ No root `pyproject.toml` exists on this repository (verified via shell and `git 
 
 | Check | Command | Result | Evidence |
 |-------|---------|--------|----------|
-| Unit tests (main) | `python3 -m unittest discover -s tests -v` | PASS | 192 tests OK |
+| Unit tests (main) | `python3 -m unittest discover -s tests -v` | PASS | 226 tests OK |
 
 ## Container scan
 

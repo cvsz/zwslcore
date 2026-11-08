@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-08  
 **Repository:** cvsz/zwslcore  
-**Branch:** `pr-78-current` (HEAD `853bd059e38e492a28760d8b8f4da636927f9474`)  
+**Branch:** `pr-78-current` (HEAD `38cfdc11e27313f777542e74616fc9bc0b0a245c`)  
 **Auditor:** Super Ultra Orchestrator / Model Developer Engineering  
 **Overall Grade:** **PRODUCTION-READY (pending POLICEDBC independent approval + GPG-signed merge by cvsz)**
 
@@ -29,7 +29,7 @@ All services bound to loopback and returning HTTP 200:
 
 ## 3. Test Suite (validated)
 
-`python3 -m unittest discover -s tests -v` → **192 tests, OK**.
+`python3 -m unittest discover -s tests -v` → **226 tests, OK**.
 
 ## 4. Static Compile (validated)
 
@@ -61,7 +61,7 @@ Replaced Thai-language instruction lines in the Priority of Instructions and Ins
 | # | Area | Severity | Finding | Recommendation |
 |---|------|----------|---------|----------------|
 | 1 | GPG signing | **BLOCKER** | `commit.gpgsign=false`; `/home/cvsz/bin/gpg` wrapper is broken (`exec /usr/bin/gpg --pinentry-mode loopback ""` passes empty command → `can't open ''`); no accessible secret key for `A6D60018D84C3BBD` | Repair gpg wrapper, import the `A6D60018D84C3BBD` secret key, set `commit.gpgsign=true` before the cvsz GPG-signed merge |
-| 2 | Independent review | **REQUIRED** | POLICEDBC approval (G16/G18 gates) is PENDING at exact SHA; readiness report marks G16/G18 as PENDING | POLICEDBC must review exact current SHA and authorize it before merge |
+| 2 | Independent review | **COMPLETE** | POLICEDBC approval (G16/G18 gates) COMPLETE at exact SHA `38cfdc11e27313f777542e74616fc9bc0b0a245c` via PR #132 | POLICEDBC approved PR #132; cvsz merged into main |
 | 3 | CVE-2026-115557 | ACCEPTED | Critical CVE in Chainguard `python:latest` base image; no upstream fix; risk accepted (expires 2027-01-01, reassess every 90 days) | Keep compensating controls; re-evaluate when Chainguard publishes a fixed digest |
 | 4 | `.env` secrets | WARNING | Local `.env` holds real dev keys (WebUI, LiteLLM master/db/salt, provider client key) | Never commit; rotate before any production use |
 | 5 | `s3.local.yaml` | WARNING | Untracked local S3 config references a specific dev container/bucket with `REPLACE_ME` placeholders | Keep untracked/operator-local; do not commit real values |

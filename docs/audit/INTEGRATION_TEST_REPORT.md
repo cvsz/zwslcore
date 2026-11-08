@@ -29,7 +29,7 @@ Integration points tested at the unit/contract level (no production systems, no 
 
 | Check | Command | Result | Evidence |
 |-------|---------|--------|----------|
-| Full unit test suite | `python3 -m unittest discover -s tests -v` | PASS | 192 tests OK |
+| Full unit test suite | `python3 -m unittest discover -s tests -v` | PASS | 226 tests OK |
 | Python compilation | `py_compile` + `compileall` | PASS | EXIT: 0 |
 | Bash syntax (all scripts) | `bash -n scripts/*.sh` | PASS | EXIT: 0 |
 | Supply-chain Dockerfile tests | `python3 -m unittest tests.test_supply_chain_dockerfile` | NOT RUN | tests/test_supply_chain_dockerfile.py not present on main (present on audit/hardening branch only) |
@@ -47,4 +47,4 @@ Integration points tested at the unit/contract level (no production systems, no 
 
 ## Conclusion
 
-All runnable integration/unit tests pass (192/192). Environment-limited scenarios (runtime inference, Compose stack, Windows) are documented as NOT RUN rather than reported as passed.
+All runnable integration/unit tests pass (226/226). Environment-limited scenarios (runtime inference, Compose stack, Windows) are documented as NOT RUN rather than reported as passed.

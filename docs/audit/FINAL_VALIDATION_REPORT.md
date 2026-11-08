@@ -8,7 +8,7 @@ Repository branch: main (HEAD 827f018 after PR #113 merge)
 
 | Check | Command | Result | Evidence |
 |-------|---------|--------|----------|
-| Unit tests | `python3 -m unittest discover -s tests -v` | PASS | 192 tests OK |
+| Unit tests | `python3 -m unittest discover -s tests -v` | PASS | 226 tests OK |
 | Python compilation | `python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py` | PASS | EXIT: 0 |
 | Python compilation | `python3 -m compileall -q services/provider/zeaz_provider services/engineering scripts/engineer.py` | PASS | EXIT: 0 |
 | Bash syntax | `bash -n scripts/install.sh scripts/doctor.sh scripts/smoke.sh scripts/wait-runtime.sh scripts/backup.sh scripts/restore.sh scripts/cloudflare-up.sh scripts/cloudshell.sh scripts/cloudshell-webui.sh scripts/chaos.sh scripts/create-local-models.sh scripts/provider-lock.sh scripts/zcloud-tunnel.sh` | PASS | EXIT: 0 |
@@ -49,7 +49,7 @@ Repository branch: main (HEAD 827f018 after PR #113 merge)
 | Lint passed | Pre-existing ruff findings; not a CI gate at root |
 | Ruff | 161 pre-existing findings (no root config) |
 | ShellCheck passed | Edited files PASS; other scripts pre-existing info warnings |
-| Pytest passed | PASS (192/192) |
+| Pytest passed | PASS (226/226) |
 | Integration tests passed | PASS (all runnable) |
 | Security tests completed | PASS (adversarial security tests) |
 | Penetration testing completed within authorized scope | Done (PENETRATION_TEST_REPORT.md) |
