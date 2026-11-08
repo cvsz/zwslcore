@@ -1,7 +1,7 @@
 # Pull Request Disposition — cvsz/zwslcore
 
 **Generated:** 2026-11-08  
-**Total PRs with disposition:** 110 (100%)  
+**Total PRs with disposition:** 111 (100%)  
 **No PRs blocked from verification.**
 
 ---
@@ -11,7 +11,7 @@
 | Disposition | Count | PRs |
 |-------------|-------|-----|
 | MERGED_VERIFIED | 71 | All merged PRs verified present on main |
-| OPEN_REVIEW_REQUIRED | 12 | Open PRs needing security/architecture review |
+| OPEN_REVIEW_REQUIRED | 13 | Open PRs needing security/architecture review (includes #112) |
 | OPEN_MERGE_READY | 10 | Open PRs ready for review and merge |
 | DRAFT_KEEP | 10 | Draft PRs kept until acceptance criteria met |
 | CLOSED_SUPERSEDED | 13 | Closed PRs superseded by later work |
@@ -29,6 +29,7 @@ All 71 merged PRs (#1–#4, #8–#22, #23–#47, #48–#60, #61, #63, #68, #74, 
 
 | PR | Disposition | Action |
 |----|------------|--------|
+| #112 | OPEN_REVIEW_REQUIRED | Complete enterprise hardening, issue #108 remediation, supply-chain tests, full audit documentation; independent review required |
 | #70 | OPEN_MERGE_READY | Security hardening for dotenv loading; review and merge |
 | #71 | OPEN_MERGE_READY | Cloud Shell Ollama opt-in; review and merge |
 | #73 | OPEN_MERGE_READY | Open WebUI contract tests; review and merge |
