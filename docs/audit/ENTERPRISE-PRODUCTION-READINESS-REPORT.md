@@ -4,8 +4,8 @@ Enterprise Production Readiness Report — cvsz/zwslcore
 Date: 2026-11-08
 Overall Status: PARTIALLY_VERIFIED
 Repository: cvsz/zwslcore
-Current HEAD: c591a35 (post-audit commit on pr-78-current)
-Previous HEAD: c591a354a8d2ce29ad6cfc358fea1ff9fcca43ac
+Current HEAD: 6a9b45f (post-audit commit on pr-78-current)
+Previous HEAD: 6a9b45fc8986250fcc6ae433204c7db48d9d1df6
 Current Branch: pr-78-current
 
 ================================================================================
@@ -35,10 +35,10 @@ ACTUAL REPOSITORY STATE
 ================================================================================
 
 Repository: cvsz/zwslcore
-Git HEAD: c591a35 (post-audit commit)
-Previous HEAD: c591a354a8d2ce29ad6cfc358fea1ff9fcca43ac
-Git Branch: pr-78-current
-Remote: origin/main at df7ef0eae393f44f39c5393533531fc4171c6156
+Git HEAD: 6a9b45f (post-audit merge commit on main, PR #110)
+Previous HEAD: c3723f2fb0e24939abf8654f22344bd49f3a531f (PR #109 merge on main)
+Git Branch: main
+Remote: origin/main at 6a9b45fc8986250fcc6ae433204c7db48d9d1df6 (up to date)
 Working tree: Clean (1 untracked file: services/provider/config/s3.local.yaml)
 
 Total PRs: 102
@@ -175,7 +175,7 @@ CI/CD RESULTS
 Required checks status (from .github/workflows/ci.yml):
 | Check | Status | Evidence |
 |-------|--------|----------|
-| repository-baseline | PASS | HEAD c591a35 matches remote tracking |
+| repository-baseline | PASS | HEAD 6a9b45f matches remote tracking |
 | Analyze GitHub Actions | PASS | CI workflow validation |
 | dependency-review | PASS | requirements.lock has pinned hashes |
 | build-scan-sbom | FAIL | CVE-2026-115557 (Critical) + CVE-2026-114613 (High) in base image |
@@ -196,7 +196,7 @@ INDEPENDENT REVIEW
 policedbc independent review status: PENDING
 
 Required: policedbc must independently review PR #78 at the exact current SHA
-c591a354a8d2ce29ad6cfc358fea1ff9fcca43ac.
+6a9b45fc8986250fcc6ae433204c7db48d9d1df6.
 
 Previous reviews:
 - 2026-10-18: policedbc APPROVED at SHA a72fc000284f0eb2d69b6f67ed6c2e3eb17ebe9e
@@ -207,7 +207,7 @@ Previous reviews:
   - NOT an approval; comment-only status
   - "COMMENT ONLY — NOT APPROVAL. KEEP OPEN."
 
-Current status: No valid independent review exists for the current HEAD c591a35.
+Current status: No valid independent review exists for the current HEAD 6a9b45f.
 Previous approvals on older SHAs do not count; each SHA requires its own
 independent review per governance model.
 
@@ -254,7 +254,7 @@ Mandatory gates status:
 | G13 | PASS | API/CLI compatibility verified |
 | G14 | UNVERIFIED | Operational readiness (not critical path) |
 | G15 | PARTIAL | Documentation complete (CVEs just created) |
-| G16 | PENDING | **Independent review approved by policedbc at exact SHA c591a35** |
+| G16 | PENDING | **Independent review approved by policedbc at exact SHA 6a9b45f** |
 | G17 | PENDING | Review threads resolved (CVE blocker requires policy decision) |
 | G18 | PENDING | **Exact SHA authorization received from user cvsz** |
 | G19 | NOT_APPLICABLE | Release artifact integrity (not authorized) |
@@ -285,9 +285,9 @@ RESIDUAL RISKS
    - Required for release authorization
    - Review scope documented above
 
-4. User explicit authorization not yet obtained for exact SHA c591a35
+4. User explicit authorization not yet obtained for exact SHA 6a9b45f
    - Required per governance model
-   - Authorization must identify: repository cvsz/zwslcore, PR #78, full SHA c591a354a8d2ce29ad6cfc358fea1ff9fcca43ac
+   - Authorization must identify: repository cvsz/zwslcore, PR #78, full SHA 6a9b45fc8986250fcc6ae433204c7db48d9d1df6
 
 5. Platform compatibility (G10) not verified for current SHA
    - Not critical path; Linux tests pass, Windows/macOS not verified
@@ -326,16 +326,16 @@ NEXT ACTIONS
 ================================================================================
 
 1. **policedbc**: Independently review PR #78 at exact current SHA
-   c591a354a8d2ce29ad6cfc358fea1ff9fcca43ac
+   6a9b45fc8986250fcc6ae433204c7db48d9d1df6
    - Review scope: dotenv credential loading, secret management, security
      regression tests, CVE-2026-115557 risk assessment, compensating controls,
      supply-chain evidence, CI and release-gate integrity
    - Decision: APPROVED or CHANGES_REQUESTED
-   - Must apply to exact SHA c591a35; previous SHAs do not count
+   - Must apply to exact SHA 6a9b45f; previous SHAs do not count
 
 2. **User (cvsz)**: Explicit authorization for PR #78 at exact SHA
-   c591a354a8d2ce29ad6cfc358fea1ff9fcca43ac
-   - Must identify: repository cvsz/zwslcore, PR #78, full SHA c591a354a8d2ce29ad6cfc358fea1ff9fcca43ac
+   6a9b45fc8986250fcc6ae433204c7db48d9d1df6
+   - Must identify: repository cvsz/zwslcore, PR #78, full SHA 6a9b45fc8986250fcc6ae433204c7db48d9d1df6
    - Authorization must be explicit; previous SHA a72fc00 invalidated
 
 3. **After both gates pass**:
