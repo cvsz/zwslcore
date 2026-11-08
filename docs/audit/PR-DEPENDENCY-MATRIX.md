@@ -141,7 +141,7 @@ PR #78 — Detailed Status
 - Mergeable: YES
 - Base branch: main
 - Head branch: fix/ai-cli-dotenv-config-rebase
-- Current HEAD: 6a9b45fc8986250fcc6ae433204c7db48d9d1df6
+- Current HEAD: b2f6ee9f6ec89ee6073aba208a099880fff674da
 - Previously authorized SHA: a72fc000284f0eb2d69b6f67ed6c2e3eb17ebe9e (INVALID for current HEAD)
 - policedbc review at SHA 95cc9ca: CHANGES_REQUESTED (build-scan-sbom FAILURE due to CVE-2026-115557)
 - policedbc re-review at SHA a72fc00: APPROVED (all 7 checks passed including build-scan-sbom), but DISMISSED when new commits pushed
