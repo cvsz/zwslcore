@@ -15,6 +15,7 @@ ENV_FILE="$ROOT/.env"
 [[ -f "$ENV_FILE" ]] || { echo "missing .env; run scripts/install.sh" >&2; exit 1; }
 
 # shellcheck source=scripts/lib/env.sh
+# shellcheck disable=SC1091
 source "$ROOT/scripts/lib/env.sh"
 OLLAMA_PORT="$(dotenv_get "$ENV_FILE" OLLAMA_PORT 11434)"
 LITELLM_PORT="$(dotenv_get "$ENV_FILE" LITELLM_PORT 4000)"
