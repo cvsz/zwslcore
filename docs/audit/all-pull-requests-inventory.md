@@ -26,7 +26,7 @@
 | PR | State | Draft | Title | Author | Base | Head SHA | Merged | URL |
 |----|-------|-------|-------|--------|------|----------|--------|-----|
 | #112 | open | No | audit: complete enterprise hardening and issue #108 remediation | cvsz | main | e10f5560deb799f1b2cf29f9a83c6c688d1a6798 | - | https://github.com/cvsz/zwslcore/pull/112 |
-| #111 | closed | No | docs: sync audit/release gate SHA references to HEAD 853bd05 + fi | cvsz | main | eee37748d87c | 2026-11-08 | https://github.com/cvsz/zwslcore/pull/111 |
+| #111 | closed | No | docs: sync audit/release gate SHA references to HEAD 38cfdc1 + fi | cvsz | main | eee37748d87c | 2026-11-08 | https://github.com/cvsz/zwslcore/pull/111 |
 | #110 | closed | No | audit: finalize enterprise production-grade readiness report | cvsz | main | 45ebe5944fc6 | 2026-11-07 | https://github.com/cvsz/zwslcore/pull/110 |
 | #109 | closed | No | audit: full enterprise production-grade readiness hardening | cvsz | main | 7980e71990e7 | 2026-11-07 | https://github.com/cvsz/zwslcore/pull/109 |
 | #107 | open | No | build(deps): bump trufflesecurity/trufflehog from 3.99.7 to 3.99.8 | dependabot[bot] | main | 94bf3e8d8615 | - | https://github.com/cvsz/zwslcore/pull/107 |
