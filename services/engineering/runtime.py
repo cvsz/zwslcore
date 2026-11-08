@@ -6,17 +6,16 @@ import shlex
 import socket
 import subprocess
 import time
-import uuid
 import urllib.error
 import urllib.request
-from pathlib import Path
+import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from .agents import AgentProfile, AgentRegistry
 from .change_snapshot import ChangeSnapshotStore, SnapshotError
 from .evidence import EvidenceExporter
-from .permissions import require_allowed
 from .models import Checkpoint, EngineeringTask, TaskStatus
 from .observability import (
     emit_engineering_event,
@@ -24,6 +23,7 @@ from .observability import (
     task_work_fingerprint,
     valid_request_id,
 )
+from .permissions import require_allowed
 from .review import SecurityGate, StaticReviewer
 from .snapshot import RepositorySnapshotter
 from .store import SQLiteEngineeringStore

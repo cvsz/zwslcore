@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import dataclasses
 import json
 import sqlite3
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from collections.abc import Iterator
 
 from .models import Checkpoint, EngineeringTask, PushPolicy, TaskRisk, TaskStatus
 

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
 from typing import Any
 
-from .ledger import JsonContinuousLedger
 from .lease import RunnerLeaseError, SQLiteRunnerLease
+from .ledger import JsonContinuousLedger
 from .loop import ContinuousEngineeringLoop, LoopPolicy, LoopResult, WorkItem
 from .models import EngineeringTask, TaskRisk, TaskStatus
 from .observability import safe_error_class

@@ -5,16 +5,16 @@ import sys
 import time
 from typing import Any
 
-from .hardware import detect_hardware
-from .ledger import JsonContinuousLedger
-from .reconcile import QueueReconciler
-from .store import SQLiteEngineeringStore
 from services.model_catalog.selector import (
     engineering_model_ladder,
     select_engineering_alias,
     snapshot_budget_for_context,
 )
 
+from .hardware import detect_hardware
+from .ledger import JsonContinuousLedger
+from .reconcile import QueueReconciler
+from .store import SQLiteEngineeringStore
 
 RESET = "\x1b[0m"
 BOLD = "\x1b[1m"

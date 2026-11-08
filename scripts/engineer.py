@@ -33,18 +33,27 @@ from services.engineering.evidence import (
     redact_sensitive_text,
 )
 from services.engineering.hardware import detect_hardware
-from services.engineering.ledger import ContinuousLedgerError, JsonContinuousLedger
 from services.engineering.lease import RunnerLeaseError, SQLiteRunnerLease
+from services.engineering.ledger import ContinuousLedgerError, JsonContinuousLedger
+from services.engineering.loop import WorkItem, WorkKind
 from services.engineering.mcp import (
     DEFAULT_CONFIG as DEFAULT_MCP_CONFIG,
+)
+from services.engineering.mcp import (
     MCPError,
     call_server_tool,
     list_server_tools,
-    load_config as load_mcp_config,
     split_qualified_tool,
 )
-from services.engineering.loop import WorkItem, WorkKind
-from services.engineering.models import Checkpoint, EngineeringTask, TaskRisk, TaskStatus
+from services.engineering.mcp import (
+    load_config as load_mcp_config,
+)
+from services.engineering.models import (
+    Checkpoint,
+    EngineeringTask,
+    TaskRisk,
+    TaskStatus,
+)
 from services.engineering.observability import (
     engineering_logging,
     safe_error_summary,

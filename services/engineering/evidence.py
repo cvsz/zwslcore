@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import json
 import os
@@ -13,7 +12,6 @@ from typing import Any
 
 from .models import EngineeringTask
 from .store import SQLiteEngineeringStore
-
 
 _SECRET_PATTERNS = (
     re.compile(r"(?i)(api[_-]?key|token|secret|password)\s*[=:]\s*[^\s,;]+"),

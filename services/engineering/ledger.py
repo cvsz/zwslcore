@@ -5,9 +5,9 @@ import json
 import os
 import tempfile
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from collections.abc import Iterator
 from typing import Any
 
 from .evidence import redact_sensitive_text
