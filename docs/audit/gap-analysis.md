@@ -44,9 +44,9 @@
 
 | Area | Status | Gap |
 |------|--------|-----|
-| Adversarial worktree/path bypass tests | NOT_ADDED | No path traversal or symlink escape tests |
-| Concurrent worktree corruption tests | NOT_ADDED | No SQLite WAL concurrency tests |
-| Child task permission escalation tests | NOT_ADDED | No child scope escalation tests |
+| Adversarial worktree/path bypass tests | ADDED | tests/test_adversarial_security.py — path traversal, symlink escape, secret file rejection |
+| Concurrent worktree corruption tests | ADDED | tests/test_adversarial_security.py — 10 concurrent task creation, SQLite WAL integrity |
+| Child task permission escalation tests | ADDED | tests/test_adversarial_security.py — delegated path scope intersection, parent scope enforcement |
 | Windows/WSL2 runtime tests | BLOCKED | No Windows host available |
 | Docker container health tests | PARTIAL | Build verified; runtime health not tested in CI |
 | Backup/restore isolated restore test | PARTIAL | Scripts exist; isolated restore drill not run |

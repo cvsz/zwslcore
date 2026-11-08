@@ -7,7 +7,7 @@
 .env.local
 *.pem
 *.key
-
+s3.local.yaml
 # Dependencies
 node_modules/
 .venv/

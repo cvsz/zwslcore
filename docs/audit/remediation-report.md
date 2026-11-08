@@ -11,6 +11,7 @@
 | Change | File | Status |
 |--------|------|--------|
 | Supply-chain regression tests | `tests/test_supply_chain_dockerfile.py` (NEW) | ADDED — 8 tests, all passing |
+| Adversarial path isolation tests | `tests/test_adversarial_security.py` (NEW) | ADDED — 11 tests, all passing |
 | Update Chainguard base image digests | `services/provider/Dockerfile` | UPDATED |
 
 ### P1 — Issue #108 Remediation
@@ -51,7 +52,7 @@
 
 | Check | Command | Result |
 |-------|---------|--------|
-| Full test suite | `python3 -m unittest discover -s tests -v` | 200 tests, 0 failures |
+| Full test suite | `python3 -m unittest discover -s tests -v` | 211 tests, 0 failures |
 | Shell syntax | `bash -n scripts/*.sh` | All pass |
 | Python compilation | `python3 -m compileall -q services/ scripts/` | All pass |
 | Supply-chain tests | `python3 -m unittest tests.test_supply_chain_dockerfile -v` | 8 tests, all pass |

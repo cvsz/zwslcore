@@ -29,7 +29,7 @@ All 71 merged PRs (#1–#4, #8–#22, #23–#47, #48–#60, #61, #63, #68, #74, 
 
 | PR | Disposition | Action |
 |----|------------|--------|
-| #112 | OPEN_REVIEW_REQUIRED | Complete enterprise hardening, issue #108 remediation, supply-chain tests, full audit documentation; independent review required |
+| #112 | OPEN_REVIEW_REQUIRED | Complete enterprise hardening, issue #108 remediation, supply-chain tests, full audit documentation; independent review required. Fixes applied on branch: README Python version corrected (3.14.7 -> 3.15), MCP stdio close() resource leak fixed (stdin/stdout/stderr pipe descriptors now explicitly closed). |
 | #70 | OPEN_MERGE_READY | Security hardening for dotenv loading; review and merge |
 | #71 | OPEN_MERGE_READY | Cloud Shell Ollama opt-in; review and merge |
 | #73 | OPEN_MERGE_READY | Open WebUI contract tests; review and merge |

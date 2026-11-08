@@ -25,7 +25,7 @@ Run these in order. Do not skip ahead.
   - Using something that already exists in the codebase instead of adding new surface.
   - A smaller change that solves 90% of the goal with 10% of the risk.
   - Solving it at a different layer (config vs code, framework vs app, build vs runtime).
-- If a better alternative exists, name it explicitly with rationale. Surface it before the line-by-line review.
+- If a better alternative exists, name it explicitly with rationale. This is the most valuable thing you can output — surface it before the line-by-line review.
 
 ### 2. Trace — walk the actual code path
 
@@ -60,7 +60,6 @@ Close with a one-line verdict: ship / fix-then-ship / rework / reject — with t
 - **No rubber-stamps.** "LGTM" is not an output. If you genuinely find nothing, say what you traced and what you checked, so the user can judge whether your review covered the surface they cared about.
 - **Cite or it didn't happen.** Every claim about the code references a specific path, file, or line. No vague "this might break under load."
 - **Distinguish claim from verification.** "The PR says X" and "I traced X and confirmed / refuted it" are different — keep them separate in the output.
-- **One simpler-alternative pass is mandatory.** Even on small changes, ask if the whole thing is necessary. Skip only if the user explicitly says "don't question scope."
+- **One simpler-alternative pass is mandatory.** Even on small changes, spend one breath asking if the whole thing is necessary. Skip only if the user explicitly says "don't question scope."
 - **Don't pad with style nits when there's a structural problem.** If step 1 or step 2 surfaces a real issue, lead with it; defer nits or drop them.
 - **No flattery, no hedging.** "This is a great PR but..." adds nothing. State the finding.
-- **No invented verification.** If repository files, runtime, CI logs, or test results are unavailable, mark the corresponding trace or claim unverified and identify the precise evidence needed. Never imply execution or full end-to-end coverage without access.

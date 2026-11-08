@@ -1,0 +1,2 @@
+[0000] ERROR [31m1 error occurred:
+	* unsupported output format "spdx-json", supported formats are: [json table cyclonedx cyclonedx-json sarif template][0m

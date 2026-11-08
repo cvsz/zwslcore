@@ -29,7 +29,7 @@
 
 | Suite | Count | Result |
 |-------|-------|--------|
-| Full test suite (`python3 -m unittest discover -s tests`) | 200 | PASS (192 original + 8 new) |
+| Full test suite (`python3 -m unittest discover -s tests`) | 211 | PASS (192 original + 8 supply-chain + 11 adversarial) |
 | Shell syntax (`bash -n`) | All scripts | PASS |
 | Python compilation | All modules | PASS |
 
@@ -39,12 +39,12 @@
 
 | Category | Count |
 |----------|-------|
-| Total PRs enumerated | 110 |
-| Open | 22 |
+| Total PRs enumerated | 111 |
+| Open | 23 |
 | Draft | 10 |
 | Merged | 71 |
 | Closed without merge | 17 |
-| With documented disposition | 110 (100%) |
+| With documented disposition | 111 (100%) |
 
 **100% of PRs have a recorded disposition.** See `docs/audit/all-pull-requests-disposition.md`.
 
@@ -53,6 +53,15 @@
 
 ### PRs Requiring Independent Security Review
 - #69, #70, #76, #77, #79, #80, #82, #87, #102
+
+---
+
+### 3. Fixes Applied During This Audit (HEAD `36b5927`)
+
+| Fix | File | Severity | Evidence |
+|-----|------|----------|----------|
+| README Python version corrected (3.14.7 → 3.15) | `README.md` | Documentation | Chainguard image digest `sha256:1a009647...` is Python 3.15.1 (confirmed via issue #108 scan artifact); lock file compiled with Python 3.15 |
+| MCP stdio `close()` resource leak | `services/engineering/mcp.py` | Low | `process.stdin/stdout/stderr` pipe fds not closed after process termination, causing `ResourceWarning`; now explicitly closed |
 
 ---
 

@@ -195,6 +195,14 @@ class StdioMCPSession:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=2)
+        # Close pipe file descriptors explicitly to avoid ResourceWarning
+        # on the subprocess stdin/stdout/stderr pipes.
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                try:
+                    stream.close()
+                except OSError:
+                    pass
 
     def _send(self, payload: dict[str, Any]) -> None:
         if self.process is None or self.process.stdin is None:

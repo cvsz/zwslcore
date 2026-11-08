@@ -3,7 +3,7 @@
 **Generated:** 2026-11-08  
 **Repository:** https://github.com/cvsz/zwslcore  
 **Default branch:** `main`  
-**Current HEAD:** `e10f556` (feat/zwslcore-enterprise-hardening, PR #112)
+**Current HEAD:** `36b5927` (feat/zwslcore-enterprise-hardening, PR #112)
 **Total PRs enumerated:** 111 (100% coverage — all pages retrieved via GitHub REST API pagination)
 **Pagination:** Single page, per_page=100 — all 111 PRs fit within one page
 
