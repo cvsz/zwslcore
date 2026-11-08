@@ -36,10 +36,10 @@ This template stays language-agnostic while providing production-grade **reposit
 - [ ] Language-specific starter packs
 - [ ] Infrastructure-as-code starter packs
 - [ ] Kubernetes and Helm starter packs
-- [ ] SBOM/provenance workflows
-- [ ] Release signing and artifact attestation
+- [x] SBOM/provenance workflows (provider-supply-chain CI workflow generates SPDX SBOMs)
+- [ ] Release signing and artifact attestation (GPG signing blocked - passphrase unavailable)
 - [ ] OpenSSF Scorecard workflow
-- [ ] Container vulnerability scanning
+- [x] Container vulnerability scanning (grype in provider-supply-chain CI; local verification complete)
 - [ ] Documentation site starter
 - [ ] Monorepo profile
 - [ ] Service/API profile
