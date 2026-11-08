@@ -80,8 +80,8 @@ check_credentials_file() {
   credentials="${credentials%"${credentials##*[![:space:]]}"}"
   credentials="${credentials%\"}"
   credentials="${credentials#\"}"
-  credentials="${credentials%'}"
-  credentials="${credentials#'}"
+  credentials="${credentials%\'}"
+  credentials="${credentials#\'}"
   [[ -n "$credentials" ]] || fail "Config must declare credentials-file"
   [[ "$credentials" != *$'\n'* && "$credentials" != *$'\r'* ]] || fail "Invalid credentials-file path"
   if [[ "$credentials" != /* ]]; then
@@ -121,8 +121,8 @@ config_checks() {
   name="$(sed -n 's/^[[:space:]]*tunnel:[[:space:]]*//p' "$CONFIG" | head -n 1)"
   name="${name%\"}"
   name="${name#\"}"
-  name="${name%'}"
-  name="${name#'}"
+  name="${name%\'}"
+  name="${name#\'}"
   [[ "$name" == "$TUNNEL_ID" ]] || fail "Config tunnel ID does not match ZCLOUD_TUNNEL_ID"
   [[ -x "$CLOUDFLARED" && ! -L "$CLOUDFLARED" ]] || fail "Verified cloudflared binary is not executable"
   "$CLOUDFLARED" tunnel --config "$CONFIG" ingress validate >/dev/null ||
