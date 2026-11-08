@@ -25,7 +25,9 @@ for entry in PROVIDER_PORT=18086 OPENWEBUI_PORT=18087 OPENWEBUI_BIND_ADDRESS=127
 done
 
 # shellcheck disable=SC1090
-set -a; source "$PROFILE_FILE"; set +a
+source "$PROFILE_FILE"
+set -a
+set +a
 
 if [[ "${OPENWEBUI_BIND_ADDRESS:-}" != "127.0.0.1" ]]; then
   printf 'Cloudflare profile requires OPENWEBUI_BIND_ADDRESS=127.0.0.1 in %s.\n' "$PROFILE_FILE" >&2
