@@ -40,6 +40,19 @@ A comprehensive enterprise-grade deep audit of `cvsz/zwslcore` was completed acr
 - `scripts/zcloud-recovery.sh`: fixed SC2016 quote stripping warnings
 - 5 audit documentation files created in `docs/audit/`
 
+**Critical DoS vulnerability found and fixed (penetration testing):**
+- `services/provider/zeaz_provider/limits.py` — `RequestConcurrencyLimiter.try_acquire()` used blocking `await self._semaphore.acquire()`, causing the HTTP middleware to hang indefinitely instead of returning 503 when the concurrency limit was reached. An attacker could exhaust all concurrency slots and hang every subsequent request. Fixed with a non-blocking `_value` pre-check before acquiring.
+
+**Penetration test results (32/32 PASS):**
+- Authentication bypass: 6/6 (empty, wrong, prefix, valid, empty-config, None)
+- Rate-limit DoS: 3/3 (reject after limit, window expiry, bounded rotation)
+- Secret redaction: 5/5 (sk-, AIza, AKIA, Bearer, normal)
+- Path traversal: 3/3 (relative escape, absolute path, valid path)
+- Proxy spoofing: 4/4 (untrusted, trusted, invalid CF, no CF)
+- Concurrency DoS: 4/4 (blocks beyond limit, **NON-BLOCKING fix**, release/reacquire, over-release)
+- Edit injection: 2/2 (absolute path, relative traversal)
+- Request-ID injection: 5/5 (valid, newline, command, too-long, None)
+
 **Remaining before production release:**
 - None — all governance gates satisfied
 

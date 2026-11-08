@@ -33,13 +33,14 @@ class RequestConcurrencyLimiter:
                 if self._semaphore is None:
                     self._semaphore = asyncio.Semaphore(self.limit)
         
-        acquired = False
-        try:
-            acquired = await self._semaphore.acquire()
-        except Exception:
+        # Non-blocking check: only acquire when a slot is immediately available.
+        # await self._semaphore.acquire() blocks indefinitely when exhausted,
+        # which would hang the HTTP middleware instead of returning 503.
+        if self._semaphore._value <= 0:
             return False
-        
-        if not acquired:
+        try:
+            await self._semaphore.acquire()
+        except (asyncio.CancelledError, OSError, RuntimeError):
             return False
         
         async with self._lock:
@@ -66,7 +67,7 @@ async def bounded_stream(source: AsyncIterator[bytes], maximum: int) -> AsyncIte
 
 
 __all__ = [
-    "ResponseLimitExceeded",
     "RequestConcurrencyLimiter",
+    "ResponseLimitExceeded",
     "bounded_stream",
 ]
