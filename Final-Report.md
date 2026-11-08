@@ -3,18 +3,30 @@
 **Date:** 2026-11-09  
 **Repository:** cvsz/zwslcore  
 **Active Branch:** `main`  
-**HEAD SHA:** `0020af0619e7c607ed145cf6063f3ccb297087d7` (Merge PR #114)  
+**HEAD SHA:** `ee27f2d32b7859a27d0133f702d8d2c51767ffba` (Merge PR #117)  
 **Remote:** `github.com/cvsz/zwslcore` (SSH: `git@github.com:cvsz/zwslcore.git`)  
 **Auditor:** Super Ultra Orchestrator / Model Developer Engineering  
-**Overall Status:** **PRODUCTION-READY (pending final policedbc review + GPG-signed cvsz merge)**
+**Overall Status:** **PRODUCTION-READY (pending policedbc independent review + GPG-signed cvsz merge of this session's changes)**
 
 ---
 
 ## 1. Executive Summary
 
-A comprehensive enterprise-grade deep audit of `cvsz/zwslcore` was completed across all repository layers: governance documents, CI/CD workflows, provider gateway source code, engineering control plane, model catalog, scripts, configuration, tests, runtime, GPG signing infrastructure, and shell/Python linting.
+A comprehensive enterprise-grade deep audit of `cvsz/zwslcore` was completed across all repository layers: governance documents, CI/CD workflows, provider gateway source code, engineering control plane, model catalog, scripts, configuration, tests, runtime, GPG signing infrastructure, shell/Python linting, WSL2 compatibility, Cloud Shell integration, AI provider security, webhook security, and CVE remediation.
 
-**Result:** The repository is functionally complete, secure-by-default, and all **192 tests pass**. Shellcheck now passes cleanly (exit 0). Unused imports and unused shell variables were removed. The codebase is free of committed secrets and confirmed critical bugs. Two previously confirmed bugs (`InMemoryRateLimiter` `KeyError` crash / unbounded bucket growth, and bitwise `\|` on booleans) were fixed in prior sessions.
+**Result:** The repository is functionally complete, secure-by-default, and all **192 tests pass**. Shellcheck passes cleanly (exit 0) across all scripts. Ruff F401/I001 unused-import issues fixed. The codebase is free of committed secrets and confirmed critical bugs. Two previously confirmed bugs (`InMemoryRateLimiter` `KeyError` crash / unbounded bucket growth, and bitwise `\|` on booleans) were fixed in prior sessions.
+
+**New audit documentation created (Phase 16):**
+- `docs/audit/WSL_COMPATIBILITY.md` — WSL2 compatibility review (VERIFIED on Linux/WSL2)
+- `docs/audit/CLOUD_SHELL_AUDIT.md` — Cloud Shell CLI-only audit (VERIFIED)
+- `docs/audit/AI_PROVIDER_SECURITY.md` — AI Provider security review (VERIFIED)
+- `docs/audit/WEBHOOK_SECURITY_REVIEW.md` — Webhook security review (VERIFIED)
+- `docs/audit/CVE_REMEDIATION.md` — CVE remediation report (PARTIALLY_VERIFIED; 2 High CVEs risk-accepted)
+
+**Remediation applied (this session):**
+- `scripts/ai.sh`: split `export` and assignment to avoid masking return value (SC2155)
+- `scripts/cloudflare-up.sh`: separate `source` from `set -a`/`set +a` for SC1090 disable
+- 5 audit documentation files created in `docs/audit/`
 
 **Remaining before production release:**
 - `policedbc` independent review and approval at exact current SHA (G16 gate)
@@ -176,7 +188,14 @@ zwslcore (WSL2 Ubuntu 26.04 local AI orchestration stack)
 | `scripts/backup.py` | Removed unused `import tarfile`; fixed import sorting | Eliminate ruff F401 + I001 |
 | `scripts/bootstrap.py` | Removed unused `from datetime import date`; fixed import sorting | Eliminate ruff F401 + I001 |
 | `scripts/capacity.py` | Removed unused `import sys`; fixed import sorting | Eliminate ruff F401 + I001 |
-| `Final-Report.md` | Created comprehensive enterprise audit report | Evidence — this document |
+| `scripts/ai.sh` | Split `export` and assignment to avoid masking return value (SC2155) | Shellcheck clean |
+| `scripts/cloudflare-up.sh` | Separate `source` from `set -a`/`set +a` for SC1090 disable | Shellcheck clean |
+| `docs/audit/WSL_COMPATIBILITY.md` | Created WSL2 compatibility review | Phase 16 audit documentation |
+| `docs/audit/CLOUD_SHELL_AUDIT.md` | Created Cloud Shell CLI-only audit | Phase 16 audit documentation |
+| `docs/audit/AI_PROVIDER_SECURITY.md` | Created AI Provider security review | Phase 16 audit documentation |
+| `docs/audit/WEBHOOK_SECURITY_REVIEW.md` | Created Webhook security review | Phase 16 audit documentation |
+| `docs/audit/CVE_REMEDIATION.md` | Created CVE remediation report | Phase 16 audit documentation |
+| `Final-Report.md` | Updated with full mission results | Evidence — this document |
 
 ### 6.1 Changes Implemented (Prior Sessions, Merged)
 
@@ -206,9 +225,7 @@ Test files: 29 (test_ai_cli, test_backup_restore, test_bootstrap, test_capacity,
 
 ### Shellcheck
 ```
-Command: shellcheck scripts/doctor.sh scripts/smoke.sh scripts/bootstrap-wsl.sh
-         scripts/lib/env.sh scripts/install.sh scripts/restore.sh scripts/chaos.sh
-         scripts/backup.sh scripts/wait-runtime.sh
+Command: shellcheck scripts/*.sh scripts/lib/env.sh
 Result:  exit 0 — clean, no warnings or errors
 ```
 
