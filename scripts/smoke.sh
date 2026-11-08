@@ -8,9 +8,13 @@ ENV_FILE="$ROOT/.env"
 
 # shellcheck source=scripts/lib/env.sh
 source "$ROOT/scripts/lib/env.sh"
+# OLLAMA_PORT and OPENWEBUI_PORT are read for environment documentation even
+# though smoke.sh exercises LiteLLM and the Provider directly.
+# shellcheck disable=SC2034
 OLLAMA_PORT="$(dotenv_get "$ENV_FILE" OLLAMA_PORT 11434)"
 LITELLM_PORT="$(dotenv_get "$ENV_FILE" LITELLM_PORT 4000)"
 PROVIDER_PORT="$(dotenv_get "$ENV_FILE" PROVIDER_PORT 8080)"
+# shellcheck disable=SC2034
 OPENWEBUI_PORT="$(dotenv_get "$ENV_FILE" OPENWEBUI_PORT 3000)"
 PROVIDER_CLIENT_KEY="$(dotenv_get "$ENV_FILE" PROVIDER_CLIENT_KEY)"
 LITELLM_MASTER_KEY="$(dotenv_get "$ENV_FILE" LITELLM_MASTER_KEY)"

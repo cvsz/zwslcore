@@ -3,7 +3,8 @@
 set -Eeuo pipefail
 umask 077
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required" >&2; exit 127; }
-export ZWSLCORE_AI_REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+ZWSLCORE_AI_REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+export ZWSLCORE_AI_REPO_ROOT
 exec python3 - "$@" <<'PY'
 import json, os, sys, pathlib, urllib.request, urllib.error, urllib.parse, ssl, stat, tempfile, time
 

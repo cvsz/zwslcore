@@ -21,6 +21,9 @@ rm -f /tmp/zwslcore-dotenv-should-not-exist
 [[ "$(dotenv_get "$tmp" PORT 1)" == "8080" ]]
 [[ "$(dotenv_get "$tmp" OPENWEBUI_CORS_ALLOW_ORIGIN)" == "http://localhost:3000;http://127.0.0.1:3000" ]]
 [[ "$(dotenv_get "$tmp" SPACED)" == "value with spaces" ]]
+# shellcheck disable=SC2016
+# Intentional: the single-quoted $(touch ...) must be read as a literal string,
+# NOT executed. Line 27 verifies the touch never ran.
 [[ "$(dotenv_get "$tmp" DANGEROUS)" == '$(touch /tmp/zwslcore-dotenv-should-not-exist)' ]]
 [[ "$(dotenv_get "$tmp" QUOTED)" == "hello world" ]]
 [[ "$(dotenv_get "$tmp" MISSING fallback)" == "fallback" ]]
