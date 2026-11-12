@@ -39,8 +39,8 @@ def login_succeeds(base_url: str, username: str, password: str) -> bool:
     )
     try:
         response = build_opener(NoRedirect).open(request, timeout=15)
-        status = response.status
-        location = response.headers.get("Location", "")
+        status: int = response.status
+        location: str = response.headers.get("Location", "")
     except HTTPError as error:
         status = error.code
         location = error.headers.get("Location", "")
@@ -77,7 +77,7 @@ def account_exists(base_url: str, master_key: str, username: str) -> bool:
     try:
         with urlopen(request, timeout=15) as response:
             account = json.load(response).get("user_info", {})
-            return account.get("user_id") == username and account.get("user_role") == "proxy_admin"
+            return str(account.get("user_id")) == username and str(account.get("user_role")) == "proxy_admin"
     except (HTTPError, URLError, ValueError):
         return False
 

@@ -7,6 +7,7 @@ import re
 import time
 import uuid
 from collections import OrderedDict, deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -88,7 +89,7 @@ class RateLimitBackend(Protocol):
 class InMemoryRateLimiter:
     MAX_BUCKETS = 10_000
 
-    def __init__(self, limit: int, window_seconds: float = 60.0, *, clock=time.monotonic):
+    def __init__(self, limit: int, window_seconds: float = 60.0, *, clock: Callable[[], float] = time.monotonic) -> None:
         self.limit = limit
         self.window_seconds = window_seconds
         self.clock = clock
@@ -190,14 +191,14 @@ class RedisRateLimiter:
 
 
 __all__ = [
-    "redact",
-    "request_id",
+    "InMemoryRateLimiter",
+    "RateLimitBackend",
+    "RateLimitBackendError",
+    "RedisRateLimiter",
+    "TrustedProxyPolicy",
     "client_bucket",
     "client_key_digest",
+    "redact",
+    "request_id",
     "verify_client_key",
-    "TrustedProxyPolicy",
-    "RateLimitBackendError",
-    "RateLimitBackend",
-    "InMemoryRateLimiter",
-    "RedisRateLimiter",
 ]

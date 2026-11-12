@@ -11,13 +11,13 @@ from services.engineering.continuous import ContinuousEngineeringRunner
 from services.engineering.hardware import HardwareProfile
 from services.engineering.ledger import ContinuousLedgerError, JsonContinuousLedger
 from services.engineering.loop import ContinuousEngineeringLoop, LoopPolicy, WorkItem, WorkKind
-from services.provider.zeaz_provider.cost import CostClass, CostPolicy, cost_allowed, cost_rank
 from services.engineering.models import Checkpoint, EngineeringTask, TaskStatus
 from services.engineering.review import SecurityGate, StaticReviewer
 from services.engineering.runtime import EngineeringRuntime, ProviderClient
 from services.engineering.snapshot import RepositorySnapshotter
 from services.engineering.store import SQLiteEngineeringStore
 from services.engineering.worktree import WorktreeManager
+from services.provider.zeaz_provider.cost import CostClass, CostPolicy, cost_allowed, cost_rank
 
 
 class ProviderStructuredOutputTests(unittest.TestCase):

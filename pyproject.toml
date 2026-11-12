@@ -1,0 +1,120 @@
+[build-system]
+requires = ["setuptools>=75,<85", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zwslcore"
+version = "0.1.0"
+description = "WSL2-first local AI orchestration stack for Ubuntu 26.04"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+authors = [{name = "cvsz", email = "cvsz@github.com"}]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "fastapi>=0.142.2,<0.163",
+    "httpx>=0.28,<1",
+    "pydantic>=2.11,<3",
+    "prometheus-client>=0.22,<1",
+    "PyYAML>=6.0,<7",
+    "redis>=6.4,<9",
+    "uvicorn[standard]>=0.35,<1",
+    "opentelemetry-api>=1.36,<2",
+    "opentelemetry-sdk>=1.36,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.36,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0,<10",
+    "pytest-asyncio>=0.25,<1",
+    "pytest-cov>=6.0,<7",
+    "mypy>=1.15,<2",
+    "ruff>=0.11,<1",
+    "black>=25.0,<26",
+    "isort>=6.0,<7",
+    "bandit>=1.8,<2",
+    "safety>=3.0,<4",
+    "pre-commit>=4.0,<5",
+    "types-PyYAML>=6.0,<7",
+    "types-requests>=2.32,<3",
+]
+engineering = ["python-dotenv>=1.0,<2"]
+provider = [
+    "fastapi>=0.142.2,<0.163",
+    "httpx>=0.28,<1",
+    "pydantic>=2.11,<3",
+    "prometheus-client>=0.22,<1",
+    "PyYAML>=6.0,<7",
+    "redis>=6.4,<9",
+    "uvicorn[standard]>=0.35,<1",
+    "opentelemetry-api>=1.36,<2",
+    "opentelemetry-sdk>=1.36,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.36,<2",
+]
+
+[project.scripts]
+zwslcore-provider = "zeaz_provider.main:run"
+zwslcore-engineer = "scripts.engineer:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["services*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+select = ["E", "W", "F", "I", "UP", "B", "C4", "T20", "PTH", "ARG", "ERA", "SIM", "N", "TID", "PL", "TRY", "RUF"]
+ignore = ["E501", "B008", "TRY003", "ARG001", "ARG002"]
+per-file-ignores = { "scripts/*.py" = ["E402"] }
+fixable = ["ALL"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.ruff.lint.isort]
+known-first-party = ["services", "scripts"]
+combine-as-imports = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
+include = '\.pyi?$'
+exclude = '''(/\.venv|/\.dev-venv|/\.pytest_cache|/\.ruff_cache|/\.mypy_cache|/build|/dist|/\.egg-info|/__pycache__)'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["services", "scripts"]
+combine_as_imports = true
+
+[tool.bandit]
+exclude_dirs = [".venv", ".dev-venv", ".pytest_cache", ".ruff_cache", ".mypy_cache", "build", "dist", "tests"]
+skips = ["B101", "B601"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "services/provider/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --strict-markers"
+markers = ["slow", "integration", "unit"]
+
+[tool.coverage.run]
+source = ["services", "scripts"]
+omit = ["*/tests/*", "*/test_*.py", "*_test.py", "*/__pycache__/*", "*/.venv/*", "*/.dev-venv/*", "*/.pytest_cache/*", "*/.ruff_cache/*", "*/.mypy_cache/*"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "def __repr__", "raise AssertionError", "raise NotImplementedError", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
+show_missing = true
+precision = 2

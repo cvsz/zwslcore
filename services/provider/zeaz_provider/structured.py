@@ -86,7 +86,7 @@ def ollama_chat_to_openai(
 
 __all__ = [
     "StructuredOutputError",
-    "structured_schema",
-    "ollama_structured_payload",
     "ollama_chat_to_openai",
+    "ollama_structured_payload",
+    "structured_schema",
 ]

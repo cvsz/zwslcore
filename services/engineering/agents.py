@@ -151,9 +151,9 @@ class AgentRegistry:
                     raise AgentConfigError(
                         f"agent {name!r} permission #{index} must be an object"
                     )
-                permission = item.get("permission")
-                pattern = item.get("pattern", "*")
-                action = item.get("action", "ask")
+                permission = str(item.get("permission") or "*")
+                pattern = str(item.get("pattern") or "*")
+                action = str(item.get("action") or "ask")
                 if not all(isinstance(value, str) for value in (permission, pattern, action)):
                     raise AgentConfigError(
                         f"agent {name!r} permission #{index} fields must be strings"

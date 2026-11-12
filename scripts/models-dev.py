@@ -10,15 +10,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.engineering.hardware import detect_hardware  # noqa: E402
-from services.model_catalog.models_dev import (  # noqa: E402
+from services.engineering.hardware import detect_hardware
+from services.model_catalog.models_dev import (
     DEFAULT_CACHE,
     DEFAULT_URL,
     ModelsDevError,
     get_catalog,
     lookup_model,
 )
-from services.model_catalog.selector import (  # noqa: E402
+from services.model_catalog.selector import (
     ModelRequirements,
     local_alias_candidates,
     models_dev_candidates,

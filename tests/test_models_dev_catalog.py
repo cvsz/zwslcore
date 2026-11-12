@@ -16,7 +16,6 @@ from services.model_catalog.models_dev import (
     write_cache,
 )
 
-
 SAMPLE = {
     "providers": {
         "openrouter": {

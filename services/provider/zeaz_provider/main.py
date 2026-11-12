@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import time
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
@@ -15,7 +16,7 @@ from redis.asyncio import Redis
 
 from . import __version__
 from .audit import audit_method, audit_path, emit_request_audit
-from .config import Settings, load_settings
+from .config import ModelRoute, Settings, load_settings
 from .errors import ErrorKind
 from .limits import RequestConcurrencyLimiter, ResponseLimitExceeded, bounded_stream
 from .normalize import (
@@ -46,11 +47,11 @@ from .streaming import (
 )
 
 __all__ = [
+    "SAMPLING_VALID_RANGES",
     "app",
-    "run",
     "authenticate",
     "body",
-    "SAMPLING_VALID_RANGES",
+    "run",
 ]
 
 
@@ -64,7 +65,7 @@ SAMPLING_VALID_RANGES: dict[str, tuple[float, float]] = {
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = load_settings()
     client = httpx.AsyncClient(
         limits=httpx.Limits(max_connections=200, max_keepalive_connections=50),
@@ -105,7 +106,10 @@ def rate_limiter(config: Settings) -> RateLimitBackend:
 
 
 @app.middleware("http")
-async def request_boundary(request: Request, call_next):
+async def request_boundary(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
     started = time.monotonic()
     request.app.state.observability.start_request()
     correlation_id = request_id(request.headers.get("x-request-id"))
@@ -188,14 +192,14 @@ async def request_boundary(request: Request, call_next):
                     headers={"Retry-After": "60"},
                 )
             else:
-                response = await call_next(request)
+                response = await call_next(request)  # type: ignore[assignment]
         status_code = response.status_code
         _security_headers(response, correlation_id, remaining)
-        if response.headers.get("content-type", "").startswith("text/event-stream"):
+        if isinstance(response, StreamingResponse):
             source = response.body_iterator
             stream_status = status_code
 
-            async def limited_body():
+            async def limited_body() -> AsyncIterator[bytes]:
                 nonlocal stream_status
                 try:
                     async for chunk in bounded_stream(_bytes(source), settings(request).max_response_bytes):
@@ -208,7 +212,7 @@ async def request_boundary(request: Request, call_next):
 
             response.body_iterator = limited_body()
             return response
-        response = await _bounded_response(response, settings(request).max_response_bytes)
+        response = await _bounded_response(response, settings(request).max_response_bytes)  # type: ignore[assignment]
         status_code = response.status_code
         _security_headers(response, correlation_id, remaining)
         await finalize(status_code)
@@ -218,12 +222,17 @@ async def request_boundary(request: Request, call_next):
         raise
 
 
-async def _bytes(source):
+async def _bytes(source: AsyncIterable[str | bytes | memoryview[int]]) -> AsyncIterator[bytes]:
     async for chunk in source:
         yield chunk.encode() if isinstance(chunk, str) else bytes(chunk)
 
 
-def _validate_stream_request(provider_router, route, payload: dict[str, Any], protocol: str) -> None:
+def _validate_stream_request(
+    provider_router: ProviderRouter,
+    route: ModelRoute,
+    payload: dict[str, Any],
+    protocol: str,
+) -> None:
     """Validate request conversion for every configured streaming candidate before headers are sent."""
     for target in (route.primary, *route.fallbacks):
         client = provider_router.clients.get(target.provider)
@@ -242,7 +251,7 @@ def _validate_stream_request(provider_router, route, payload: dict[str, Any], pr
             raise HTTPException(status_code=400, detail="Invalid request format") from exc
 
 
-def _provider_response(converter, *args) -> dict[str, Any]:
+def _provider_response(converter: Callable[..., dict[str, Any]], *args: Any) -> dict[str, Any]:
     try:
         return converter(*args)
     except (TypeError, ValueError, KeyError, IndexError, OverflowError) as exc:
@@ -256,7 +265,7 @@ def _provider_response(converter, *args) -> dict[str, Any]:
 
 async def _bounded_response(response: Response, maximum: int) -> Response:
     body = getattr(response, "body", None)
-    if body is None:
+    if body is None and isinstance(response, StreamingResponse):
         chunks: list[bytes] = []
         total = 0
         async for chunk in _bytes(response.body_iterator):
@@ -271,7 +280,7 @@ async def _bounded_response(response: Response, maximum: int) -> Response:
             headers=headers,
             background=response.background,
         )
-    if len(body) > maximum:
+    if isinstance(body, (bytes, bytearray)) and len(body) > maximum:
         return _response_limit_error()
     return response
 
@@ -297,11 +306,11 @@ def _security_headers(response: Response, correlation_id: str, remaining: int) -
 
 
 def settings(request: Request) -> Settings:
-    return request.app.state.settings
+    return request.app.state.settings  # type: ignore[no-any-return]
 
 
 def router(request: Request) -> ProviderRouter:
-    return request.app.state.router
+    return request.app.state.router  # type: ignore[no-any-return]
 
 
 RouterDependency = Annotated[ProviderRouter, Depends(router)]
@@ -378,7 +387,7 @@ async def body(request: Request) -> dict[str, Any]:
 
 
 @app.exception_handler(ProviderError)
-async def provider_error(_: Request, exc: ProviderError):
+async def provider_error(_: Request, exc: ProviderError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -391,12 +400,12 @@ async def provider_error(_: Request, exc: ProviderError):
 
 
 @app.get("/health/live")
-async def live():
+async def live() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
 
 
 @app.get("/health/ready")
-async def ready(request: Request):
+async def ready(request: Request) -> dict[str, int | str]:
     return {
         "status": "ready",
         "providers": len(settings(request).providers),
@@ -405,7 +414,7 @@ async def ready(request: Request):
 
 
 @app.get("/metrics")
-async def metrics(request: Request):
+async def metrics(request: Request) -> Response:
     if not settings(request).metrics_enabled:
         raise HTTPException(status_code=404, detail="Not found")
     return Response(
@@ -415,12 +424,12 @@ async def metrics(request: Request):
 
 
 @app.get("/v1/models", dependencies=[Depends(authenticate)])
-async def models(provider_router: RouterDependency):
+async def models(provider_router: RouterDependency) -> dict[str, list[dict[str, str]] | str]:
     return {"object": "list", "data": provider_router.model_list()}
 
 
 @app.post("/v1/models/refresh", dependencies=[Depends(authenticate)])
-async def refresh_models(provider_router: RouterDependency):
+async def refresh_models(provider_router: RouterDependency) -> dict[str, dict[str, int] | dict[str, str]]:
     refreshed: dict[str, int] = {}
     errors: dict[str, str] = {}
     for name, client in provider_router.clients.items():
@@ -432,7 +441,7 @@ async def refresh_models(provider_router: RouterDependency):
 
 
 @app.post("/v1/chat/completions", dependencies=[Depends(authenticate)])
-async def chat_completions(request: Request, provider_router: RouterDependency):
+async def chat_completions(request: Request, provider_router: RouterDependency) -> dict[str, Any] | StreamingResponse:
     payload = await body(request)
     route = provider_router.route(payload.get("model"))
     if payload.get("stream"):
@@ -442,7 +451,7 @@ async def chat_completions(request: Request, provider_router: RouterDependency):
             media_type="text/event-stream",
         )
 
-    async def call(client: ProviderClient, model: str):
+    async def call(client: ProviderClient, model: str) -> dict[str, Any]:
         outbound = {**payload, "model": model}
         if client.config.api == "anthropic":
             try:
@@ -457,7 +466,7 @@ async def chat_completions(request: Request, provider_router: RouterDependency):
 
 
 @app.post("/v1/messages", dependencies=[Depends(authenticate)])
-async def messages(request: Request, provider_router: RouterDependency):
+async def messages(request: Request, provider_router: RouterDependency) -> dict[str, Any] | StreamingResponse:
     payload = await body(request)
     route = provider_router.route(payload.get("model"))
     if payload.get("stream"):
@@ -467,7 +476,7 @@ async def messages(request: Request, provider_router: RouterDependency):
             media_type="text/event-stream",
         )
 
-    async def call(client: ProviderClient, model: str):
+    async def call(client: ProviderClient, model: str) -> dict[str, Any]:
         outbound = {**payload, "model": model}
         if client.config.api == "anthropic":
             return _public_model_response(await client.messages(outbound), route.alias)
@@ -482,7 +491,7 @@ async def messages(request: Request, provider_router: RouterDependency):
 
 
 @app.post("/v1/responses", dependencies=[Depends(authenticate)])
-async def responses(request: Request, provider_router: RouterDependency):
+async def responses(request: Request, provider_router: RouterDependency) -> dict[str, Any] | StreamingResponse:
     payload = await body(request)
     route = provider_router.route(payload.get("model"))
     if payload.get("stream"):
@@ -492,7 +501,7 @@ async def responses(request: Request, provider_router: RouterDependency):
             media_type="text/event-stream",
         )
 
-    async def call(client: ProviderClient, model: str):
+    async def call(client: ProviderClient, model: str) -> dict[str, Any]:
         outbound = {**payload, "model": model}
         if client.config.api == "responses":
             return _public_model_response(await client.responses(outbound), route.alias)
@@ -514,8 +523,13 @@ async def responses(request: Request, provider_router: RouterDependency):
     return await provider_router.execute(route, call)
 
 
-async def _stream_openai(provider_router, route, payload, endpoint):
-    async def operation(client, model):
+async def _stream_openai(
+    provider_router: ProviderRouter,
+    route: ModelRoute,
+    payload: dict[str, Any],
+    endpoint: str,
+) -> AsyncIterator[bytes]:
+    async def operation(client: ProviderClient, model: str) -> AsyncIterator[bytes]:
         if client.config.api == "anthropic":
             outbound = openai_request_to_anthropic({**payload, "stream": True}, model)
             source = client.stream("messages", outbound)
@@ -531,8 +545,12 @@ async def _stream_openai(provider_router, route, payload, endpoint):
         yield chunk
 
 
-async def _stream_anthropic(provider_router, route, payload):
-    async def operation(client, model):
+async def _stream_anthropic(
+    provider_router: ProviderRouter,
+    route: ModelRoute,
+    payload: dict[str, Any],
+) -> AsyncIterator[bytes]:
+    async def operation(client: ProviderClient, model: str) -> AsyncIterator[bytes]:
         outbound = {**payload, "model": model, "stream": True}
         if client.config.api == "anthropic":
             source = rewrite_sse_model(
@@ -550,8 +568,12 @@ async def _stream_anthropic(provider_router, route, payload):
         yield chunk
 
 
-async def _stream_responses(provider_router, route, payload):
-    async def operation(client, model):
+async def _stream_responses(
+    provider_router: ProviderRouter,
+    route: ModelRoute,
+    payload: dict[str, Any],
+) -> AsyncIterator[bytes]:
+    async def operation(client: ProviderClient, model: str) -> AsyncIterator[bytes]:
         outbound = {**payload, "model": model, "stream": True}
         if client.config.api == "responses":
             source = rewrite_sse_model(

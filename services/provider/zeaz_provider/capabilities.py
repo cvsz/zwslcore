@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -64,8 +65,8 @@ class CapabilityRegistry:
         settings: Settings,
         *,
         ttl_seconds: float = 900.0,
-        clock=time.time,
-    ):
+        clock: Callable[[], float] = time.time,
+    ) -> None:
         self.ttl_seconds = ttl_seconds
         self.clock = clock
         self._records: dict[tuple[str, str], CapabilityRecord] = {}
@@ -163,8 +164,8 @@ def _lifecycle(value: Any) -> ModelLifecycle:
 
 
 __all__ = [
-    "ModelLifecycle",
-    "ModelCapabilities",
     "CapabilityRecord",
     "CapabilityRegistry",
+    "ModelCapabilities",
+    "ModelLifecycle",
 ]

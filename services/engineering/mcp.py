@@ -122,7 +122,7 @@ class StdioMCPSession:
         self._next_id = 1
         self._selector: selectors.BaseSelector | None = None
 
-    def __enter__(self) -> "StdioMCPSession":
+    def __enter__(self) -> StdioMCPSession:
         if not self.config.enabled:
             raise MCPError(f"MCP server {self.config.name!r} is disabled")
 
@@ -175,7 +175,7 @@ class StdioMCPSession:
             raise
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: object | None) -> None:
         self.close()
 
     def close(self) -> None:

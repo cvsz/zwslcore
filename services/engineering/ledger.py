@@ -230,7 +230,10 @@ class JsonContinuousLedger:
             if not reason.strip():
                 raise ContinuousLedgerError("retry reason must not be empty")
             data = self._read()
-            record = self._active_record(data, fingerprint)
+            try:
+                record = data["records"][fingerprint]
+            except KeyError as exc:
+                raise ContinuousLedgerError(f"unknown active work item: {fingerprint}") from exc
             state = str(record.get("state", "PENDING"))
             attempts = int(record.get("attempts", 0))
             maximum = int(record.get("max_attempts", 2))
@@ -311,7 +314,10 @@ class JsonContinuousLedger:
             if not reason.strip():
                 raise ContinuousLedgerError("quarantine reason must not be empty")
             data = self._read()
-            record = self._active_record(data, fingerprint)
+            try:
+                record = data["records"][fingerprint]
+            except KeyError as exc:
+                raise ContinuousLedgerError(f"unknown active work item: {fingerprint}") from exc
             state = str(record.get("state", "PENDING"))
             if state in {"RUNNING", "SUCCEEDED", "CANCELLED", "DEAD_LETTER"}:
                 raise ContinuousLedgerError(f"cannot quarantine work in state {state}")
@@ -335,7 +341,10 @@ class JsonContinuousLedger:
             if not reason.strip():
                 raise ContinuousLedgerError("dead-letter reason must not be empty")
             data = self._read()
-            record = self._active_record(data, fingerprint)
+            try:
+                record = data["records"][fingerprint]
+            except KeyError as exc:
+                raise ContinuousLedgerError(f"unknown active work item: {fingerprint}") from exc
             state = str(record.get("state", "PENDING"))
             if state in {"RUNNING", "SUCCEEDED", "CANCELLED"}:
                 raise ContinuousLedgerError(f"cannot dead-letter work in state {state}")
@@ -351,17 +360,17 @@ class JsonContinuousLedger:
                     model_history.append(entry)
                 else:
                     model_history.append(item)
-            for item in list(metadata.get("model_escalation_history") or []):
+            for item in list(metadata.get("model_escalation_history") or []) if isinstance(metadata, dict) else []:
                 if isinstance(item, dict):
                     entry = dict(item)
                     if "error" in entry:
                         entry["error"] = redact_sensitive_text(str(entry["error"]), 1000)
                     model_history.append(entry)
             current_model = str(
-                metadata.get("model_working")
-                or metadata.get("model_escalated_to")
-                or metadata.get("model_selected_for_run")
-                or metadata.get("model_current")
+                (metadata.get("model_working") if isinstance(metadata, dict) else None)
+                or (metadata.get("model_escalated_to") if isinstance(metadata, dict) else None)
+                or (metadata.get("model_selected_for_run") if isinstance(metadata, dict) else None)
+                or (metadata.get("model_current") if isinstance(metadata, dict) else None)
                 or ""
             )
             if current_model and not any(item.get("model") == current_model for item in model_history if isinstance(item, dict)):
@@ -383,13 +392,13 @@ class JsonContinuousLedger:
                     "error": redact_sensitive_text(str(record.get("last_error") or reason), 1000),
                     "task_id": str(record.get("task_id") or task.get("id") or ""),
                     "model": current_model,
-                    "evidence_path": str(metadata.get("evidence_path") or ""),
+                    "evidence_path": str((metadata.get("evidence_path") if isinstance(metadata, dict) else None) or ""),
                     "source": "legacy_summary",
                 })
             task_id = str(record.get("task_id") or task.get("id") or "")
             latest_attempt = attempt_history[-1] if attempt_history else {}
             evidence_path = str(
-                metadata.get("evidence_path")
+                (metadata.get("evidence_path") if isinstance(metadata, dict) else None)
                 or (latest_attempt.get("evidence_path") if isinstance(latest_attempt, dict) else "")
                 or ""
             )
@@ -420,7 +429,10 @@ class JsonContinuousLedger:
             if not reason.strip():
                 raise ContinuousLedgerError("archive reason must not be empty")
             data = self._read()
-            record = self._active_record(data, fingerprint)
+            try:
+                record = data["records"][fingerprint]
+            except KeyError as exc:
+                raise ContinuousLedgerError(f"unknown active work item: {fingerprint}") from exc
             state = str(record.get("state", ""))
             if state not in {"SUCCEEDED", "CANCELLED", "DEAD_LETTER"}:
                 raise ContinuousLedgerError(f"only completed, cancelled, or dead-letter work can be archived (state={state})")
@@ -452,7 +464,10 @@ class JsonContinuousLedger:
             if not reason.strip():
                 raise ContinuousLedgerError("lifecycle reason must not be empty")
             data = self._read()
-            record = self._active_record(data, fingerprint)
+            try:
+                record = data["records"][fingerprint]
+            except KeyError as exc:
+                raise ContinuousLedgerError(f"unknown active work item: {fingerprint}") from exc
             state = str(record.get("state", "PENDING"))
             if state == target:
                 return dict(record)
@@ -481,7 +496,10 @@ class JsonContinuousLedger:
     @staticmethod
     def _active_record(data: dict[str, Any], fingerprint: str) -> dict[str, Any]:
         try:
-            return data["records"][fingerprint]
+            record = data["records"][fingerprint]
+            if not isinstance(record, dict):
+                raise ContinuousLedgerError(f"invalid record type for {fingerprint}")
+            return record
         except KeyError as exc:
             raise ContinuousLedgerError(f"unknown active work item: {fingerprint}") from exc
 

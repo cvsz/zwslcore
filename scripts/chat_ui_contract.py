@@ -8,7 +8,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
-def inspect(compose: str, env: str):
+def inspect(compose: str, env: str) -> dict[str, bool]:
     checks = {
         "open_webui_present": bool(re.search(r"(?m)^  open-webui:\s*$", compose)),
         "gateway_api_base": "OPENAI_API_BASE_URL: http://provider:8080/v1" in compose,

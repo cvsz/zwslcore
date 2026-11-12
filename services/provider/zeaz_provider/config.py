@@ -183,7 +183,7 @@ class Settings:
 
 
 def load_settings(path: str | Path | None = None) -> Settings:
-    config_path = Path(path or os.getenv("ZEAZ_CONFIG", "config/providers.yaml"))
+    config_path = Path(path if path is not None else os.getenv("ZEAZ_CONFIG", "config/providers.yaml"))
     raw_value = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     if raw_value is None:
         raw_value = {}
@@ -378,9 +378,9 @@ def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
 
 
 __all__ = [
+    "ModelRoute",
     "ProviderConfig",
     "RouteTarget",
-    "ModelRoute",
     "Settings",
     "load_settings",
 ]

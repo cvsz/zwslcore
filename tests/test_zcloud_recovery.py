@@ -2,11 +2,11 @@
 """Regression tests for Cloud Shell connector recovery admission and downloads."""
 import hashlib
 import os
-from pathlib import Path
 import stat
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RECOVERY = ROOT / "scripts" / "zcloud-recovery.sh"

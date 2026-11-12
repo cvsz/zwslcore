@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 
 @dataclasses.dataclass(frozen=True)

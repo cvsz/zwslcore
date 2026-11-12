@@ -121,7 +121,7 @@ def openai_to_anthropic(response: dict[str, Any], requested_model: str) -> dict[
     stop_reason = {
         "tool_calls": "tool_use",
         "length": "max_tokens",
-    }.get(finish, "end_turn")
+    }.get(str(finish) if finish is not None else "", "end_turn")
     usage = _object(response.get("usage") or {}, "usage")
     return {
         "id": response.get("id", "msg_zeaz"),
@@ -232,19 +232,19 @@ def responses_to_chat(payload: dict[str, Any], model: str) -> dict[str, Any]:
             if item.get("type") == "function_call_output":
                 messages.append({
                     "role": "tool",
-                    "tool_call_id": item.get("call_id"),
-                    "content": _json_text(item.get("output", "")),
+                    "tool_call_id": str(item.get("call_id") or ""),
+                    "content": _json_text(str(item.get("output") or "")),
                 })
             elif item.get("type") == "function_call":
                 messages.append({
                     "role": "assistant",
-                    "content": None,
-                    "tool_calls": [{
-                        "id": item.get("call_id", item.get("id")),
+                    "content": "",
+                    "tool_calls": [{  # type: ignore[dict-item]
+                        "id": str(item.get("call_id") or item.get("id") or ""),
                         "type": "function",
                         "function": {
-                            "name": item.get("name"),
-                            "arguments": _json_text(item.get("arguments", "{}")),
+                            "name": str(item.get("name") or ""),
+                            "arguments": _json_text(str(item.get("arguments") or "{}")),
                         },
                     }],
                 })
@@ -467,8 +467,8 @@ def _nonnegative_int(value: Any) -> int:
 
 __all__ = [
     "anthropic_to_openai",
-    "openai_to_anthropic",
-    "openai_request_to_anthropic",
-    "responses_to_chat",
     "chat_to_responses",
+    "openai_request_to_anthropic",
+    "openai_to_anthropic",
+    "responses_to_chat",
 ]
