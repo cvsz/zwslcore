@@ -167,7 +167,7 @@ class ResilienceExecutor:
 
 
 __all__ = [
-    "ResiliencePolicy",
     "CircuitBreaker",
     "ResilienceExecutor",
+    "ResiliencePolicy",
 ]

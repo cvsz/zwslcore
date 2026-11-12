@@ -146,7 +146,7 @@ def run_fault_suite() -> dict[str, Any]:
 
     return {
         "schema": 1,
-        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "created_at": dt.datetime.now(dt.UTC).isoformat(),
         "source": _source_metadata(),
         "mode": "loopback fault injection; no Docker service mutation",
         "status": "PASS",
@@ -292,8 +292,9 @@ def run_provider_restart_during_preflight() -> dict[str, Any]:
             self,
             request: urllib.request.Request,
             *,
-            timeout: int | None = None,
+            timeout: float | None = None,
             attempts: int = 1,
+            request_id: str | None = None,
         ) -> dict[str, Any]:
             if request.full_url.endswith("/models") and not self.triggered:
                 self.triggered = True

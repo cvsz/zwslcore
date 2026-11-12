@@ -220,7 +220,7 @@ def restore_backup(backup: str | Path, target: str | Path | None = None) -> Path
                 if webui_policy == "unspecified" and webui_excluded
                 else "PASS"
             ),
-            "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "created_at": dt.datetime.now(dt.UTC).isoformat(),
             "backup": str(backup_path),
             "backup_source": manifest.get("source", {}),
             "isolated_target": str(target_path),

@@ -32,7 +32,15 @@ class ModelInventoryError(RuntimeError):
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Keep the loopback-only inventory request from following redirects."""
 
-    def redirect_request(self, request, response, code, message, headers, new_url):
+    def redirect_request(
+        self,
+        request: urllib.request.Request,
+        response: Any,
+        code: int,
+        message: str,
+        headers: Any,
+        new_url: str,
+    ) -> None:
         return None
 
 

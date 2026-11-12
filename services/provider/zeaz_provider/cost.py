@@ -55,8 +55,8 @@ def cost_rank(cost_class: CostClass) -> int:
 __all__ = [
     "CostClass",
     "CostPolicy",
-    "parse_cost_class",
-    "parse_cost_policy",
     "cost_allowed",
     "cost_rank",
+    "parse_cost_class",
+    "parse_cost_policy",
 ]

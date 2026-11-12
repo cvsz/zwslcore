@@ -10,8 +10,8 @@ import sqlite3
 import stat
 import sys
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 TASK_STATUSES = (
     "CREATED",
@@ -71,11 +71,11 @@ class EngineeringMetrics:
     def render(self) -> str:
         store_up = 0
         ledger_up = 0
-        task_counts = Counter({status: 0 for status in TASK_STATUSES})
-        attempt_counts = Counter({status: 0 for status in TASK_STATUSES})
-        evidence_counts = Counter({state: 0 for state in EVIDENCE_STATES})
-        phase_counts = Counter({phase: 0 for phase in CHECKPOINT_PHASES})
-        queue_counts = Counter({state: 0 for state in QUEUE_STATES})
+        task_counts = Counter(dict.fromkeys(TASK_STATUSES, 0))
+        attempt_counts = Counter(dict.fromkeys(TASK_STATUSES, 0))
+        evidence_counts = Counter(dict.fromkeys(EVIDENCE_STATES, 0))
+        phase_counts = Counter(dict.fromkeys(CHECKPOINT_PHASES, 0))
+        queue_counts = Counter(dict.fromkeys(QUEUE_STATES, 0))
         evidence_write_errors = 0
         structured_repairs = 0
 

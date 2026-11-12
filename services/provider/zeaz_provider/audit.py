@@ -88,8 +88,8 @@ def emit_request_audit(
 
 
 __all__ = [
-    "audit_path",
-    "audit_method",
     "audit_error_class",
+    "audit_method",
+    "audit_path",
     "emit_request_audit",
 ]

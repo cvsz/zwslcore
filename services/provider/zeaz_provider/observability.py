@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from prometheus_client import (
     CollectorRegistry,
     Counter,
@@ -72,9 +74,9 @@ class Observability:
             ("provider",),
             registry=self.registry,
         )
-        self._meter_provider = None
-        self._otel_requests = None
-        self._otel_duration = None
+        self._meter_provider: Any = None
+        self._otel_requests: Any = None
+        self._otel_duration: Any = None
         if otlp_enabled:
             self._configure_otlp()
 

@@ -24,19 +24,20 @@ class ProviderRouter:
     ):
         self.settings = settings
         self.observability = observability
+
+        def _make_retry_callback(provider_name: str) -> Callable[[ProviderError], None] | None:
+            if observability is None:
+                return None
+            def callback(error: ProviderError, provider: str = provider_name) -> None:
+                observability.record_provider_retry(provider=provider, error_class=error.kind.value)
+            return callback
+
         self.clients = {
             name: ProviderClient(
                 config,
                 client,
                 max_response_bytes=settings.max_response_bytes,
-                on_retry=(
-                    lambda error, provider=name: observability.record_provider_retry(
-                        provider=provider,
-                        error_class=error.kind.value,
-                    )
-                    if observability is not None
-                    else None
-                ),
+                on_retry=_make_retry_callback(name),
             )
             for name, config in settings.providers.items()
         }

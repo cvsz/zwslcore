@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Regression tests for Cloud Shell installer safety and CLI-only mode."""
 import os
-from pathlib import Path
 import subprocess
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/cloudshell.sh"

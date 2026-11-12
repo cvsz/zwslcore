@@ -438,9 +438,9 @@ def _safe_count(value: Any) -> int:
 
 
 __all__ = [
-    "sse_events",
-    "rewrite_sse_model",
     "anthropic_to_chat_stream",
     "chat_to_anthropic_stream",
     "chat_to_responses_stream",
+    "rewrite_sse_model",
+    "sse_events",
 ]

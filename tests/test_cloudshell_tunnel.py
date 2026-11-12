@@ -1,9 +1,9 @@
 """Offline smoke checks for the opt-in Cloud Shell tunnel lifecycle CLI."""
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "zcloud-tunnel.sh"

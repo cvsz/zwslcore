@@ -94,17 +94,15 @@ class OllamaInventoryTests(unittest.TestCase):
         with patch(
             "services.model_catalog.inventory._fetch_json",
             return_value={"models": [model("bad", "short")]},
-        ):
-            with self.assertRaisesRegex(ModelInventoryError, "digest"):
-                collect_inventory()
+        ), self.assertRaisesRegex(ModelInventoryError, "digest"):
+            collect_inventory()
 
         duplicated = model("same", "b" * 64)
         with patch(
             "services.model_catalog.inventory._fetch_json",
             return_value={"models": [duplicated, duplicated]},
-        ):
-            with self.assertRaisesRegex(ModelInventoryError, "duplicate"):
-                collect_inventory()
+        ), self.assertRaisesRegex(ModelInventoryError, "duplicate"):
+            collect_inventory()
 
     def test_compare_detects_add_remove_and_identity_change_but_ignores_timestamps(self):
         reference = normalize_manifest({

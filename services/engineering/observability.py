@@ -70,7 +70,7 @@ def engineering_logging(stream: TextIO | None = None) -> Iterator[None]:
 
 def task_work_fingerprint(title: str, description: str) -> str:
     """Return a stable correlation hash without retaining user task text in logs."""
-    return hashlib.sha256(f"{title}\0{description}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{title}\0{description}".encode()).hexdigest()
 
 
 def valid_request_id(value: str | None) -> str | None:
