@@ -21,6 +21,9 @@ _SECRET = re.compile(
 )
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
+# Redis rate-limit script returns a tuple of (allowed, remaining)
+_REDIS_ALLOW_RESULT_LEN = 2
+
 
 def redact(value: str, limit: int = 2048) -> str:
     return _SECRET.sub("[REDACTED]", value[:limit])
@@ -177,7 +180,7 @@ class RedisRateLimiter:
             )
         except RedisError as exc:
             raise RateLimitBackendError("Distributed rate-limit backend unavailable") from exc
-        if not isinstance(result, (list, tuple)) or len(result) != 2:
+        if not isinstance(result, (list, tuple)) or len(result) != _REDIS_ALLOW_RESULT_LEN:
             raise RateLimitBackendError("Distributed rate-limit backend returned an invalid result")
         try:
             return bool(int(result[0])), max(0, int(result[1]))

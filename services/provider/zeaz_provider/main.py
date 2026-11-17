@@ -6,6 +6,7 @@ import os
 import time
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Annotated, Any
 
 import httpx
@@ -15,10 +16,10 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from redis.asyncio import Redis
 
 from . import __version__
-from .audit import audit_method, audit_path, emit_request_audit
+from .audit import AuditEvent, audit_method, audit_path, emit_request_audit
 from .config import ModelRoute, Settings, load_settings
-from .errors import ErrorKind
-from .limits import RequestConcurrencyLimiter, ResponseLimitExceeded, bounded_stream
+from .errors import ErrorKind, ProviderErrorConfig
+from .limits import RequestConcurrencyLimiter, ResponseLimitExceededError, bounded_stream
 from .normalize import (
     anthropic_to_openai,
     chat_to_responses,
@@ -63,6 +64,10 @@ SAMPLING_VALID_RANGES: dict[str, tuple[float, float]] = {
     "frequency_penalty": (-2.0, 2.0),
 }
 
+# Model validation constants
+MAX_MODEL_NAME_LENGTH = 256
+FORBIDDEN_CONTROL_CHARS = "\r\n\x00"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -105,6 +110,96 @@ def rate_limiter(config: Settings) -> RateLimitBackend:
     return InMemoryRateLimiter(config.rate_limit_per_minute)
 
 
+async def _check_concurrency_limit(
+    request: Request,
+) -> tuple[bool, JSONResponse | None]:
+    """Check if concurrency limit is exceeded. Returns (acquired, response_if_rejected)."""
+    acquired = await request.app.state.concurrency_limiter.try_acquire()
+    if not acquired:
+        response = JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "type": "service_unavailable",
+                    "message": "Request concurrency limit exceeded",
+                }
+            },
+            headers={"Retry-After": "1"},
+        )
+        return False, response
+    return True, None
+
+
+async def _check_rate_limit(request: Request, bucket: str) -> tuple[int, bool, JSONResponse | None]:
+    """Check rate limit. Returns (remaining, rate_limited, response_if_rejected)."""
+    try:
+        allowed, remaining = await request.app.state.rate_limiter.allow(bucket)
+    except RateLimitBackendError:
+        return 0, False, JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "type": "service_unavailable",
+                    "message": "Rate-limit service unavailable",
+                }
+            },
+        )
+    if not allowed:
+        return 0, True, JSONResponse(
+            status_code=429,
+            content={"error": {"type": "rate_limit_error", "message": "Rate limit exceeded"}},
+            headers={"Retry-After": "60"},
+        )
+    return remaining, False, None
+
+
+@dataclass(slots=True)
+class ResponseContext:
+    request: Request
+    correlation_id: str
+    remaining: int
+    acquired: bool
+    started: float
+    bucket: str
+    finalize: Callable[[int], Awaitable[None]]
+    rate_limited: bool
+
+
+async def _process_streaming_response(
+    ctx: ResponseContext,
+    response: StreamingResponse,
+) -> Response:
+    """Process streaming response with byte limit enforcement."""
+    stream_status = response.status_code
+    source = response.body_iterator
+
+    async def limited_body() -> AsyncIterator[bytes]:
+        nonlocal stream_status
+        try:
+            async for chunk in bounded_stream(_bytes(source), settings(ctx.request).max_response_bytes):
+                yield chunk
+        except ResponseLimitExceededError:
+            stream_status = 502
+            raise
+        finally:
+            await ctx.finalize(stream_status)
+
+    response.body_iterator = limited_body()
+    _security_headers(response, ctx.correlation_id, ctx.remaining)
+    return response
+
+
+async def _process_regular_response(
+    ctx: ResponseContext,
+    response: Response,
+) -> Response:
+    """Process regular (non-streaming) response with byte limit enforcement."""
+    response = await _bounded_response(response, settings(ctx.request).max_response_bytes)
+    _security_headers(response, ctx.correlation_id, ctx.remaining)
+    await ctx.finalize(response.status_code)
+    return response
+
+
 @app.middleware("http")
 async def request_boundary(
     request: Request,
@@ -124,13 +219,12 @@ async def request_boundary(
         request.headers.get("x-api-key"),
         peer,
     )
-    acquired = await request.app.state.concurrency_limiter.try_acquire()
+
+    acquired, rejection = await _check_concurrency_limit(request)
+    if rejection is not None:
+        return rejection
+
     finalized = False
-    backend_failed = False
-    allowed = True
-    remaining = 0
-    rate_limited = False
-    status_code = 500
 
     async def finalize(final_status: int) -> None:
         nonlocal finalized
@@ -145,80 +239,40 @@ async def request_boundary(
             duration_seconds=duration,
         )
         emit_request_audit(
-            request_id=correlation_id,
-            method=request.method,
-            path=request.url.path,
-            status_code=final_status,
-            duration_ms=duration * 1000,
-            client_id=bucket,
-            rate_limited=rate_limited,
+            AuditEvent(
+                request_id=correlation_id,
+                method=request.method,
+                path=request.url.path,
+                status_code=final_status,
+                duration_ms=duration * 1000,
+                client_id=bucket,
+                rate_limited=rate_limited,
+            )
         )
         if acquired:
             await request.app.state.concurrency_limiter.release()
 
     try:
-        if not acquired:
-            response = JSONResponse(
-                status_code=503,
-                content={
-                    "error": {
-                        "type": "service_unavailable",
-                        "message": "Request concurrency limit exceeded",
-                    }
-                },
-                headers={"Retry-After": "1"},
-            )
-        else:
-            try:
-                allowed, remaining = await request.app.state.rate_limiter.allow(bucket)
-            except RateLimitBackendError:
-                allowed, remaining = False, 0
-                backend_failed = True
-            rate_limited = not allowed and not backend_failed
-            if backend_failed:
-                response = JSONResponse(
-                    status_code=503,
-                    content={
-                        "error": {
-                            "type": "service_unavailable",
-                            "message": "Rate-limit service unavailable",
-                        }
-                    },
-                )
-            elif not allowed:
-                response = JSONResponse(
-                    status_code=429,
-                    content={"error": {"type": "rate_limit_error", "message": "Rate limit exceeded"}},
-                    headers={"Retry-After": "60"},
-                )
-            else:
-                response = await call_next(request)  # type: ignore[assignment]
-        status_code = response.status_code
-        _security_headers(response, correlation_id, remaining)
+        remaining, rate_limited, rejection = await _check_rate_limit(request, bucket)
+        if rejection is not None:
+            return rejection
+
+        response = await call_next(request)
+        ctx = ResponseContext(
+            request=request,
+            correlation_id=correlation_id,
+            remaining=remaining,
+            acquired=acquired,
+            started=started,
+            bucket=bucket,
+            finalize=finalize,
+            rate_limited=rate_limited,
+        )
         if isinstance(response, StreamingResponse):
-            source = response.body_iterator
-            stream_status = status_code
-
-            async def limited_body() -> AsyncIterator[bytes]:
-                nonlocal stream_status
-                try:
-                    async for chunk in bounded_stream(_bytes(source), settings(request).max_response_bytes):
-                        yield chunk
-                except ResponseLimitExceeded:
-                    stream_status = 502
-                    raise
-                finally:
-                    await finalize(stream_status)
-
-            response.body_iterator = limited_body()
-            return response
-        response = await _bounded_response(response, settings(request).max_response_bytes)  # type: ignore[assignment]
-        status_code = response.status_code
-        _security_headers(response, correlation_id, remaining)
-        await finalize(status_code)
-        return response
+            return await _process_streaming_response(ctx, response)
+        return await _process_regular_response(ctx, response)
     except BaseException:
-        await finalize(status_code)
+        await finalize(500)
         raise
 
 
@@ -257,9 +311,11 @@ def _provider_response(converter: Callable[..., dict[str, Any]], *args: Any) -> 
     except (TypeError, ValueError, KeyError, IndexError, OverflowError) as exc:
         raise ProviderError(
             "Provider returned an invalid response",
-            kind=ErrorKind.PROTOCOL,
-            fallback_allowed=True,
-            circuit_failure=True,
+            config=ProviderErrorConfig(
+                kind=ErrorKind.PROTOCOL,
+                fallback_allowed=True,
+                circuit_failure=True,
+            ),
         ) from exc
 
 
@@ -348,16 +404,32 @@ async def body(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Invalid JSON") from exc
     if not isinstance(value, dict):
         raise HTTPException(status_code=400, detail="JSON body must be an object")
+    _validate_model_field(value)
+    _validate_stream_flag(value)
+    _validate_output_tokens(value, settings(request).max_output_tokens)
+    _validate_array_fields(value)
+    _validate_input_field(value)
+    _validate_sampling_parameters(value)
+    return value
+
+
+def _validate_model_field(value: dict[str, Any]) -> None:
     model = value.get("model")
     if model is not None and (
         not isinstance(model, str)
-        or not 1 <= len(model) <= 256
-        or any(character in model for character in "\r\n\x00")
+        or not 1 <= len(model) <= MAX_MODEL_NAME_LENGTH
+        or any(character in model for character in FORBIDDEN_CONTROL_CHARS)
     ):
         raise HTTPException(status_code=400, detail="Invalid model")
+
+
+def _validate_stream_flag(value: dict[str, Any]) -> None:
     stream = value.get("stream")
     if stream is not None and type(stream) is not bool:
         raise HTTPException(status_code=400, detail="Invalid stream flag")
+
+
+def _validate_output_tokens(value: dict[str, Any], max_output_tokens: int) -> None:
     token_values = [
         value[name]
         for name in ("max_tokens", "max_output_tokens", "max_completion_tokens")
@@ -366,16 +438,24 @@ async def body(request: Request) -> dict[str, Any]:
     if any(
         type(tokens) is not int
         or tokens < 1
-        or tokens > settings(request).max_output_tokens
+        or tokens > max_output_tokens
         for tokens in token_values
     ) or len(set(token_values)) > 1:
         raise HTTPException(status_code=400, detail="Invalid output token limit")
+
+
+def _validate_array_fields(value: dict[str, Any]) -> None:
     for field_name in ("messages", "tools"):
         if field_name in value and not isinstance(value[field_name], list):
             raise HTTPException(status_code=400, detail=f"{field_name} must be an array")
+
+
+def _validate_input_field(value: dict[str, Any]) -> None:
     if "input" in value and not isinstance(value["input"], (str, list)):
         raise HTTPException(status_code=400, detail="input must be a string or array")
-    # Validate sampling parameter ranges
+
+
+def _validate_sampling_parameters(value: dict[str, Any]) -> None:
     for param, (min_val, max_val) in SAMPLING_VALID_RANGES.items():
         if param in value:
             val = value[param]
@@ -383,7 +463,6 @@ async def body(request: Request) -> dict[str, Any]:
                 raise HTTPException(status_code=400, detail=f"Invalid {param}")
             if not (min_val <= float(val) <= max_val):
                 raise HTTPException(status_code=400, detail=f"{param} must be between {min_val} and {max_val}")
-    return value
 
 
 @app.exception_handler(ProviderError)
@@ -600,26 +679,26 @@ async def _stream_responses(
 def _anthropic_to_openai_response(payload: dict[str, Any], model: str) -> dict[str, Any]:
     content = payload.get("content")
     if not isinstance(content, list):
-        raise ValueError("Anthropic response content is invalid")
+        raise TypeError("Anthropic response content must be a list")
     text_parts: list[str] = []
     calls: list[dict[str, Any]] = []
     for block in content:
         if not isinstance(block, dict):
-            raise ValueError("Anthropic response content block is invalid")
+            raise TypeError("Anthropic response content block must be an object")
         kind = block.get("type")
         if kind == "text":
             text = block.get("text", "")
             if not isinstance(text, str):
-                raise ValueError("Anthropic response text is invalid")
+                raise TypeError("Anthropic response text must be a string")
             text_parts.append(text)
         elif kind == "tool_use":
             call_id = block.get("id")
             name = block.get("name")
             tool_input = block.get("input", {})
             if not isinstance(call_id, str) or not call_id or not isinstance(name, str) or not name:
-                raise ValueError("Anthropic response tool call is invalid")
+                raise TypeError("Anthropic response tool call is invalid")
             if not isinstance(tool_input, dict):
-                raise ValueError("Anthropic response tool input is invalid")
+                raise TypeError("Anthropic response tool input must be an object")
             calls.append({
                 "id": call_id,
                 "type": "function",
@@ -634,7 +713,7 @@ def _anthropic_to_openai_response(payload: dict[str, Any], model: str) -> dict[s
         message["tool_calls"] = calls
     usage = payload.get("usage", {})
     if not isinstance(usage, dict):
-        raise ValueError("Anthropic response usage is invalid")
+        raise TypeError("Anthropic response usage must be an object")
     input_tokens = _safe_count(usage.get("input_tokens", 0))
     output_tokens = _safe_count(usage.get("output_tokens", 0))
     stop_reason = payload.get("stop_reason")

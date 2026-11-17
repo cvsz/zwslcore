@@ -290,5 +290,5 @@ class ContinuousEngineeringRunner:
 
 
 def stable_work_id(title: str, kind: str, payload: dict[str, Any]) -> str:
-    raw = f"{kind}\n{title}\n{payload}".encode()
+    raw = f"{kind}\n{title}\n{payload}".encode("utf-8")
     return hashlib.sha256(raw).hexdigest()

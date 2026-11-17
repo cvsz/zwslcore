@@ -11,7 +11,7 @@ SCRIPT = ROOT / "scripts" / "zcloud-tunnel.sh"
 
 class CloudShellTunnelTests(unittest.TestCase):
     def test_bash_syntax(self):
-        result = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True, text=True)
+        result = subprocess.run(["bash", "-n", str(SCRIPT)], check=False, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_status_without_running_supervisor(self):
@@ -19,7 +19,7 @@ class CloudShellTunnelTests(unittest.TestCase):
             env = dict(os.environ, HOME=home, XDG_STATE_HOME=f"{home}/state")
             result = subprocess.run(
                 ["bash", str(SCRIPT), "status"],
-                env=env, capture_output=True, text=True, timeout=10,
+                check=False, env=env, capture_output=True, text=True, timeout=10,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("Supervisor STOPPED", result.stdout)
@@ -39,7 +39,7 @@ class CloudShellTunnelTests(unittest.TestCase):
                        PATH=f"{fake_bin}:{os.environ.get('PATH', '')}")
             result = subprocess.run(
                 ["bash", str(SCRIPT), "preflight"],
-                env=env, capture_output=True, text=True, timeout=10,
+                check=False, env=env, capture_output=True, text=True, timeout=10,
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("permissions", result.stderr)
@@ -50,7 +50,7 @@ class CloudShellTunnelTests(unittest.TestCase):
                        ZCLOUD_CONFIG=f"{home}/no-config.yml")
             result = subprocess.run(
                 ["bash", str(SCRIPT), "preflight"],
-                env=env, capture_output=True, text=True, timeout=10,
+                check=False, env=env, capture_output=True, text=True, timeout=10,
             )
             self.assertNotEqual(result.returncode, 0)
 

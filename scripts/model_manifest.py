@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -34,10 +33,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         current = collect_inventory()
         result = compare_manifests(current, load_manifest(args.compare)) if args.compare else current
-    except ModelInventoryError as exc:
-        print(f"model-manifest: {exc}", file=sys.stderr)
+    except ModelInventoryError:
         return 1
-    print(json.dumps(result, indent=2, sort_keys=True))
+    import json
+    print(json.dumps(result, separators=(",", ":")))
     if args.fail_on_drift and result["drift_detected"]:
         return 1
     return 0

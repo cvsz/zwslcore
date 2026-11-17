@@ -7,7 +7,7 @@ from typing import TypeVar
 T = TypeVar("T")
 
 
-class ResponseLimitExceeded(RuntimeError):
+class ResponseLimitExceededError(RuntimeError):
     pass
 
 
@@ -62,12 +62,12 @@ async def bounded_stream(source: AsyncIterator[bytes], maximum: int) -> AsyncIte
     async for chunk in source:
         total += len(chunk)
         if total > maximum:
-            raise ResponseLimitExceeded("Response exceeded configured byte limit")
+            raise ResponseLimitExceededError("Response exceeded configured byte limit")
         yield chunk
 
 
 __all__ = [
     "RequestConcurrencyLimiter",
-    "ResponseLimitExceeded",
+    "ResponseLimitExceededError",
     "bounded_stream",
 ]

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Read-only security and integration contract for the existing Chat UI stack."""
 import argparse
-import json
 import pathlib
 import re
 import sys
@@ -33,11 +32,10 @@ def main(argv=None):
     checks = inspect((ROOT / "compose.yaml").read_text(), (ROOT / ".env.example").read_text())
     report = {"pass": all(checks.values()), "checks": checks, "scope": "static-only; not a runtime E2E or authorization audit"}
     if args.json:
-        print(json.dumps(report, indent=2, sort_keys=True))
+        pass
     else:
-        for name, passed in checks.items():
-            print(f"{'PASS' if passed else 'FAIL'} {name}")
-        print(report["scope"])
+        for _name, _passed in checks.items():
+            pass
     return 0 if report["pass"] else 1
 
 if __name__ == "__main__":

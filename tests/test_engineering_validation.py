@@ -68,7 +68,7 @@ class ValidationPolicyTests(unittest.TestCase):
 class Provider:
     model = "zeaz-fast"
 
-    def preflight(self):
+    def preflight(self, *, request_id: str | None = None) -> None:
         return None
 
     def chat(self, prompt, system, **kwargs):

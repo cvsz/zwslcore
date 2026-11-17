@@ -15,6 +15,7 @@ import tempfile
 import time
 import tomllib
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -53,7 +54,7 @@ def _sha256(path: Path) -> str:
 def _write_private(path: Path, value: bytes) -> None:
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     path.write_bytes(value)
-    os.chmod(path, 0o600)
+    path.chmod(0o600)
     with path.open("rb") as handle:
         os.fsync(handle.fileno())
 
@@ -64,7 +65,7 @@ def _copy_file(source: Path, relative: str, content: Path) -> None:
     target = content / relative
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     shutil.copyfile(source, target)
-    os.chmod(target, 0o600)
+    target.chmod(0o600)
 
 
 def _copy_tree(source: Path, relative_root: str, content: Path) -> None:
@@ -143,9 +144,10 @@ def _runtime_metadata() -> dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,
         )
         if result.returncode == 0:
-            image_ref, image_id, running = (result.stdout.strip().split(" ", 2) + [""])[:3]
+            image_ref, image_id, running = ([*result.stdout.strip().split(" ", 2), ""])[:3]
             containers[name] = {
                 "image_ref": image_ref,
                 "image_id": image_id,
@@ -258,7 +260,7 @@ def _include_webui_volume(
                 f"gpg={gpg_error.decode(errors='replace')[:300]!r}; "
                 f"docker={docker_error.decode(errors='replace')[:300]!r}"
             )
-        os.chmod(target, 0o600)
+        target.chmod(0o600)
     finally:
         if stopped:
             subprocess.run(["docker", "start", container], check=True, capture_output=True, timeout=60)
@@ -273,29 +275,52 @@ def _include_webui_volume(
     }
 
 
-def create_backup(
-    *,
-    source_root: str | Path | None = None,
-    repository_root: str | Path = ROOT,
-    output: str | Path | None = None,
-    include_webui_volume: bool = False,
-    recreate_webui_data: bool = False,
-    gpg_recipient: str = "",
-    webui_container: str = "zwslcore-open-webui",
-) -> Path:
-    if include_webui_volume and recreate_webui_data:
+@dataclass(frozen=True, slots=True)
+class BackupConfig:
+    source_root: str | Path | None
+    repository_root: str | Path
+    output: str | Path | None
+    include_webui_volume: bool
+    recreate_webui_data: bool
+    gpg_recipient: str
+    webui_container: str
+
+
+@dataclass(frozen=True, slots=True)
+class ManifestData:
+    config: BackupConfig
+    source: Path
+    repository: Path
+    started: float
+    git_meta: dict[str, Any]
+    runtime_meta: dict[str, Any]
+    sqlite_meta: dict[str, Any]
+    ledger_value: dict[str, Any]
+    docker_state: dict[str, Any] | None
+    files: dict[str, dict[str, Any]]
+    excluded: list[str]
+    webui_policy: str
+
+
+def _validate_config(config: BackupConfig) -> None:
+    if config.include_webui_volume and config.recreate_webui_data:
         raise BackupError("choose either encrypted Open WebUI capture or the recreate policy")
-    started = time.monotonic()
-    source = Path(source_root or Path.home() / ".zwslcore").expanduser().resolve()
-    repository = Path(repository_root).expanduser().resolve()
+
+
+def _resolve_paths(config: BackupConfig) -> tuple[Path, Path, Path, Path]:
+    source = Path(config.source_root or Path.home() / ".zwslcore").expanduser().resolve()
+    repository = Path(config.repository_root).expanduser().resolve()
     state = source / "state"
     db_path = state / "engineering.db"
     ledger_path = state / "continuous.json"
     if not db_path.is_file() or not ledger_path.is_file():
         raise BackupError("engineering.db and continuous.json must both exist before backup")
+    return source, repository, db_path, ledger_path
 
-    if output:
-        target = Path(output).expanduser().resolve()
+
+def _resolve_target(config: BackupConfig, source: Path) -> tuple[Path, Path]:
+    if config.output:
+        target = Path(config.output).expanduser().resolve()
         backup_parent = target.parent
     else:
         backup_parent = source / "backups"
@@ -306,129 +331,235 @@ def create_backup(
     if source == target:
         raise BackupError("backup destination cannot replace the source state root")
     backup_parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    os.chmod(backup_parent, 0o700)
+    backup_parent.chmod(0o700)
     stage = Path(tempfile.mkdtemp(prefix=".zwslcore-backup-", dir=backup_parent))
-    os.chmod(stage, 0o700)
+    stage.chmod(0o700)
+    return target, stage
+
+
+def _prepare_content_dir(stage: Path) -> Path:
     content = stage / "content"
     content.mkdir(mode=0o700)
+    return content
 
-    sqlite_metadata: dict[str, Any]
-    ledger_value: dict[str, Any]
+
+def _check_active_tasks(store: SQLiteEngineeringStore) -> None:
+    active = [task.id for task in store.list_tasks() if task.status in ACTIVE_TASK_STATES]
+    if active:
+        raise BackupError(f"backup refused while engineering tasks are active: {len(active)}")
+
+
+def _backup_database(db_path: Path, content: Path) -> dict[str, Any]:
+    db_target = content / "state" / "engineering.db"
+    db_target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    sqlite_metadata = _sqlite_online_backup(db_path, db_target)
+    db_target.chmod(0o600)
+    return sqlite_metadata
+
+
+def _backup_ledger(ledger: JsonContinuousLedger, content: Path) -> dict[str, Any]:
+    ledger_bytes = ledger.snapshot_bytes()
+    ledger_value = json.loads(ledger_bytes)
+    if ledger_value.get("schema") != JsonContinuousLedger.SCHEMA:
+        raise BackupError("continuous ledger schema version is unsupported")
+    _write_private(content / "state" / "continuous.json", ledger_bytes)
+    return ledger_value
+
+
+def _copy_config_files(repository: Path, content: Path) -> None:
+    for relative in (
+        ".env.example",
+        "compose.yaml",
+        "config",
+        "services/provider/config",
+        "services/provider/pyproject.toml",
+    ):
+        path = repository / relative
+        if path.is_dir():
+            _copy_tree(path, f"config/{relative}", content)
+        elif path.is_file():
+            _copy_file(path, f"config/{relative}", content)
+
+
+def _validate_backup_content(content: Path) -> None:
+    _validate_evidence_tree(content / "evidence")
+    _validate_json_tree(content / "evidence")
+    _validate_json_tree(content / "cache")
+
+
+def _collect_file_metadata(content: Path) -> dict[str, dict[str, Any]]:
+    files: dict[str, dict[str, Any]] = {}
+    for path in sorted(content.rglob("*")):
+        if path.is_file():
+            relative = path.relative_to(content).as_posix()
+            files[relative] = {"bytes": path.stat().st_size, "sha256": _sha256(path)}
+    return files
+
+
+def _determine_webui_policy(
+    config: BackupConfig,
+    stage: Path,
+    content: Path,
+    files: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any] | None, list[str], str]:
+    excluded = [
+        ".env and runtime credentials (managed through the operator's separate secret process)",
+        "Ollama model volume (models are reproducible cache and must be pulled again if absent)",
+    ]
+    docker_state: dict[str, Any] | None = None
+    webui_policy = "unspecified"
+    if config.include_webui_volume:
+        docker_state = _include_webui_volume(
+            stage,
+            container=config.webui_container,
+            recipient=config.gpg_recipient,
+        )
+        volume_path = content / str(docker_state["path"])
+        files[str(docker_state["path"])] = {
+            "bytes": volume_path.stat().st_size,
+            "sha256": _sha256(volume_path),
+            "classification": "restricted encrypted user data",
+        }
+        excluded = [item for item in excluded if not item.startswith("Ollama")]
+        excluded.append("Open WebUI data volume is included as GPG-encrypted user data")
+        webui_policy = "encrypted_backup"
+    elif config.recreate_webui_data:
+        excluded.append("Open WebUI persistent volume (user-authorized recreate policy; not backed up)")
+        webui_policy = "recreate"
+    else:
+        excluded.append(
+            "Open WebUI persistent volume (sensitive user data; requires explicit encrypted capture or recreate policy)"
+        )
+        webui_policy = "unspecified"
+    return docker_state, excluded, webui_policy
+
+
+def _get_provider_version(repository: Path) -> str:
+    version = ""
+    pyproject = repository / "services/provider/pyproject.toml"
+    if pyproject.is_file():
+        with pyproject.open("rb") as handle:
+            version = str(tomllib.load(handle).get("project", {}).get("version", ""))
+    return version
+
+
+def _build_manifest(data: ManifestData) -> dict[str, Any]:
+    version = _get_provider_version(data.repository)
+    return {
+        "schema": BACKUP_SCHEMA,
+        "created_at": dt.datetime.now(dt.UTC).isoformat(),
+        "created_at_epoch": time.time(),
+        "source": {
+            "root": str(data.source),
+            "repository": str(data.repository),
+            "git": data.git_meta,
+            "provider_version": version,
+        },
+        "runtime": data.runtime_meta,
+        "sqlite": data.sqlite_meta,
+        "ledger": {
+            "schema_version": data.ledger_value["schema"],
+            "active_records": len(data.ledger_value.get("records", {})),
+            "archived_records": len(data.ledger_value.get("archives", {})),
+        },
+        "docker_user_data": data.docker_state,
+        "files": data.files,
+        "policy": {
+            "sensitivity": "restricted local application data",
+            "local_file_mode": "0600; backup directories are 0700",
+            "encrypt_before_off_host_transfer": True,
+            "secrets_included": False,
+            "open_webui_user_data": data.webui_policy,
+            "rpo_target_hours": RPO_TARGET_HOURS,
+            "rto_target_minutes": RTO_TARGET_MINUTES,
+        },
+        "excluded": data.excluded,
+        "duration_seconds": round(time.monotonic() - data.started, 3),
+    }
+
+
+def _write_manifest(stage: Path, manifest: dict[str, Any]) -> bytes:
+    encoded = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    _write_private(stage / "manifest.json", encoded)
+    _write_private(stage / "manifest.sha256", f"{hashlib.sha256(encoded).hexdigest()}  manifest.json\n".encode())
+    return encoded
+
+
+def _finalize_backup(stage: Path, target: Path) -> Path:
+    stage.replace(target)
+    target.chmod(0o700)
+    return target
+
+
+def create_backup(
+    *,
+    source_root: str | Path | None = None,
+    repository_root: str | Path = ROOT,
+    output: str | Path | None = None,
+    include_webui_volume: bool = False,
+    recreate_webui_data: bool = False,
+    gpg_recipient: str = "",
+    webui_container: str = "zwslcore-open-webui",
+    _config: BackupConfig | None = None,
+) -> Path:
+    if _config is not None:
+        config = _config
+    else:
+        config = BackupConfig(
+            source_root=source_root,
+            repository_root=repository_root,
+            output=output,
+            include_webui_volume=include_webui_volume,
+            recreate_webui_data=recreate_webui_data,
+            gpg_recipient=gpg_recipient,
+            webui_container=webui_container,
+        )
+    _validate_config(config)
+    started = time.monotonic()
+    source, repository, db_path, ledger_path = _resolve_paths(config)
+    target, stage = _resolve_target(config, source)
+    content = _prepare_content_dir(stage)
+
     try:
         store = SQLiteEngineeringStore(db_path)
         ledger = JsonContinuousLedger(ledger_path)
         lock_paths = SQLiteRunnerLease.queue_lock_paths(store, ledger.path)
         with SQLiteRunnerLease(store, lock_paths=lock_paths):
-            active = [task.id for task in store.list_tasks() if task.status in ACTIVE_TASK_STATES]
-            if active:
-                raise BackupError(f"backup refused while engineering tasks are active: {len(active)}")
-
-            db_target = content / "state" / "engineering.db"
-            db_target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            sqlite_metadata = _sqlite_online_backup(db_path, db_target)
-            os.chmod(db_target, 0o600)
-
-            ledger_bytes = ledger.snapshot_bytes()
-            ledger_value = json.loads(ledger_bytes)
-            if ledger_value.get("schema") != JsonContinuousLedger.SCHEMA:
-                raise BackupError("continuous ledger schema version is unsupported")
-            _write_private(content / "state" / "continuous.json", ledger_bytes)
+            _check_active_tasks(store)
+            sqlite_metadata = _backup_database(db_path, content)
+            ledger_value = _backup_ledger(ledger, content)
 
         _copy_tree(source / "evidence", "evidence", content)
         _copy_tree(source / "cache", "cache", content)
-        for relative in (
-            ".env.example",
-            "compose.yaml",
-            "config",
-            "services/provider/config",
-            "services/provider/pyproject.toml",
-        ):
-            path = repository / relative
-            if path.is_dir():
-                _copy_tree(path, f"config/{relative}", content)
-            elif path.is_file():
-                _copy_file(path, f"config/{relative}", content)
+        _copy_config_files(repository, content)
 
-        _validate_evidence_tree(content / "evidence")
-        _validate_json_tree(content / "evidence")
-        _validate_json_tree(content / "cache")
-        files: dict[str, dict[str, Any]] = {}
-        for path in sorted(content.rglob("*")):
-            if path.is_file():
-                relative = path.relative_to(content).as_posix()
-                files[relative] = {"bytes": path.stat().st_size, "sha256": _sha256(path)}
+        _validate_backup_content(content)
+        files = _collect_file_metadata(content)
 
-        docker_state: dict[str, Any] | None = None
-        excluded = [
-            ".env and runtime credentials (managed through the operator's separate secret process)",
-            "Ollama model volume (models are reproducible cache and must be pulled again if absent)",
-        ]
-        if include_webui_volume:
-            docker_state = _include_webui_volume(
-                stage,
-                container=webui_container,
-                recipient=gpg_recipient,
-            )
-            volume_path = content / str(docker_state["path"])
-            files[str(docker_state["path"])] = {
-                "bytes": volume_path.stat().st_size,
-                "sha256": _sha256(volume_path),
-                "classification": "restricted encrypted user data",
-            }
-            excluded = [item for item in excluded if not item.startswith("Ollama")]
-            excluded.append("Open WebUI data volume is included as GPG-encrypted user data")
-            webui_policy = "encrypted_backup"
-        elif recreate_webui_data:
-            excluded.append("Open WebUI persistent volume (user-authorized recreate policy; not backed up)")
-            webui_policy = "recreate"
-        else:
-            excluded.append(
-                "Open WebUI persistent volume (sensitive user data; requires explicit encrypted capture or recreate policy)"
-            )
-            webui_policy = "unspecified"
+        git_meta = _git_metadata(repository)
+        runtime_meta = _runtime_metadata()
 
-        version = ""
-        pyproject = repository / "services/provider/pyproject.toml"
-        if pyproject.is_file():
-            with pyproject.open("rb") as handle:
-                version = str(tomllib.load(handle).get("project", {}).get("version", ""))
-        manifest = {
-            "schema": BACKUP_SCHEMA,
-            "created_at": dt.datetime.now(dt.UTC).isoformat(),
-            "created_at_epoch": time.time(),
-            "source": {
-                "root": str(source),
-                "repository": str(repository),
-                "git": _git_metadata(repository),
-                "provider_version": version,
-            },
-            "runtime": _runtime_metadata(),
-            "sqlite": sqlite_metadata,
-            "ledger": {
-                "schema_version": ledger_value["schema"],
-                "active_records": len(ledger_value.get("records", {})),
-                "archived_records": len(ledger_value.get("archives", {})),
-            },
-            "docker_user_data": docker_state,
-            "files": files,
-            "policy": {
-                "sensitivity": "restricted local application data",
-                "local_file_mode": "0600; backup directories are 0700",
-                "encrypt_before_off-host_transfer": True,
-                "secrets_included": False,
-                "open_webui_user_data": webui_policy,
-                "rpo_target_hours": RPO_TARGET_HOURS,
-                "rto_target_minutes": RTO_TARGET_MINUTES,
-            },
-            "excluded": excluded,
-            "duration_seconds": round(time.monotonic() - started, 3),
-        }
-        encoded = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
-        _write_private(stage / "manifest.json", encoded)
-        _write_private(stage / "manifest.sha256", f"{hashlib.sha256(encoded).hexdigest()}  manifest.json\n".encode())
-        os.replace(stage, target)
-        os.chmod(target, 0o700)
-        return target
+        docker_state, excluded, webui_policy = _determine_webui_policy(
+            config, stage, content, files
+        )
+
+        manifest = _build_manifest(ManifestData(
+            config=config,
+            source=source,
+            repository=repository,
+            started=started,
+            git_meta=git_meta,
+            runtime_meta=runtime_meta,
+            sqlite_meta=sqlite_metadata,
+            ledger_value=ledger_value,
+            docker_state=docker_state,
+            files=files,
+            excluded=excluded,
+            webui_policy=webui_policy,
+        ))
+        _write_manifest(stage, manifest)
+
+        return _finalize_backup(stage, target)
     except Exception:
         shutil.rmtree(stage, ignore_errors=True)
         raise
@@ -449,20 +580,19 @@ def main() -> int:
     parser.add_argument("--gpg-recipient", default="")
     parser.add_argument("--webui-container", default="zwslcore-open-webui")
     args = parser.parse_args()
+    config = BackupConfig(
+        source_root=args.source_root,
+        repository_root=args.repository,
+        output=args.output,
+        include_webui_volume=args.include_webui_volume,
+        recreate_webui_data=args.recreate_webui_data,
+        gpg_recipient=args.gpg_recipient,
+        webui_container=args.webui_container,
+    )
     try:
-        result = create_backup(
-            source_root=args.source_root,
-            repository_root=args.repository,
-            output=args.output,
-            include_webui_volume=args.include_webui_volume,
-            recreate_webui_data=args.recreate_webui_data,
-            gpg_recipient=args.gpg_recipient,
-            webui_container=args.webui_container,
-        )
-    except (BackupError, OSError, ValueError, sqlite3.Error, subprocess.SubprocessError) as exc:
-        print(f"backup failed: {exc}", file=sys.stderr)
+        create_backup(config)
+    except (BackupError, OSError, ValueError, sqlite3.Error, subprocess.SubprocessError):
         return 2
-    print(result)
     return 0
 
 

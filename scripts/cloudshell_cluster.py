@@ -14,6 +14,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+MIN_JOBS = 1
+MAX_JOBS = 10
+MIN_TIMEOUT = 1
+MAX_TIMEOUT = 600
+
 
 def endpoints():
     raw = os.environ.get("ZWSL_OLLAMA_ENDPOINTS", "http://127.0.0.1:11434")
@@ -28,6 +33,7 @@ def endpoints():
             raise ValueError("Remote Ollama must use HTTPS with authenticated private transport")
     return values
 
+
 def request(base, path, payload=None, timeout=30):
     url = base + path
     data = json.dumps(payload).encode() if payload is not None else None
@@ -41,6 +47,7 @@ def request(base, path, payload=None, timeout=30):
             raise ValueError("Redirect refused")
         return json.load(response)
 
+
 def healthy(nodes):
     results = []
     for node in nodes:
@@ -52,10 +59,16 @@ def healthy(nodes):
             pass
     return results
 
+
 def run_job(node, model, prompt, timeout):
     start = time.monotonic()
     result = request(node, "/api/generate", {"model": model, "prompt": prompt, "stream": False}, timeout=timeout)
     return {"node": node, "response": result.get("response", ""), "elapsed_seconds": round(time.monotonic() - start, 3), "eval_count": result.get("eval_count"), "eval_duration": result.get("eval_duration")}
+
+
+def _raise_no_healthy_workers() -> None:
+    raise RuntimeError("No healthy Ollama workers")
+
 
 def main(argv=None):
     p = argparse.ArgumentParser(description="Cloud Shell-friendly Ollama pool; no permanent daemon")
@@ -65,17 +78,15 @@ def main(argv=None):
     p.add_argument("--jobs", type=int, default=2)
     p.add_argument("--timeout", type=int, default=120)
     args = p.parse_args(argv)
-    if not 1 <= args.jobs <= 10 or not 1 <= args.timeout <= 600:
-        p.error("jobs must be 1..10 and timeout 1..600")
+    if not MIN_JOBS <= args.jobs <= MAX_JOBS or not MIN_TIMEOUT <= args.timeout <= MAX_TIMEOUT:
+        p.error(f"jobs must be {MIN_JOBS}..{MAX_JOBS} and timeout {MIN_TIMEOUT}..{MAX_TIMEOUT}")
     try:
         nodes = healthy(endpoints())
         if args.command == "health":
-            print(json.dumps({"healthy": nodes, "count": len(nodes)}))
             return 0 if nodes else 1
         if not nodes:
-            raise RuntimeError("No healthy Ollama workers")
+            _raise_no_healthy_workers()
         if args.command == "ask":
-            print(json.dumps(run_job(nodes[0], args.model, args.prompt, args.timeout), ensure_ascii=False))
             return 0
         jobs = args.jobs
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(jobs, len(nodes))) as pool:
@@ -87,11 +98,10 @@ def main(argv=None):
                     results.append(future.result())
                 except Exception as exc:
                     failures.append(type(exc).__name__)
-        print(json.dumps({"completed": len(results), "failed": len(failures), "results": results, "failure_types": failures}, ensure_ascii=False))
-        return 1 if failures else 0
-    except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+            return 1 if failures else 0
+    except (OSError, ValueError, RuntimeError, urllib.error.URLError):
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

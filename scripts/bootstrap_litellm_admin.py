@@ -4,16 +4,19 @@
 from __future__ import annotations
 
 import json
-import os
 import secrets
 import string
 import sys
 import time
+import typing
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 from uuid import uuid4
+
+LOGIN_SUCCESS_CODE = 303
+LOGIN_SUCCESS_PATH = "/ui?login=success"
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -26,7 +29,16 @@ def read_env(path: Path) -> dict[str, str]:
 
 
 class NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    @typing.override
+    def redirect_request(
+        self,
+        req: Request,
+        fp: typing.Any,
+        code: int,
+        msg: str,
+        headers: typing.Any,
+        newurl: str,
+    ) -> typing.Any:
         return None
 
 
@@ -46,7 +58,7 @@ def login_succeeds(base_url: str, username: str, password: str) -> bool:
         location = error.headers.get("Location", "")
     except URLError:
         return False
-    return status == 303 and location.endswith("/ui?login=success")
+    return status == LOGIN_SUCCESS_CODE and location.endswith(LOGIN_SUCCESS_PATH)
 
 
 def post_json(base_url: str, path: str, master_key: str, payload: dict[str, object]) -> None:
@@ -101,7 +113,7 @@ def load_record(path: Path) -> dict[str, str]:
 def save_record(path: Path, record: dict[str, str]) -> None:
     temporary_path = path.with_suffix(".tmp")
     temporary_path.write_text(json.dumps(record), encoding="utf-8")
-    os.chmod(temporary_path, 0o600)
+    temporary_path.chmod(0o600)
     temporary_path.replace(path)
 
 
@@ -115,87 +127,83 @@ def finalize_credentials(
     temporary_path.write_text(
         f"username={username}\npassword={password}\n", encoding="utf-8"
     )
-    os.chmod(temporary_path, 0o600)
+    temporary_path.chmod(0o600)
     temporary_path.replace(credentials_path)
     pending_path.unlink(missing_ok=True)
-    print("LiteLLM local password-based proxy admin is ready.")
     return 0
 
 
-def main() -> int:
-    env_path = Path(sys.argv[1] if len(sys.argv) > 1 else ".env").resolve()
-    values = read_env(env_path)
-    master_key = values.get("LITELLM_MASTER_KEY", "")
-    port = values.get("LITELLM_PORT", "4000")
-    if not master_key:
-        raise RuntimeError(f"LITELLM_MASTER_KEY is missing from {env_path}")
+def _validate_existing_credentials(
+    credentials_path: Path,
+    base_url: str,
+    master_key: str,
+) -> int | None:
+    if not credentials_path.exists():
+        return None
+    saved: dict[str, str] = {}
+    for line in credentials_path.read_text(encoding="utf-8").splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            saved[key] = value
+    if saved.get("username") and saved.get("password") and login_succeeds(
+        base_url, saved["username"], saved["password"]
+    ):
+        credentials_path.chmod(0o600)
+        return 0
+    if saved.get("username") and account_exists(base_url, master_key, saved["username"]):
+        credentials_path.chmod(0o600)
+        return 0
+    raise RuntimeError("Saved LiteLLM admin account is missing. Restore it before retrying; no duplicate admin was created.")
 
-    base_url = f"http://127.0.0.1:{port}"
-    for _ in range(90):
-        try:
-            with urlopen(f"{base_url}/health/readiness", timeout=3):
-                break
-        except (HTTPError, URLError):
-            time.sleep(2)
-    else:
-        raise RuntimeError("LiteLLM did not become ready for UI admin bootstrap")
 
-    credentials_dir = Path.home() / ".local" / "share" / "zwslcore"
-    credentials_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    os.chmod(credentials_dir, 0o700)
-    credentials_path = credentials_dir / "litellm-admin-credentials"
-    pending_path = credentials_dir / "litellm-admin-pending.json"
-
-    if credentials_path.exists():
-        saved: dict[str, str] = {}
-        for line in credentials_path.read_text(encoding="utf-8").splitlines():
-            if "=" in line:
-                key, value = line.split("=", 1)
-                saved[key] = value
-        if saved.get("username") and saved.get("password") and login_succeeds(
-            base_url, saved["username"], saved["password"]
-        ):
-            os.chmod(credentials_path, 0o600)
-            print("LiteLLM local password-based proxy admin is ready.")
-            return 0
-        if saved.get("username") and account_exists(base_url, master_key, saved["username"]):
-            os.chmod(credentials_path, 0o600)
-            print("LiteLLM proxy admin exists; use its current password if you changed the bootstrap password.")
-            return 0
-        raise RuntimeError("Saved LiteLLM admin account is missing. Restore it before retrying; no duplicate admin was created.")
-
+def _handle_pending_credentials(
+    base_url: str,
+    master_key: str,
+    pending_path: Path,
+    credentials_path: Path,
+) -> bool:
     pending = load_record(pending_path) if pending_path.exists() else {}
-    if pending:
-        if login_succeeds(base_url, pending["username"], pending["password"]):
-            return finalize_credentials(
-                credentials_path, pending_path,
-                pending["username"], pending["password"],
+    if not pending:
+        return False
+    if login_succeeds(base_url, pending["username"], pending["password"]):
+        finalize_credentials(
+            credentials_path, pending_path,
+            pending["username"], pending["password"],
+        )
+        return True
+    if account_exists(base_url, master_key, pending["username"]):
+        post_json(
+            base_url,
+            "/user/update",
+            master_key,
+            {
+                "user_id": pending["username"],
+                "user_email": pending["username"],
+                "user_role": "proxy_admin",
+                "password": pending["password"],
+            },
+        )
+        if not login_succeeds(
+            base_url, pending["username"], pending["password"]
+        ):
+            raise RuntimeError(
+                "LiteLLM did not accept the recovered admin login"
             )
-        if account_exists(base_url, master_key, pending["username"]):
-            post_json(
-                base_url,
-                "/user/update",
-                master_key,
-                {
-                    "user_id": pending["username"],
-                    "user_email": pending["username"],
-                    "user_role": "proxy_admin",
-                    "password": pending["password"],
-                },
-            )
-            if not login_succeeds(
-                base_url, pending["username"], pending["password"]
-            ):
-                raise RuntimeError(
-                    "LiteLLM did not accept the recovered admin login"
-                )
-            return finalize_credentials(
-                credentials_path, pending_path,
-                pending["username"], pending["password"],
-            )
-        pending_path.unlink(missing_ok=True)
-        pending = {}
+        finalize_credentials(
+            credentials_path, pending_path,
+            pending["username"], pending["password"],
+        )
+        return True
+    pending_path.unlink(missing_ok=True)
+    return False
 
+
+def _create_new_admin(
+    base_url: str,
+    master_key: str,
+    pending_path: Path,
+    credentials_path: Path,
+) -> int:
     username = f"operator-{uuid4().hex[:12]}@localhost.localdomain"
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*()-_=+"
     password = "Aa1!" + "".join(secrets.choice(alphabet) for _ in range(40))
@@ -228,13 +236,45 @@ def main() -> int:
             "LiteLLM did not accept the bootstrapped admin login; "
             "a pending record was kept, retry to recover it"
         )
-
     return finalize_credentials(credentials_path, pending_path, username, password)
+
+
+def main() -> int:
+    env_path = Path(sys.argv[1] if len(sys.argv) > 1 else ".env").resolve()
+    values = read_env(env_path)
+    master_key = values.get("LITELLM_MASTER_KEY", "")
+    port = values.get("LITELLM_PORT", "4000")
+    if not master_key:
+        raise RuntimeError(f"LITELLM_MASTER_KEY is missing from {env_path}")
+
+    base_url = f"http://127.0.0.1:{port}"
+    for _ in range(90):
+        try:
+            with urlopen(f"{base_url}/health/readiness", timeout=3):
+                break
+        except (HTTPError, URLError):
+            time.sleep(2)
+    else:
+        raise RuntimeError("LiteLLM did not become ready for UI admin bootstrap")
+
+    credentials_dir = Path.home() / ".local" / "share" / "zwslcore"
+    credentials_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    credentials_dir.chmod(0o700)
+    credentials_path = credentials_dir / "litellm-admin-credentials"
+    pending_path = credentials_dir / "litellm-admin-pending.json"
+
+    existing_result = _validate_existing_credentials(credentials_path, base_url, master_key)
+    if existing_result is not None:
+        return existing_result
+
+    if _handle_pending_credentials(base_url, master_key, pending_path, credentials_path):
+        return 0
+
+    return _create_new_admin(base_url, master_key, pending_path, credentials_path)
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (OSError, RuntimeError, ValueError) as error:
-        print(f"LiteLLM admin bootstrap failed: {error}", file=sys.stderr)
-        raise SystemExit(1)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise SystemExit(1) from exc

@@ -12,6 +12,8 @@ from scripts import model_manifest
 from services.model_catalog.inventory import (
     DEFAULT_OLLAMA_TAGS_URL,
     ModelInventoryError,
+    _fetch_json,
+    _NoRedirectHandler,
     collect_inventory,
     compare_manifests,
     load_manifest,
@@ -64,14 +66,12 @@ class OllamaInventoryTests(unittest.TestCase):
         self.assertNotIn("modelfile", json.dumps(manifest).lower())
 
     def test_non_loopback_endpoint_is_rejected_before_network_access(self):
-        with patch("services.model_catalog.inventory._fetch_json") as fetch:
-            with self.assertRaisesRegex(ModelInventoryError, "loopback"):
-                collect_inventory(url="http://example.com:11434/api/tags")
+        with patch("services.model_catalog.inventory._fetch_json") as fetch, \
+             self.assertRaisesRegex(ModelInventoryError, "loopback"):
+            collect_inventory(url="http://example.com:11434/api/tags")
         fetch.assert_not_called()
 
     def test_redirect_handler_blocks_redirects(self):
-        from services.model_catalog.inventory import _NoRedirectHandler
-
         handler = _NoRedirectHandler()
         redirected = handler.redirect_request(
             None, None, 302, "Found", {}, "http://example.com/api/tags"
@@ -79,8 +79,6 @@ class OllamaInventoryTests(unittest.TestCase):
         self.assertIsNone(redirected)
 
     def test_inventory_request_uses_direct_no_proxy_opener(self):
-        from services.model_catalog.inventory import _fetch_json
-
         opener = unittest.mock.MagicMock()
         opener.open.return_value.__enter__.return_value.read.return_value = b'{"models": []}'
         with patch("services.model_catalog.inventory.urllib.request.build_opener", return_value=opener) as build:

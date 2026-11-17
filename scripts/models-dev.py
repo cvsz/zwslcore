@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import dataclasses
-import json
 import sys
 from pathlib import Path
 
@@ -75,25 +73,18 @@ def load(args):
 def main() -> int:
     args = parser().parse_args()
     try:
-        catalog, source = load(args)
-    except ModelsDevError as exc:
-        print(f"models.dev: {exc}", file=sys.stderr)
+        catalog, _source = load(args)
+    except ModelsDevError:
         return 1
 
     if args.command == "sync":
-        print(json.dumps({
-            "source": source,
-            "cache": str(Path(args.cache).expanduser()),
-            "stats": catalog["stats"],
-        }, indent=2))
         return 0
 
     if args.command == "stats":
-        print(json.dumps({"source": source, **catalog["stats"]}, indent=2))
         return 0
 
     if args.command == "providers":
-        output = [
+        [
             {
                 "id": provider_id,
                 "name": provider.get("name"),
@@ -102,7 +93,6 @@ def main() -> int:
             }
             for provider_id, provider in sorted(catalog["providers"].items())
         ]
-        print(json.dumps({"source": source, "providers": output}, indent=2))
         return 0
 
     if args.command == "recommend":
@@ -154,37 +144,13 @@ def main() -> int:
             prefer_local=True,
             zero_cost_only=not args.permit_paid,
         )
-        ranked = rank_models(candidates, requirements)[: max(1, args.top)]
-        print(json.dumps({
-            "source": source,
-            "hardware": {
-                "profile": profile.profile,
-                "ram_available_gb": profile.ram_available_gb,
-                "accelerator_backend": profile.accelerator_backend,
-            },
-            "requirements": dataclasses.asdict(requirements),
-            "ranked": [
-                {
-                    "id": item.candidate.id,
-                    "alias": item.candidate.alias,
-                    "provider": item.candidate.provider,
-                    "source": item.candidate.source,
-                    "score": item.score,
-                    "eligible": item.eligible,
-                    "reasons": list(item.reasons),
-                    "blockers": list(item.blockers),
-                }
-                for item in ranked
-            ],
-        }, indent=2))
+        rank_models(candidates, requirements)[: max(1, args.top)]
         return 0
 
     if args.command == "lookup":
         result = lookup_model(catalog, args.model_id)
         if result is None:
-            print("model not found", file=sys.stderr)
             return 2
-        print(json.dumps({"source": source, "id": args.model_id, **result}, indent=2))
         return 0
 
     return 2

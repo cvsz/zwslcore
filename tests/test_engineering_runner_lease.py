@@ -128,6 +128,7 @@ class RunnerLeaseTests(unittest.TestCase):
             proc = subprocess.run(
                 [sys.executable, "-c", child_code, str(db)],
                 cwd=Path(__file__).resolve().parents[1],
+                check=False,
                 text=True,
                 capture_output=True,
                 timeout=10,
@@ -194,6 +195,7 @@ class RunnerLeaseTests(unittest.TestCase):
                         "run", task.id,
                     ],
                     cwd=Path(__file__).resolve().parents[1],
+                    check=False,
                     text=True,
                     capture_output=True,
                     timeout=10,

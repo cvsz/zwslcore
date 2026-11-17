@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from prometheus_client import (
     CollectorRegistry,
@@ -9,6 +10,35 @@ from prometheus_client import (
     Histogram,
     generate_latest,
 )
+
+if TYPE_CHECKING:
+    from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+        OTLPMetricExporter,
+    )
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+else:
+    try:
+        from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+            OTLPMetricExporter,
+        )
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+    except ImportError:  # pragma: no cover - optional dependency
+        OTLPMetricExporter = None  # type: ignore[assignment]
+        MeterProvider = None  # type: ignore[assignment]
+        PeriodicExportingMetricReader = None  # type: ignore[assignment]
+
+
+@dataclass(slots=True)
+class ProviderRequestRecord:
+    provider: str
+    model: str
+    outcome: str
+    duration_seconds: float
+    error_class: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 
 class Observability:
@@ -81,12 +111,8 @@ class Observability:
             self._configure_otlp()
 
     def _configure_otlp(self) -> None:
-        from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
-            OTLPMetricExporter,
-        )
-        from opentelemetry.sdk.metrics import MeterProvider
-        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-
+        if OTLPMetricExporter is None or MeterProvider is None or PeriodicExportingMetricReader is None:
+            return
         reader = PeriodicExportingMetricReader(OTLPMetricExporter())
         self._meter_provider = MeterProvider(metric_readers=[reader])
         meter = self._meter_provider.get_meter("zeaz_provider")
@@ -131,37 +157,30 @@ class Observability:
 
     def record_provider_request(
         self,
-        *,
-        provider: str,
-        model: str,
-        outcome: str,
-        duration_seconds: float,
-        error_class: str | None = None,
-        input_tokens: int | None = None,
-        output_tokens: int | None = None,
+        record: ProviderRequestRecord,
     ) -> None:
-        self.provider_requests.labels(provider=provider, model=model, outcome=outcome).inc()
-        self.provider_latency.labels(provider=provider, model=model).observe(
-            max(0.0, duration_seconds)
+        self.provider_requests.labels(provider=record.provider, model=record.model, outcome=record.outcome).inc()
+        self.provider_latency.labels(provider=record.provider, model=record.model).observe(
+            max(0.0, record.duration_seconds)
         )
-        if error_class is not None:
+        if record.error_class is not None:
             self.provider_errors.labels(
-                provider=provider,
-                model=model,
-                error_class=error_class,
+                provider=record.provider,
+                model=record.model,
+                error_class=record.error_class,
             ).inc()
-        if input_tokens is not None:
+        if record.input_tokens is not None:
             self.inference_tokens.labels(
-                provider=provider,
-                model=model,
+                provider=record.provider,
+                model=record.model,
                 direction="input",
-            ).inc(input_tokens)
-        if output_tokens is not None:
+            ).inc(record.input_tokens)
+        if record.output_tokens is not None:
             self.inference_tokens.labels(
-                provider=provider,
-                model=model,
+                provider=record.provider,
+                model=record.model,
                 direction="output",
-            ).inc(output_tokens)
+            ).inc(record.output_tokens)
 
     def record_provider_retry(self, *, provider: str, error_class: str) -> None:
         self.provider_retries.labels(provider=provider, error_class=error_class).inc()
@@ -181,4 +200,5 @@ class Observability:
 
 __all__ = [
     "Observability",
+    "ProviderRequestRecord",
 ]

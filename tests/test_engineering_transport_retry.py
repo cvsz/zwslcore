@@ -39,7 +39,7 @@ class FakeResponse:
 class PlanningTransportFailureProvider:
     model = "zeaz-fast"
 
-    def preflight(self) -> None:
+    def preflight(self, *, request_id: str | None = None) -> None:
         return None
 
     def chat(self, prompt, system, **kwargs):
@@ -100,9 +100,11 @@ class ProviderTransportRetryTests(unittest.TestCase):
         request = urllib.request.Request("http://127.0.0.1:8080/health/ready")
         calls = {"count": 0}
 
+        MAX_RETRIES = 3
+
         def fake_urlopen(req, timeout=None):
             calls["count"] += 1
-            if calls["count"] < 3:
+            if calls["count"] < MAX_RETRIES:
                 raise ConnectionResetError(104, "Connection reset by peer")
             return FakeResponse({"status": "ready"})
 
@@ -235,7 +237,7 @@ class InfrastructureBudgetTests(unittest.TestCase):
 
         result = ContinuousEngineeringLoop(
             implement,
-            lambda work, execution: (execution.passed, ()),
+            lambda _work, execution: (execution.passed, ()),
             checkpoint=checkpoints.append,
             policy=LoopPolicy(max_iterations=3),
         ).run([item])

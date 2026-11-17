@@ -8,8 +8,23 @@ import re
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TextIO
+
+@dataclass(frozen=True)
+class EngineeringEvent:
+    request_id: str
+    task_id: str
+    work_fingerprint: str
+    phase: str
+    provider: str
+    model: str
+    attempt: int
+    latency_ms: float
+    outcome: str
+    error_class: str | None = None
+
 
 _LOGGER = logging.getLogger("zeaz.engineering")
 _SAFE_ID = re.compile(r"^(?:task|work)_[a-f0-9]{20}$")
@@ -97,19 +112,31 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def emit_engineering_event(
+    event: EngineeringEvent | None = None,
     *,
-    request_id: str,
-    task_id: str,
-    work_fingerprint: str,
-    phase: str,
-    provider: str,
-    model: str,
-    attempt: int,
-    latency_ms: float,
-    outcome: str,
+    request_id: str = "",
+    task_id: str = "",
+    work_fingerprint: str = "",
+    phase: str = "",
+    provider: str = "",
+    model: str = "",
+    attempt: int = 0,
+    latency_ms: float = 0.0,
+    outcome: str = "",
     error_class: str | None = None,
 ) -> None:
     """Emit JSON containing bounded correlation and lifecycle metadata only."""
+    if event is not None:
+        request_id = event.request_id
+        task_id = event.task_id
+        work_fingerprint = event.work_fingerprint
+        phase = event.phase
+        provider = event.provider
+        model = event.model
+        attempt = event.attempt
+        latency_ms = event.latency_ms
+        outcome = event.outcome
+        error_class = event.error_class
     safe_task_id = task_id if _SAFE_ID.fullmatch(task_id) else (
         f"task_{hashlib.sha256(task_id.encode()).hexdigest()[:20]}"
     )

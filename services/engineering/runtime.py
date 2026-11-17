@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import shlex
+import socket
 import subprocess
 import time
 import urllib.error
@@ -42,7 +43,7 @@ class ProviderClient:
         base_url: str = "http://127.0.0.1:8080/v1",
         api_key: str = "",
         model: str = "zeaz-fast",
-        timeout: float = 300.0,
+        timeout: int = 300,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -53,7 +54,7 @@ class ProviderClient:
         self,
         request: urllib.request.Request,
         *,
-        timeout: float | None = None,
+        timeout: int | None = None,
         attempts: int = 1,
         request_id: str | None = None,
     ) -> dict[str, Any]:
@@ -65,7 +66,6 @@ class ProviderClient:
             request.add_header("X-Request-ID", correlation_id)
 
         for attempt in range(1, attempts + 1):
-            reason: str = ""
             try:
                 with urllib.request.urlopen(request, timeout=timeout_value) as response:
                     value = json.load(response)
@@ -95,10 +95,10 @@ class ProviderClient:
                 ) from exc
             except urllib.error.URLError as exc:
                 last_transport = exc
-                reason = str(exc.reason) if exc.reason is not None else "unknown URL error"
-            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, TimeoutError, OSError) as exc:
+                reason = exc.reason
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, TimeoutError, socket.timeout, OSError) as exc:
                 last_transport = exc
-                reason = str(exc)
+                reason = exc
 
             if attempt < attempts:
                 time.sleep(min(0.5 * attempt, 1.5))
@@ -165,7 +165,7 @@ class ProviderClient:
             request_id=request_id,
         )
         ids = {
-            str(item.get("id"))
+            item.get("id")
             for item in models.get("data", [])
             if isinstance(item, dict) and isinstance(item.get("id"), str)
         }
@@ -453,7 +453,6 @@ class EngineeringRuntime:
 
             if reusable_plan:
                 plan = reusable_plan
-                assert plan_checkpoint is not None
                 self.progress(
                     f"[engineering] RESUME_PLAN checkpoint={plan_checkpoint.id} head={baseline_head[:12]}"
                 )

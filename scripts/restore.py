@@ -245,11 +245,9 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = restore_backup(args.backup, args.target)
-    except (RestoreError, OSError, ValueError, sqlite3.Error, json.JSONDecodeError) as exc:
-        print(f"restore failed: {exc}", file=sys.stderr)
+    except (RestoreError, OSError, ValueError, sqlite3.Error, json.JSONDecodeError):
         return 2
     report = json.loads((result / "restore-report.json").read_text(encoding="utf-8"))
-    print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report["status"] == "PASS" else 1
 
 

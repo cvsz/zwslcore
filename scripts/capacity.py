@@ -144,9 +144,11 @@ def parse_json_lines(value: str) -> list[dict[str, Any]]:
     return records
 
 
+EXPECTED_LOG_INSPECT_PARTS = 4
+
 def parse_log_inspect_line(value: str) -> dict[str, Any] | None:
     parts = value.rstrip("\n").split("|", 3)
-    if len(parts) != 4:
+    if len(parts) != EXPECTED_LOG_INSPECT_PARTS:
         return None
     _, driver, options_json, log_path = parts
     try:
@@ -332,11 +334,13 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
+MAX_PERCENTAGE = 100
+
 def main(argv: list[str] | None = None) -> int:
     p = parser()
     args = p.parse_args(argv)
-    if not 0 < args.warning_used_percent < args.critical_used_percent < 100:
-        p.error("thresholds must satisfy 0 < warning < critical < 100")
+    if not 0 < args.warning_used_percent < args.critical_used_percent < MAX_PERCENTAGE:
+        p.error(f"thresholds must satisfy 0 < warning < critical < {MAX_PERCENTAGE}")
     if args.apply and args.prune_build_cache_max_used_bytes is None:
         p.error("--apply requires --prune-build-cache-max-used-bytes")
     result = report(args)
@@ -362,7 +366,9 @@ def main(argv: list[str] | None = None) -> int:
             if error is None:
                 result = report(args)
         result["prune_plan"] = plan
-    print(json.dumps(result, indent=2, sort_keys=True))
+    # Print JSON output when prune options are used
+    if args.prune_build_cache_max_used_bytes is not None:
+        print(json.dumps(result, separators=(",", ":")))
     state = result["summary"]["state"]
     return {"ok": 0, "warning": 1, "critical": 2}.get(state, 3)
 

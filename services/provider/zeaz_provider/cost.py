@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 
 
-class CostClass(str, enum.Enum):
+class CostClass(enum.StrEnum):
     FREE_LOCAL = "FREE_LOCAL"
     FREE_REMOTE = "FREE_REMOTE"
     CUSTOMER_KEY = "CUSTOMER_KEY"
@@ -11,7 +11,7 @@ class CostClass(str, enum.Enum):
     UNKNOWN = "UNKNOWN"
 
 
-class CostPolicy(str, enum.Enum):
+class CostPolicy(enum.StrEnum):
     ZERO_COST_ONLY = "ZERO_COST_ONLY"
     PREFER_ZERO_COST = "PREFER_ZERO_COST"
     PERMIT_PAID = "PERMIT_PAID"

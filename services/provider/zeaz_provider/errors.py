@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
@@ -18,27 +19,52 @@ class ErrorKind(StrEnum):
     CONFIGURATION = "configuration"
 
 
+@dataclass(slots=True)
+class ProviderErrorConfig:
+    status_code: int = 502
+    retryable: bool = False
+    kind: ErrorKind = ErrorKind.UPSTREAM
+    fallback_allowed: bool | None = None
+    circuit_failure: bool | None = None
+    retry_after: float | None = None
+    details: dict[str, Any] | None = None
+
+
 class ProviderError(RuntimeError):
     def __init__(
         self,
         message: str,
-        status_code: int = 502,
-        retryable: bool = False,
         *,
-        kind: ErrorKind = ErrorKind.UPSTREAM,
-        fallback_allowed: bool | None = None,
-        circuit_failure: bool | None = None,
-        retry_after: float | None = None,
-        details: dict[str, Any] | None = None,
+        config: ProviderErrorConfig | None = None,
     ):
+        cfg = config or ProviderErrorConfig()
         super().__init__(message)
-        self.status_code = status_code
-        self.retryable = retryable
-        self.kind = kind
-        self.fallback_allowed = retryable if fallback_allowed is None else fallback_allowed
-        self.circuit_failure = retryable if circuit_failure is None else circuit_failure
-        self.retry_after = retry_after
-        self.details = details or {}
+        self.status_code = cfg.status_code
+        self.retryable = cfg.retryable
+        self.kind = cfg.kind
+        self.fallback_allowed = cfg.retryable if cfg.fallback_allowed is None else cfg.fallback_allowed
+        self.circuit_failure = cfg.retryable if cfg.circuit_failure is None else cfg.circuit_failure
+        self.retry_after = cfg.retry_after
+        self.details = cfg.details or {}
+
+
+def _safe_retry_after(value: float | None) -> float | None:
+    return (
+        value
+        if isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value >= 0
+        else None
+    )
+
+
+# HTTP status code constants
+_HTTP_AUTH_CODES = {401, 403}
+_HTTP_NOT_FOUND = 404
+_HTTP_RATE_LIMIT = 429
+_HTTP_TEMPORARY_CODES = {408, 409, 425}
+_HTTP_SERVER_ERROR_THRESHOLD = 500
 
 
 def classify_http_error(
@@ -47,64 +73,69 @@ def classify_http_error(
     *,
     retry_after: float | None = None,
 ) -> ProviderError:
-    safe_retry_after = (
-        retry_after
-        if isinstance(retry_after, (int, float))
-        and not isinstance(retry_after, bool)
-        and math.isfinite(retry_after)
-        and retry_after >= 0
-        else None
-    )
-    if status_code in {401, 403}:
+    safe_retry_after = _safe_retry_after(retry_after)
+    if status_code in _HTTP_AUTH_CODES:
         return ProviderError(
             "Provider authentication failed",
-            status_code,
-            kind=ErrorKind.AUTHENTICATION,
-            fallback_allowed=False,
-            circuit_failure=False,
+            config=ProviderErrorConfig(
+                status_code=status_code,
+                kind=ErrorKind.AUTHENTICATION,
+                fallback_allowed=False,
+                circuit_failure=False,
+            ),
         )
-    if status_code == 404:
+    if status_code == _HTTP_NOT_FOUND:
         return ProviderError(
             "Provider model or endpoint was not found",
-            status_code,
-            kind=ErrorKind.NOT_FOUND,
-            fallback_allowed=True,
-            circuit_failure=False,
+            config=ProviderErrorConfig(
+                status_code=status_code,
+                kind=ErrorKind.NOT_FOUND,
+                fallback_allowed=True,
+                circuit_failure=False,
+            ),
         )
-    if status_code == 429:
+    if status_code == _HTTP_RATE_LIMIT:
         return ProviderError(
             "Provider rate limit exceeded",
-            status_code,
-            retryable=True,
-            kind=ErrorKind.RATE_LIMIT,
-            fallback_allowed=True,
-            circuit_failure=True,
-            retry_after=safe_retry_after,
+            config=ProviderErrorConfig(
+                status_code=status_code,
+                retryable=True,
+                kind=ErrorKind.RATE_LIMIT,
+                fallback_allowed=True,
+                circuit_failure=True,
+                retry_after=safe_retry_after,
+            ),
         )
-    if status_code in {408, 409, 425}:
+    if status_code in _HTTP_TEMPORARY_CODES:
         return ProviderError(
             "Provider request was rejected temporarily",
-            status_code,
-            retryable=True,
-            kind=ErrorKind.UPSTREAM,
-            fallback_allowed=True,
-            circuit_failure=True,
+            config=ProviderErrorConfig(
+                status_code=status_code,
+                retryable=True,
+                kind=ErrorKind.UPSTREAM,
+                fallback_allowed=True,
+                circuit_failure=True,
+            ),
         )
-    if status_code >= 500:
+    if status_code >= _HTTP_SERVER_ERROR_THRESHOLD:
         return ProviderError(
             "Provider service failure",
-            status_code,
-            retryable=True,
-            kind=ErrorKind.UPSTREAM,
-            fallback_allowed=True,
-            circuit_failure=True,
+            config=ProviderErrorConfig(
+                status_code=status_code,
+                retryable=True,
+                kind=ErrorKind.UPSTREAM,
+                fallback_allowed=True,
+                circuit_failure=True,
+            ),
         )
     return ProviderError(
         "Provider rejected the request",
-        status_code,
-        kind=ErrorKind.BAD_REQUEST,
-        fallback_allowed=False,
-        circuit_failure=False,
+        config=ProviderErrorConfig(
+            status_code=status_code,
+            kind=ErrorKind.BAD_REQUEST,
+            fallback_allowed=False,
+            circuit_failure=False,
+        ),
     )
 
 

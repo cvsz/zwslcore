@@ -12,6 +12,9 @@ from .cost import cost_allowed, cost_rank, parse_cost_class, parse_cost_policy
 from .observability import Observability
 from .providers import ProviderClient, ProviderError
 
+# HTTP status code constants
+_HTTP_GONE = 410
+
 T = TypeVar("T")
 
 
@@ -214,7 +217,7 @@ class ProviderRouter:
             try:
                 self.route(route.alias)
             except ProviderError as exc:
-                if exc.status_code == 410:
+                if exc.status_code == _HTTP_GONE:
                     continue
                 raise
             public_models.append({

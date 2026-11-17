@@ -330,7 +330,7 @@ if ! bash "$ROOT/scripts/wait-runtime.sh"; then
 fi
 
 log "Ensuring a private password-based LiteLLM admin account exists"
-python3 "$ROOT/scripts/bootstrap-litellm-admin.py" "$ENV_FILE"
+python3 "$ROOT/scripts/bootstrap_litellm_admin.py" "$ENV_FILE"
 
 log "Running health checks"
 if ! bash "$ROOT/scripts/doctor.sh"; then

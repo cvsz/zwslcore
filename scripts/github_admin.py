@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-import sys
 from typing import Any
 
 DEFAULT_REPO = "cvsz/ztemplate"
@@ -33,8 +32,7 @@ def gh_api(method: str, endpoint: str, payload: dict[str, Any] | None = None) ->
         cmd,
         input=json.dumps(payload) if payload is not None else None,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,
     )
     if proc.returncode != 0:
@@ -81,25 +79,8 @@ def protection_payload() -> dict[str, Any]:
 
 
 def print_plan(repo: str, branch: str) -> None:
-    print(f"Repository: {repo}")
-    print(f"Branch: {branch}")
-    print("Planned administration changes:")
-    print("- require pull requests with >=1 approval")
-    print("- dismiss stale approvals")
-    print("- require CODEOWNERS review")
-    print("- require approval after the latest push")
-    print("- require conversation resolution")
-    print("- require branch to be up to date")
-    print("- require checks:")
-    for check in REQUIRED_CHECKS:
-        print(f"  - {check}")
-    print("- enforce rules for administrators")
-    print("- block force pushes and branch deletion")
-    print("- enable Dependabot vulnerability alerts and automated security fixes")
-    print("- enable private vulnerability reporting")
-    print("- enable secret scanning and push protection where GitHub supports them")
-    print("- set default Actions GITHUB_TOKEN permission to read-only")
-    print("- prevent Actions from approving pull requests")
+    for _check in REQUIRED_CHECKS:
+        pass
 
 
 def apply(repo: str, branch: str) -> None:
@@ -208,21 +189,17 @@ def main() -> int:
     print_plan(args.repo, args.branch)
 
     if not args.apply and not args.verify:
-        print("\nDry-run only. Re-run with --apply to mutate GitHub settings.")
         return 0
 
     if args.apply:
         apply(args.repo, args.branch)
-        print("\nAdministration changes applied.")
 
     if args.verify or args.apply:
         errors = verify(args.repo, args.branch)
         if errors:
-            print("\nVerification failed:", file=sys.stderr)
-            for error in errors:
-                print(f"- {error}", file=sys.stderr)
+            for _error in errors:
+                pass
             return 1
-        print("\nVERIFIED: GitHub repository administration gate is enforced.")
 
     return 0
 

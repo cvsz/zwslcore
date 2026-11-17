@@ -73,7 +73,7 @@ target-version = "py312"
 line-length = 120
 select = ["E", "W", "F", "I", "UP", "B", "C4", "T20", "PTH", "ARG", "ERA", "SIM", "N", "TID", "PL", "TRY", "RUF"]
 ignore = ["E501", "B008", "TRY003", "ARG001", "ARG002"]
-per-file-ignores = { "scripts/*.py" = ["E402"] }
+per-file-ignores = { "scripts/*.py" = ["E402", "T201"] }
 fixable = ["ALL"]
 
 [tool.ruff.format]
