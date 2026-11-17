@@ -2,11 +2,11 @@
 """Regression tests for Cloud Shell connector recovery admission and downloads."""
 import hashlib
 import os
-from pathlib import Path
 import stat
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RECOVERY = ROOT / "scripts" / "zcloud-recovery.sh"
@@ -30,6 +30,7 @@ class ZCloudRecoveryTests(unittest.TestCase):
             ["bash", str(RECOVERY), "install"],
             cwd=ROOT,
             env=env,
+            check=False,
             text=True,
             capture_output=True,
             timeout=15,
@@ -54,7 +55,7 @@ class ZCloudRecoveryTests(unittest.TestCase):
     def test_shell_syntax(self):
         for script in (RECOVERY, TUNNEL):
             result = subprocess.run(
-                ["bash", "-n", str(script)], text=True, capture_output=True, timeout=10
+                ["bash", "-n", str(script)], check=False, text=True, capture_output=True, timeout=10
             )
             self.assertEqual(result.returncode, 0, f"{script.name}: {result.stderr}")
 

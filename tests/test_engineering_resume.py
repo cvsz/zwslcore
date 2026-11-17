@@ -20,7 +20,7 @@ class ResumeProvider:
         self.edit_calls = 0
         self.fail_edits = True
 
-    def preflight(self) -> None:
+    def preflight(self, *, request_id: str | None = None) -> None:
         return None
 
     def chat(self, prompt, system, **kwargs):

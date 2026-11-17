@@ -9,8 +9,8 @@ import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
-from services.engineering.evidence import EvidenceExporter
 from services.engineering.continuous import ExecutionResult
+from services.engineering.evidence import EvidenceExporter
 from services.engineering.loop import ContinuousEngineeringLoop, LoopPolicy, WorkItem, WorkKind
 from services.engineering.models import EngineeringTask, TaskStatus
 from services.engineering.runtime import (
@@ -39,7 +39,7 @@ class FakeResponse:
 class PlanningTransportFailureProvider:
     model = "zeaz-fast"
 
-    def preflight(self) -> None:
+    def preflight(self, *, request_id: str | None = None) -> None:
         return None
 
     def chat(self, prompt, system, **kwargs):
@@ -100,9 +100,11 @@ class ProviderTransportRetryTests(unittest.TestCase):
         request = urllib.request.Request("http://127.0.0.1:8080/health/ready")
         calls = {"count": 0}
 
+        MAX_RETRIES = 3
+
         def fake_urlopen(req, timeout=None):
             calls["count"] += 1
-            if calls["count"] < 3:
+            if calls["count"] < MAX_RETRIES:
                 raise ConnectionResetError(104, "Connection reset by peer")
             return FakeResponse({"status": "ready"})
 
@@ -118,9 +120,8 @@ class ProviderTransportRetryTests(unittest.TestCase):
         for body in (b"{invalid", b"[]"):
             with self.subTest(body=body), patch(
                 "urllib.request.urlopen", return_value=io.BytesIO(body)
-            ):
-                with self.assertRaises(ProviderTransportError):
-                    client._request_json(request, attempts=1, timeout=1)
+            ), self.assertRaises(ProviderTransportError):
+                client._request_json(request, attempts=1, timeout=1)
 
     def test_transient_provider_http_error_retries_within_budget(self):
         client = ProviderClient()
@@ -147,9 +148,8 @@ class ProviderTransportRetryTests(unittest.TestCase):
             side_effect=urllib.error.HTTPError(
                 request.full_url, 503, "unavailable", {}, io.BytesIO(b"api_key=private-value")
             ),
-        ), patch("time.sleep"):
-            with self.assertRaises(ProviderTransportError) as raised:
-                client._request_json(request, attempts=1, timeout=1)
+        ), patch("time.sleep"), self.assertRaises(ProviderTransportError) as raised:
+            client._request_json(request, attempts=1, timeout=1)
         self.assertIn("HTTP 503", str(raised.exception))
         self.assertNotIn("private-value", str(raised.exception))
 
@@ -182,9 +182,8 @@ class ProviderTransportRetryTests(unittest.TestCase):
         with patch(
             "urllib.request.urlopen",
             side_effect=ConnectionResetError(104, "Connection reset by peer"),
-        ), patch("time.sleep"):
-            with self.assertRaisesRegex(ProviderTransportError, "after 3 attempt"):
-                client._request_json(request, attempts=3, timeout=1)
+        ), patch("time.sleep"), self.assertRaisesRegex(ProviderTransportError, "after 3 attempt"):
+            client._request_json(request, attempts=3, timeout=1)
 
 
 class InfrastructureBudgetTests(unittest.TestCase):
@@ -238,7 +237,7 @@ class InfrastructureBudgetTests(unittest.TestCase):
 
         result = ContinuousEngineeringLoop(
             implement,
-            lambda work, execution: (execution.passed, ()),
+            lambda _work, execution: (execution.passed, ()),
             checkpoint=checkpoints.append,
             policy=LoopPolicy(max_iterations=3),
         ).run([item])

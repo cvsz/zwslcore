@@ -110,7 +110,7 @@ class SQLiteRunnerLease:
                 now=now,
                 expires_at=now + self.ttl_seconds,
             )
-            self.fencing_token = int(record["fencing_token"])
+            self.fencing_token = int(str(record["fencing_token"]))
             self._lock_fds = lock_fds
             self._heartbeat_thread = threading.Thread(
                 target=self._heartbeat_loop,
@@ -126,7 +126,12 @@ class SQLiteRunnerLease:
     def __enter__(self) -> SQLiteRunnerLease:
         return self.acquire()
 
-    def __exit__(self, exc_type, exc, traceback) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: object | None,
+    ) -> None:
         try:
             self.release()
         except Exception as release_error:
@@ -159,7 +164,7 @@ class SQLiteRunnerLease:
             or current.get("owner_id") != self.owner_id
             or current.get("fencing_token") != self.fencing_token
             or current.get("status") != "HELD"
-            or float(current.get("expires_at", 0)) <= time.time()
+            or float(str(current.get("expires_at", 0))) <= time.time()
         ):
             self._lost.set()
             raise RunnerLeaseLostError("continuous runner no longer owns its lease")

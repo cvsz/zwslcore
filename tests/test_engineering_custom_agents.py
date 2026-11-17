@@ -21,7 +21,7 @@ class CapturingProvider:
     def __init__(self) -> None:
         self.systems: list[str] = []
 
-    def preflight(self) -> None:
+    def preflight(self, *, request_id: str | None = None) -> None:
         return None
 
     def chat(self, prompt, system, **kwargs):

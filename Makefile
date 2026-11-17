@@ -70,11 +70,11 @@ production-up:
 	@test -f .env.production || { echo 'Create .env.production first.' >&2; exit 1; }
 	@! grep -Eq '^(OPENWEBUI_WEB_URL|OPENWEBUI_CORS_ALLOW_ORIGIN)=.*REPLACE_ME_DOMAIN' .env.production || { echo 'Set the production HTTPS hostname in .env.production first.' >&2; exit 1; }
 	ZW_ENV_FILE=.env.production docker compose --env-file .env.production up -d
-	python3 scripts/bootstrap-litellm-admin.py .env.production
+	python3 scripts/bootstrap_litellm_admin.py .env.production
 
 up:
 	docker compose --env-file .env up -d
-	python3 scripts/bootstrap-litellm-admin.py .env
+	python3 scripts/bootstrap_litellm_admin.py .env
 
 down:
 	docker compose --env-file .env down

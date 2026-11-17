@@ -6,13 +6,15 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
+_SSE_MAX_BUFFER = 1024 * 1024  # 1 MB max SSE frame buffer
+_SAFE_INDEX_MAX = 100_000
+
 
 async def sse_events(chunks: AsyncIterator[bytes]) -> AsyncIterator[tuple[str, str]]:
     buffer = ""
-    MAX_BUFFER = 1024 * 1024  # 1 MB max SSE frame buffer
     async for chunk in chunks:
         buffer += chunk.decode(errors="replace").replace("\r\n", "\n")
-        if len(buffer) > MAX_BUFFER:
+        if len(buffer) > _SSE_MAX_BUFFER:
             yield "message", json.dumps({
                 "error": {
                     "type": "protocol_error",
@@ -81,6 +83,91 @@ async def rewrite_sse_model(
         yield _sse_frame(event, json.dumps(data, separators=(",", ":")))
 
 
+async def _handle_message_start(
+    stream_id: str,
+    created: int,
+    model: str,
+    data: dict[str, Any],
+) -> bytes:
+    message = _mapping_or_empty(data.get("message"))
+    stream_id = _safe_string(message.get("id"), stream_id)
+    return _data(_chat_chunk(stream_id, created, model, {"role": "assistant"}))
+
+
+async def _handle_content_block_start(
+    stream_id: str,
+    created: int,
+    model: str,
+    tool_indexes: dict[int, int],
+    data: dict[str, Any],
+) -> bytes | None:
+    block_index = _safe_index(data.get("index"))
+    block = _mapping_or_empty(data.get("content_block"))
+    if block.get("type") != "tool_use":
+        return None
+    tool_index = len(tool_indexes)
+    tool_indexes[block_index] = tool_index
+    return _data(_chat_chunk(stream_id, created, model, {
+        "tool_calls": [{
+            "index": tool_index,
+            "id": _safe_string(block.get("id"), f"tool_{tool_index}"),
+            "type": "function",
+            "function": {
+                "name": _safe_string(block.get("name"), "function"),
+                "arguments": "",
+            },
+        }]
+    }))
+
+
+async def _handle_content_block_delta(
+    stream_id: str,
+    created: int,
+    model: str,
+    tool_indexes: dict[int, int],
+    data: dict[str, Any],
+) -> bytes | None:
+    delta = _mapping_or_empty(data.get("delta"))
+    if delta.get("type") == "text_delta":
+        text = delta.get("text", "")
+        if not isinstance(text, str):
+            return _data(_protocol_error())
+        return _data(_chat_chunk(
+            stream_id, created, model, {"content": text}
+        ))
+    elif delta.get("type") == "input_json_delta":
+        block_index = _safe_index(data.get("index"))
+        partial_json = delta.get("partial_json", "")
+        if not isinstance(partial_json, str):
+            return _data(_protocol_error())
+        return _data(_chat_chunk(stream_id, created, model, {
+            "tool_calls": [{
+                "index": tool_indexes.get(block_index, block_index),
+                "function": {"arguments": partial_json},
+            }]
+        }))
+    return None
+
+
+async def _handle_message_delta(
+    stream_id: str,
+    created: int,
+    model: str,
+    data: dict[str, Any],
+) -> bytes:
+    stop = _mapping_or_empty(data.get("delta")).get("stop_reason")
+    finish = "tool_calls" if stop == "tool_use" else "length" if stop == "max_tokens" else "stop"
+    usage = _mapping_or_empty(data.get("usage"))
+    chunk = _chat_chunk(stream_id, created, model, {}, finish)
+    if usage:
+        chunk["usage"] = {
+            "prompt_tokens": 0,
+            "completion_tokens": _safe_count(usage.get("output_tokens")),
+            "total_tokens": _safe_count(usage.get("output_tokens")),
+        }
+    return _data(chunk)
+
+
 async def anthropic_to_chat_stream(
     chunks: AsyncIterator[bytes],
     model: str,
@@ -97,66 +184,80 @@ async def anthropic_to_chat_stream(
             return
         kind = data.get("type", event)
         if kind == "message_start":
-            message = _mapping_or_empty(data.get("message"))
-            stream_id = _safe_string(message.get("id"), stream_id)
-            yield _data(_chat_chunk(stream_id, created, model, {"role": "assistant"}))
+            yield await _handle_message_start(stream_id, created, model, data)
         elif kind == "content_block_start":
-            block_index = _safe_index(data.get("index"))
-            block = _mapping_or_empty(data.get("content_block"))
-            if block.get("type") == "tool_use":
-                tool_index = len(tool_indexes)
-                tool_indexes[block_index] = tool_index
-                yield _data(_chat_chunk(stream_id, created, model, {
-                    "tool_calls": [{
-                        "index": tool_index,
-                        "id": _safe_string(block.get("id"), f"tool_{tool_index}"),
-                        "type": "function",
-                        "function": {
-                            "name": _safe_string(block.get("name"), "function"),
-                            "arguments": "",
-                        },
-                    }]
-                }))
+            result = await _handle_content_block_start(stream_id, created, model, tool_indexes, data)
+            if result is not None:
+                yield result
         elif kind == "content_block_delta":
-            delta = _mapping_or_empty(data.get("delta"))
-            if delta.get("type") == "text_delta":
-                text = delta.get("text", "")
-                if not isinstance(text, str):
-                    yield _data(_protocol_error())
-                    return
-                yield _data(_chat_chunk(
-                    stream_id,
-                    created,
-                    model,
-                    {"content": text},
-                ))
-            elif delta.get("type") == "input_json_delta":
-                block_index = _safe_index(data.get("index"))
-                partial_json = delta.get("partial_json", "")
-                if not isinstance(partial_json, str):
-                    yield _data(_protocol_error())
-                    return
-                yield _data(_chat_chunk(stream_id, created, model, {
-                    "tool_calls": [{
-                        "index": tool_indexes.get(block_index, block_index),
-                        "function": {"arguments": partial_json},
-                    }]
-                }))
+            result = await _handle_content_block_delta(stream_id, created, model, tool_indexes, data)
+            if result is not None:
+                yield result
         elif kind == "message_delta":
-            stop = _mapping_or_empty(data.get("delta")).get("stop_reason")
-            finish = "tool_calls" if stop == "tool_use" else "length" if stop == "max_tokens" else "stop"
-            usage = _mapping_or_empty(data.get("usage"))
-            chunk = _chat_chunk(stream_id, created, model, {}, finish)
-            if usage:
-                chunk["usage"] = {
-                    "prompt_tokens": 0,
-                    "completion_tokens": _safe_count(usage.get("output_tokens")),
-                    "total_tokens": _safe_count(usage.get("output_tokens")),
-                }
-            yield _data(chunk)
+            yield await _handle_message_delta(stream_id, created, model, data)
         elif kind == "error":
             yield _data({"error": _protocol_error()})
     yield b"data: [DONE]\n\n"
+
+
+async def _yield_message_start(model: str, message_id: str) -> bytes:
+    return _event_data("message_start", {
+        "type": "message_start",
+        "message": {
+            "id": message_id,
+            "type": "message",
+            "role": "assistant",
+            "model": model,
+            "content": [],
+            "stop_reason": None,
+            "stop_sequence": None,
+            "usage": {"input_tokens": 0, "output_tokens": 0},
+        },
+    })
+
+
+async def _yield_content_block_start(block_index: int, function: dict[str, Any], call_id: str) -> bytes:
+    return _event_data("content_block_start", {
+        "type": "content_block_start",
+        "index": block_index,
+        "content_block": {
+            "type": "tool_use",
+            "id": call_id,
+            "name": _safe_string(function.get("name"), "function"),
+            "input": {},
+        },
+    })
+
+
+async def _yield_content_block_delta(block_index: int, partial_json: str) -> bytes:
+    return _event_data("content_block_delta", {
+        "type": "content_block_delta",
+        "index": block_index,
+        "delta": {"type": "input_json_delta", "partial_json": partial_json},
+    })
+
+
+async def _yield_content_block_stop(index: int) -> bytes:
+    return _event_data("content_block_stop", {
+        "type": "content_block_stop",
+        "index": index,
+    })
+
+
+async def _yield_message_delta(stop: str, output_tokens: int) -> bytes:
+    return _event_data("message_delta", {
+        "type": "message_delta",
+        "delta": {"stop_reason": stop, "stop_sequence": None},
+        "usage": {"output_tokens": output_tokens},
+    })
+
+
+async def _yield_message_stop() -> bytes:
+    return _event_data("message_stop", {"type": "message_stop"})
+
+
+async def _yield_error() -> bytes:
+    return _event_data("error", {"type": "error", "error": _protocol_error()})
 
 
 async def chat_to_anthropic_stream(
@@ -174,39 +275,27 @@ async def chat_to_anthropic_stream(
             break
         data = _json(raw)
         if data is None:
-            yield _event_data("error", {"type": "error", "error": _protocol_error()})
+            yield await _yield_error()
             return
         if "error" in data:
-            yield _event_data("error", {"type": "error", "error": _protocol_error()})
+            yield await _yield_error()
             return
         message_id = _safe_string(data.get("id"), message_id)
         if not started:
             started = True
-            yield _event_data("message_start", {
-                "type": "message_start",
-                "message": {
-                    "id": message_id,
-                    "type": "message",
-                    "role": "assistant",
-                    "model": model,
-                    "content": [],
-                    "stop_reason": None,
-                    "stop_sequence": None,
-                    "usage": {"input_tokens": 0, "output_tokens": 0},
-                },
-            })
+            yield await _yield_message_start(model, message_id)
         choices = data.get("choices")
         if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-            yield _event_data("error", {"type": "error", "error": _protocol_error()})
+            yield await _yield_error()
             return
         choice = choices[0]
         delta = choice.get("delta")
         if not isinstance(delta, dict):
-            yield _event_data("error", {"type": "error", "error": _protocol_error()})
+            yield await _yield_error()
             return
         text = delta.get("content")
         if text is not None and not isinstance(text, str):
-            yield _event_data("error", {"type": "error", "error": _protocol_error()})
+            yield await _yield_error()
             return
         if text is not None:
             if not text_started:
@@ -224,11 +313,11 @@ async def chat_to_anthropic_stream(
             })
         calls = delta.get("tool_calls") or []
         if not isinstance(calls, list):
-            yield _event_data("error", {"type": "error", "error": _protocol_error()})
+            yield await _yield_error()
             return
         for call in calls:
             if not isinstance(call, dict):
-                yield _event_data("error", {"type": "error", "error": _protocol_error()})
+                yield await _yield_error()
                 return
             chat_index = _safe_index(call.get("index"))
             if chat_index not in tool_blocks:
@@ -236,35 +325,20 @@ async def chat_to_anthropic_stream(
                 next_block += 1
                 tool_blocks[chat_index] = block_index
                 function = _mapping_or_empty(call.get("function"))
-                yield _event_data("content_block_start", {
-                    "type": "content_block_start",
-                    "index": block_index,
-                    "content_block": {
-                        "type": "tool_use",
-                        "id": _safe_string(call.get("id"), f"tool_{chat_index}"),
-                        "name": _safe_string(function.get("name"), "function"),
-                        "input": {},
-                    },
-                })
+                call_id = _safe_string(call.get("id"), f"tool_{chat_index}")
+                yield await _yield_content_block_start(block_index, function, call_id)
             arguments = _mapping_or_empty(call.get("function")).get("arguments")
             if arguments is not None and not isinstance(arguments, str):
-                yield _event_data("error", {"type": "error", "error": _protocol_error()})
+                yield await _yield_error()
                 return
             if arguments:
-                yield _event_data("content_block_delta", {
-                    "type": "content_block_delta",
-                    "index": tool_blocks[chat_index],
-                    "delta": {"type": "input_json_delta", "partial_json": arguments},
-                })
+                yield await _yield_content_block_delta(tool_blocks[chat_index], arguments)
         usage = _mapping_or_empty(data.get("usage"))
         output_tokens = _safe_count(usage.get("completion_tokens")) or output_tokens
         finish = choice.get("finish_reason")
         if finish:
             for index in range(next_block):
-                yield _event_data("content_block_stop", {
-                    "type": "content_block_stop",
-                    "index": index,
-                })
+                yield await _yield_content_block_stop(index)
             stop = (
                 "tool_use"
                 if finish == "tool_calls"
@@ -272,26 +346,10 @@ async def chat_to_anthropic_stream(
                 if finish == "length"
                 else "end_turn"
             )
-            yield _event_data("message_delta", {
-                "type": "message_delta",
-                "delta": {"stop_reason": stop, "stop_sequence": None},
-                "usage": {"output_tokens": output_tokens},
-            })
+            yield await _yield_message_delta(stop, output_tokens)
     if not started:
-        yield _event_data("message_start", {
-            "type": "message_start",
-            "message": {
-                "id": message_id,
-                "type": "message",
-                "role": "assistant",
-                "model": model,
-                "content": [],
-                "stop_reason": None,
-                "stop_sequence": None,
-                "usage": {"input_tokens": 0, "output_tokens": 0},
-            },
-        })
-    yield _event_data("message_stop", {"type": "message_stop"})
+        yield await _yield_message_start(model, message_id)
+    yield await _yield_message_stop()
 
 
 async def chat_to_responses_stream(
@@ -426,7 +484,7 @@ def _mapping_or_empty(value: Any) -> dict[str, Any]:
 
 
 def _safe_index(value: Any) -> int:
-    return value if type(value) is int and 0 <= value < 100_000 else 0
+    return value if type(value) is int and 0 <= value < _SAFE_INDEX_MAX else 0
 
 
 def _safe_string(value: Any, default: str) -> str:
@@ -438,9 +496,9 @@ def _safe_count(value: Any) -> int:
 
 
 __all__ = [
-    "sse_events",
-    "rewrite_sse_model",
     "anthropic_to_chat_stream",
     "chat_to_anthropic_stream",
     "chat_to_responses_stream",
+    "rewrite_sse_model",
+    "sse_events",
 ]

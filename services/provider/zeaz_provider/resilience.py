@@ -77,26 +77,28 @@ class CircuitBreaker:
                 self._opened_at = self.clock()
 
 
+@dataclass(slots=True)
+class ResilienceExecutorConfig:
+    policy: ResiliencePolicy | None = None
+    breaker: CircuitBreaker | None = None
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
+    uniform: Callable[[float, float], float] = random.uniform
+    clock: Callable[[], float] = time.monotonic
+    on_retry: Callable[[ProviderError], None] | None = None
+
+
 class ResilienceExecutor:
-    def __init__(
-        self,
-        policy: ResiliencePolicy | None = None,
-        *,
-        breaker: CircuitBreaker | None = None,
-        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
-        uniform: Callable[[float, float], float] = random.uniform,
-        clock: Callable[[], float] = time.monotonic,
-        on_retry: Callable[[ProviderError], None] | None = None,
-    ):
-        self.policy = policy or ResiliencePolicy()
-        self.breaker = breaker or CircuitBreaker(
+    def __init__(self, *, config: ResilienceExecutorConfig | None = None):
+        cfg = config or ResilienceExecutorConfig()
+        self.policy = cfg.policy or ResiliencePolicy()
+        self.breaker = cfg.breaker or CircuitBreaker(
             failure_threshold=self.policy.failure_threshold,
             reset_timeout_seconds=self.policy.reset_timeout_seconds,
         )
-        self.sleep = sleep
-        self.uniform = uniform
-        self.clock = clock
-        self.on_retry = on_retry
+        self.sleep = cfg.sleep
+        self.uniform = cfg.uniform
+        self.clock = cfg.clock
+        self.on_retry = cfg.on_retry
 
     async def call(self, operation: Callable[[], Awaitable[T]]) -> T:
         last_error: ProviderError | None = None
@@ -167,7 +169,7 @@ class ResilienceExecutor:
 
 
 __all__ = [
-    "ResiliencePolicy",
     "CircuitBreaker",
     "ResilienceExecutor",
+    "ResiliencePolicy",
 ]

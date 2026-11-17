@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import fnmatch
-from typing import Iterable
+from collections.abc import Iterable
 
 VALID_ACTIONS = {"allow", "ask", "deny"}
 

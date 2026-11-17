@@ -14,7 +14,6 @@ from services.engineering.loop import WorkItem, WorkKind
 from services.engineering.models import Checkpoint, EngineeringTask, TaskStatus
 from services.engineering.store import SQLiteEngineeringStore
 
-
 REPOSITORY = Path(__file__).resolve().parents[1]
 
 

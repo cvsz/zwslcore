@@ -7,6 +7,7 @@ import re
 import time
 import uuid
 from collections import OrderedDict, deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -19,6 +20,9 @@ _SECRET = re.compile(
     re.IGNORECASE,
 )
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+
+# Redis rate-limit script returns a tuple of (allowed, remaining)
+_REDIS_ALLOW_RESULT_LEN = 2
 
 
 def redact(value: str, limit: int = 2048) -> str:
@@ -88,7 +92,7 @@ class RateLimitBackend(Protocol):
 class InMemoryRateLimiter:
     MAX_BUCKETS = 10_000
 
-    def __init__(self, limit: int, window_seconds: float = 60.0, *, clock=time.monotonic):
+    def __init__(self, limit: int, window_seconds: float = 60.0, *, clock: Callable[[], float] = time.monotonic) -> None:
         self.limit = limit
         self.window_seconds = window_seconds
         self.clock = clock
@@ -176,7 +180,7 @@ class RedisRateLimiter:
             )
         except RedisError as exc:
             raise RateLimitBackendError("Distributed rate-limit backend unavailable") from exc
-        if not isinstance(result, (list, tuple)) or len(result) != 2:
+        if not isinstance(result, (list, tuple)) or len(result) != _REDIS_ALLOW_RESULT_LEN:
             raise RateLimitBackendError("Distributed rate-limit backend returned an invalid result")
         try:
             return bool(int(result[0])), max(0, int(result[1]))
@@ -190,14 +194,14 @@ class RedisRateLimiter:
 
 
 __all__ = [
-    "redact",
-    "request_id",
+    "InMemoryRateLimiter",
+    "RateLimitBackend",
+    "RateLimitBackendError",
+    "RedisRateLimiter",
+    "TrustedProxyPolicy",
     "client_bucket",
     "client_key_digest",
+    "redact",
+    "request_id",
     "verify_client_key",
-    "TrustedProxyPolicy",
-    "RateLimitBackendError",
-    "RateLimitBackend",
-    "InMemoryRateLimiter",
-    "RedisRateLimiter",
 ]

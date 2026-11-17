@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Regression tests for Cloud Shell installer safety and CLI-only mode."""
 import os
-from pathlib import Path
 import subprocess
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/cloudshell.sh"
@@ -12,10 +12,10 @@ class CloudShellInstallerTests(unittest.TestCase):
     def run_script(self, *args):
         env = dict(os.environ, DEVSHELL_PROJECT_ID="test-project", CLOUD_SHELL="true")
         return subprocess.run(["bash", str(SCRIPT), *args], cwd=ROOT, env=env,
-                              text=True, capture_output=True, timeout=45)
+                              check=False, text=True, capture_output=True, timeout=45)
 
     def test_shell_syntax(self):
-        result = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True, text=True)
+        result = subprocess.run(["bash", "-n", str(SCRIPT)], check=False, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_help(self):

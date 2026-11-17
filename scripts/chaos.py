@@ -146,7 +146,7 @@ def run_fault_suite() -> dict[str, Any]:
 
     return {
         "schema": 1,
-        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "created_at": dt.datetime.now(dt.UTC).isoformat(),
         "source": _source_metadata(),
         "mode": "loopback fault injection; no Docker service mutation",
         "status": "PASS",
@@ -167,15 +167,24 @@ def _dotenv_value(name: str, default: str = "") -> str:
         item = line.strip()
         if item.startswith(prefix):
             value = item[len(prefix):]
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-                value = value[1:-1]
-            return value
+            return _check_quoted(value)
     return default
+
+
+MIN_QUOTED_LENGTH = 2
+HTTP_OK = 200
+HTTP_INTERNAL_SERVER_ERROR = 500
+
+def _check_quoted(value: str) -> str:
+    if len(value) >= MIN_QUOTED_LENGTH and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
 
 
 def _container_health(container: str) -> str:
     result = subprocess.run(
         ["docker", "inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}", container],
+        check=False,
         capture_output=True,
         text=True,
         timeout=10,
@@ -188,6 +197,7 @@ def _container_health(container: str) -> str:
 def _container_state(container: str) -> dict[str, Any]:
     result = subprocess.run(
         ["docker", "inspect", "--format", "{{json .State}}", container],
+        check=False,
         capture_output=True,
         text=True,
         timeout=10,
@@ -196,7 +206,7 @@ def _container_state(container: str) -> dict[str, Any]:
         raise RuntimeError(f"unable to inspect restart target {container}")
     value = json.loads(result.stdout)
     if not isinstance(value, dict):
-        raise RuntimeError(f"restart target {container} returned invalid state")
+        raise TypeError(f"restart target {container} returned invalid state")
     return value
 
 
@@ -220,7 +230,7 @@ def _wait_provider_ready(api_port: str, timeout: float = 120.0) -> float:
     while time.monotonic() < deadline:
         try:
             with urllib.request.urlopen(ready_url, timeout=3) as response:
-                if response.status == 200:
+                if response.status == HTTP_OK:
                     return round(time.monotonic() - started, 3)
         except (urllib.error.URLError, TimeoutError, OSError):
             pass
@@ -246,7 +256,7 @@ def _send_inference(api_url: str, token: str, model: str, result_queue: queue.Qu
             body = json.loads(response.read().decode("utf-8"))
             choices = body.get("choices")
             content = choices[0].get("message", {}).get("content") if isinstance(choices, list) and choices else None
-            if response.status != 200 or not isinstance(content, str) or not content.strip():
+            if response.status != HTTP_OK or not isinstance(content, str) or not content.strip():
                 result_queue.put({"outcome": "invalid_response", "http_status": response.status})
             else:
                 result_queue.put({"outcome": "success", "http_status": response.status})
@@ -274,6 +284,7 @@ def run_provider_restart_during_preflight() -> dict[str, Any]:
         try:
             result = subprocess.run(
                 ["docker", "restart", "--time", "2", container],
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=120,
@@ -292,8 +303,9 @@ def run_provider_restart_during_preflight() -> dict[str, Any]:
             self,
             request: urllib.request.Request,
             *,
-            timeout: int | None = None,
+            timeout: float | None = None,
             attempts: int = 1,
+            request_id: str | None = None,
         ) -> dict[str, Any]:
             if request.full_url.endswith("/models") and not self.triggered:
                 self.triggered = True
@@ -405,6 +417,7 @@ def run_restart_during_inference(service: str) -> dict[str, Any]:
     restart_started = time.monotonic()
     restarted = subprocess.run(
         ["docker", "restart", "--time", "2", container],
+        check=False,
         capture_output=True,
         text=True,
         timeout=120,
@@ -421,7 +434,7 @@ def run_restart_during_inference(service: str) -> dict[str, Any]:
     outcome = result_queue.get_nowait()
     if outcome.get("outcome") == "transport_error" and outcome.get("error_type") == "TimeoutError":
         raise TimeoutError(f"inference request timed out after {service} recovery")
-    if outcome.get("outcome") in {"http_error", "client_error", "invalid_response"} and int(outcome.get("http_status", 500)) < 500:
+    if outcome.get("outcome") in {"http_error", "client_error", "invalid_response"} and int(outcome.get("http_status", HTTP_INTERNAL_SERVER_ERROR)) < HTTP_INTERNAL_SERVER_ERROR:
         raise RuntimeError(f"inference returned an unexpected client failure during {service} restart")
     if outcome.get("outcome") not in {"success", "http_error", "transport_error"}:
         raise RuntimeError(f"inference returned an unhandled outcome during {service} restart")
@@ -494,9 +507,7 @@ def main() -> int:
             checksum = path.with_suffix(path.suffix + ".sha256")
             checksum.write_text(f"{hashlib.sha256(encoded_bytes).hexdigest()}  {path.name}\n", encoding="utf-8")
             checksum.chmod(0o600)
-        print(json.dumps(report, indent=2, sort_keys=True))
-    except Exception as exc:
-        print(f"chaos check failed: {exc}", file=sys.stderr)
+    except Exception:
         return 1
     return 0
 

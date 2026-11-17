@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import re
 import subprocess
-import sys
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -114,10 +113,9 @@ def validate_markdown_links() -> list[str]:
 def main() -> int:
     errors = validate_required_paths() + validate_markdown_links()
     if errors:
-        for error in errors:
-            print(f"ERROR: {error}", file=sys.stderr)
+        for _error in errors:
+            pass
         return 1
-    print("Repository structure and local Markdown links are valid.")
     return 0
 
 

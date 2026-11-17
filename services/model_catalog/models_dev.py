@@ -108,7 +108,7 @@ def _atomic_write(path: Path, data: bytes) -> None:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(tmp, path)
+        tmp.replace(path)
     finally:
         tmp.unlink(missing_ok=True)
 
@@ -183,7 +183,6 @@ def get_catalog(
     try:
         catalog = fetch_catalog(url=url)
         write_cache(catalog, path=cache_path, source_url=url)
-        return catalog, "network"
     except ModelsDevError:
         if allow_stale:
             try:
@@ -191,6 +190,8 @@ def get_catalog(
             except ModelsDevError:
                 pass
         raise
+    else:
+        return catalog, "network"
 
 
 def lookup_model(catalog: dict[str, Any], model_id: str) -> dict[str, Any] | None:

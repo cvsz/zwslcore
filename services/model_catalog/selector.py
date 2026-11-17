@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 
 @dataclasses.dataclass(frozen=True)
@@ -43,6 +44,8 @@ class RankedModel:
 
 
 FREE_CLASSES = {"FREE_LOCAL", "FREE_REMOTE"}
+MIN_RAM_FOR_CODER_GB = 10
+MIN_RAM_FOR_REASONING_GB = 14
 
 
 def _is_zero_cost(candidate: ModelCandidate) -> bool:
@@ -51,13 +54,9 @@ def _is_zero_cost(candidate: ModelCandidate) -> bool:
     return candidate.cost_class in FREE_CLASSES
 
 
-def rank_candidate(
-    candidate: ModelCandidate,
-    requirements: ModelRequirements,
-) -> RankedModel:
+def _check_requirements(candidate: ModelCandidate, requirements: ModelRequirements) -> tuple[list[str], list[str]]:
     blockers: list[str] = []
     reasons: list[str] = []
-    score = 0
 
     if not candidate.enabled:
         blockers.append("provider disabled")
@@ -73,13 +72,23 @@ def rank_candidate(
         blockers.append(
             f"context {candidate.context} < required {requirements.min_context}"
         )
+    return blockers, reasons
 
+
+def _score_locality(candidate: ModelCandidate, requirements: ModelRequirements) -> tuple[int, list[str]]:
+    score = 0
+    reasons: list[str] = []
     if candidate.local:
         score += 1000
         reasons.append("local")
     elif requirements.prefer_local:
         score -= 150
+    return score, reasons
 
+
+def _score_cost_class(candidate: ModelCandidate) -> tuple[int, list[str]]:
+    score = 0
+    reasons: list[str] = []
     if candidate.cost_class == "FREE_LOCAL":
         score += 500
         reasons.append("free-local")
@@ -89,7 +98,12 @@ def rank_candidate(
     elif _is_zero_cost(candidate):
         score += 300
         reasons.append("zero-price")
+    return score, reasons
 
+
+def _score_capabilities(candidate: ModelCandidate) -> tuple[int, list[str]]:
+    score = 0
+    reasons: list[str] = []
     if candidate.structured_output:
         score += 120
         reasons.append("structured-output")
@@ -99,16 +113,31 @@ def rank_candidate(
     if candidate.reasoning:
         score += 60
         reasons.append("reasoning")
+    return score, reasons
 
+
+def _score_context(candidate: ModelCandidate) -> tuple[int, list[str]]:
+    score = 0
+    reasons: list[str] = []
     if candidate.context > 0:
         context_score = min(120, int(20 * math.log2(max(1, candidate.context / 4096))))
         score += max(0, context_score)
         reasons.append(f"context={candidate.context}")
+    return score, reasons
 
+
+def _score_hardware_fit(candidate: ModelCandidate) -> tuple[int, list[str]]:
+    score = 0
+    reasons: list[str] = []
     if candidate.hardware_fit:
         score += candidate.hardware_fit
         reasons.append(f"hardware-fit={candidate.hardware_fit}")
+    return score, reasons
 
+
+def _score_pricing(candidate: ModelCandidate) -> tuple[int, list[str]]:
+    score = 0
+    reasons: list[str] = []
     if candidate.input_cost is not None and candidate.output_cost is not None:
         if candidate.input_cost == 0 and candidate.output_cost == 0:
             score += 60
@@ -118,10 +147,48 @@ def rank_candidate(
             reasons.append(
                 f"cost={candidate.input_cost:g}/{candidate.output_cost:g}"
             )
+    return score, reasons
 
+
+def _calculate_eligibility(score: int, blockers: list[str]) -> tuple[int, bool]:
     eligible = not blockers
     if not eligible:
         score -= 10_000
+    return score, eligible
+
+
+def rank_candidate(
+    candidate: ModelCandidate,
+    requirements: ModelRequirements,
+) -> RankedModel:
+    blockers, reasons = _check_requirements(candidate, requirements)
+    score = 0
+
+    s, r = _score_locality(candidate, requirements)
+    score += s
+    reasons.extend(r)
+
+    s, r = _score_cost_class(candidate)
+    score += s
+    reasons.extend(r)
+
+    s, r = _score_capabilities(candidate)
+    score += s
+    reasons.extend(r)
+
+    s, r = _score_context(candidate)
+    score += s
+    reasons.extend(r)
+
+    s, r = _score_hardware_fit(candidate)
+    score += s
+    reasons.extend(r)
+
+    s, r = _score_pricing(candidate)
+    score += s
+    reasons.extend(r)
+
+    score, eligible = _calculate_eligibility(score, blockers)
 
     return RankedModel(
         candidate=candidate,
@@ -219,6 +286,18 @@ def models_dev_candidates(
     return result
 
 
+def _hardware_fit(alias: str, hardware_profile: str, ram_available_gb: float) -> int:
+    if alias == "zeaz-fast":
+        return 320 if hardware_profile.startswith("CPU_") else 220
+    if alias == "zeaz-coder":
+        return 260 if ram_available_gb >= MIN_RAM_FOR_CODER_GB else -250
+    if alias in {"zeaz-reasoning", "zeaz-local"}:
+        if hardware_profile == "GPU_READY":
+            return 280
+        return 220 if ram_available_gb >= MIN_RAM_FOR_REASONING_GB else -300
+    return 0
+
+
 def local_alias_candidates(
     env: dict[str, str],
     *,
@@ -230,17 +309,6 @@ def local_alias_candidates(
     coder_model = env.get("ZEAZ_CODER_MODEL", "qwen2.5-coder:7b")
     reasoning_model = env.get("ZEAZ_REASONING_MODEL", "qwen3:8b")
     local_model = env.get("ZEAZ_LOCAL_MODEL", reasoning_model)
-
-    def fit(alias: str) -> int:
-        if alias == "zeaz-fast":
-            return 320 if hardware_profile.startswith("CPU_") else 220
-        if alias == "zeaz-coder":
-            return 260 if ram_available_gb >= 10 else -250
-        if alias in {"zeaz-reasoning", "zeaz-local"}:
-            if hardware_profile == "GPU_READY":
-                return 280
-            return 220 if ram_available_gb >= 14 else -300
-        return 0
 
     values = (
         ("zeaz-fast", fast_model, False),
@@ -262,7 +330,7 @@ def local_alias_candidates(
             structured_output=True,
             tool_call=False,
             reasoning=reasoning,
-            hardware_fit=fit(alias),
+            hardware_fit=_hardware_fit(alias, hardware_profile, ram_available_gb),
             source="local-route",
         )
         for alias, model, reasoning in values

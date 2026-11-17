@@ -17,7 +17,6 @@ from services.engineering.mcp import (
     split_qualified_tool,
 )
 
-
 FAKE_SERVER = r"""
 import json
 import sys
@@ -142,9 +141,8 @@ class MCPStdioTests(unittest.TestCase):
         self.assertFalse(result["isError"])
 
     def test_unknown_method_is_reported(self):
-        with StdioMCPSession(self.config()) as session:
-            with self.assertRaisesRegex(MCPError, "method not found"):
-                session.request("unknown/method", {})
+        with StdioMCPSession(self.config()) as session, self.assertRaisesRegex(MCPError, "method not found"):
+            session.request("unknown/method", {})
 
 
 if __name__ == "__main__":

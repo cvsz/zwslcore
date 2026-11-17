@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 # Uvicorn configures this logger at INFO for both CLI and programmatic startup.
@@ -26,6 +27,23 @@ _KNOWN_PATHS = frozenset(
 _KNOWN_METHODS = frozenset({"DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"})
 _CLIENT_BUCKET = re.compile(r"^[a-f0-9]{64}$")
 
+# HTTP status code constants
+_HTTP_SUCCESS_THRESHOLD = 400
+_HTTP_AUTHENTICATION_CODES = {401, 403}
+_HTTP_RATE_LIMIT_CODE = 429
+_HTTP_SERVER_ERROR_THRESHOLD = 500
+
+
+@dataclass(slots=True)
+class AuditEvent:
+    request_id: str
+    method: str
+    path: str
+    status_code: int
+    duration_ms: float
+    client_id: str
+    rate_limited: bool
+
 
 def audit_path(path: str) -> str:
     """Return only a public route name, never an arbitrary user-supplied path."""
@@ -38,36 +56,27 @@ def audit_method(method: str) -> str:
 
 
 def audit_error_class(status_code: int) -> str | None:
-    if status_code < 400:
+    if status_code < _HTTP_SUCCESS_THRESHOLD:
         return None
-    if status_code in {401, 403}:
+    if status_code in _HTTP_AUTHENTICATION_CODES:
         return "authentication"
-    if status_code == 429:
+    if status_code == _HTTP_RATE_LIMIT_CODE:
         return "rate_limited"
-    if status_code >= 500:
+    if status_code >= _HTTP_SERVER_ERROR_THRESHOLD:
         return "http_server_error"
     return "http_client_error"
 
 
-def emit_request_audit(
-    *,
-    request_id: str,
-    method: str,
-    path: str,
-    status_code: int,
-    duration_ms: float,
-    client_id: str,
-    rate_limited: bool,
-) -> None:
+def emit_request_audit(event: AuditEvent) -> None:
     """Emit a JSON event made exclusively from explicitly allowed metadata."""
-    duration = duration_ms if math.isfinite(duration_ms) and duration_ms >= 0 else 0.0
-    outcome = "success" if status_code < 400 else "error"
-    event = {
+    duration = event.duration_ms if math.isfinite(event.duration_ms) and event.duration_ms >= 0 else 0.0
+    outcome = "success" if event.status_code < _HTTP_SUCCESS_THRESHOLD else "error"
+    audit_event = {
         "schema_version": 1,
         "timestamp": datetime.now(UTC).isoformat(),
         "event": "http_request",
         "component": "provider",
-        "request_id": hashlib.sha256(request_id.encode()).hexdigest(),
+        "request_id": hashlib.sha256(event.request_id.encode()).hexdigest(),
         "task_id": None,
         "work_fingerprint": None,
         "phase": "request",
@@ -75,21 +84,22 @@ def emit_request_audit(
         "model": None,
         "attempt": None,
         "outcome": outcome,
-        "error_class": audit_error_class(status_code),
-        "method": audit_method(method),
-        "path": audit_path(path),
-        "status_code": status_code,
+        "error_class": audit_error_class(event.status_code),
+        "method": audit_method(event.method),
+        "path": audit_path(event.path),
+        "status_code": event.status_code,
         "latency_ms": round(duration, 3),
         "duration_ms": round(duration, 3),
-        "client_id": client_id if _CLIENT_BUCKET.fullmatch(client_id) else "unknown",
-        "rate_limited": rate_limited,
+        "client_id": event.client_id if _CLIENT_BUCKET.fullmatch(event.client_id) else "unknown",
+        "rate_limited": event.rate_limited,
     }
-    _LOGGER.info(json.dumps(event, separators=(",", ":"), sort_keys=True))
+    _LOGGER.info(json.dumps(audit_event, separators=(",", ":"), sort_keys=True))
 
 
 __all__ = [
-    "audit_path",
-    "audit_method",
+    "AuditEvent",
     "audit_error_class",
+    "audit_method",
+    "audit_path",
     "emit_request_audit",
 ]

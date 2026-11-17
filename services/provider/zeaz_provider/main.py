@@ -4,7 +4,9 @@ import argparse
 import json
 import os
 import time
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Annotated, Any
 
 import httpx
@@ -14,10 +16,10 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from redis.asyncio import Redis
 
 from . import __version__
-from .audit import audit_method, audit_path, emit_request_audit
-from .config import Settings, load_settings
-from .errors import ErrorKind
-from .limits import RequestConcurrencyLimiter, ResponseLimitExceeded, bounded_stream
+from .audit import AuditEvent, audit_method, audit_path, emit_request_audit
+from .config import ModelRoute, Settings, load_settings
+from .errors import ErrorKind, ProviderErrorConfig
+from .limits import RequestConcurrencyLimiter, ResponseLimitExceededError, bounded_stream
 from .normalize import (
     anthropic_to_openai,
     chat_to_responses,
@@ -46,11 +48,11 @@ from .streaming import (
 )
 
 __all__ = [
+    "SAMPLING_VALID_RANGES",
     "app",
-    "run",
     "authenticate",
     "body",
-    "SAMPLING_VALID_RANGES",
+    "run",
 ]
 
 
@@ -62,9 +64,13 @@ SAMPLING_VALID_RANGES: dict[str, tuple[float, float]] = {
     "frequency_penalty": (-2.0, 2.0),
 }
 
+# Model validation constants
+MAX_MODEL_NAME_LENGTH = 256
+FORBIDDEN_CONTROL_CHARS = "\r\n\x00"
+
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = load_settings()
     client = httpx.AsyncClient(
         limits=httpx.Limits(max_connections=200, max_keepalive_connections=50),
@@ -104,8 +110,101 @@ def rate_limiter(config: Settings) -> RateLimitBackend:
     return InMemoryRateLimiter(config.rate_limit_per_minute)
 
 
+async def _check_concurrency_limit(
+    request: Request,
+) -> tuple[bool, JSONResponse | None]:
+    """Check if concurrency limit is exceeded. Returns (acquired, response_if_rejected)."""
+    acquired = await request.app.state.concurrency_limiter.try_acquire()
+    if not acquired:
+        response = JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "type": "service_unavailable",
+                    "message": "Request concurrency limit exceeded",
+                }
+            },
+            headers={"Retry-After": "1"},
+        )
+        return False, response
+    return True, None
+
+
+async def _check_rate_limit(request: Request, bucket: str) -> tuple[int, bool, JSONResponse | None]:
+    """Check rate limit. Returns (remaining, rate_limited, response_if_rejected)."""
+    try:
+        allowed, remaining = await request.app.state.rate_limiter.allow(bucket)
+    except RateLimitBackendError:
+        return 0, False, JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "type": "service_unavailable",
+                    "message": "Rate-limit service unavailable",
+                }
+            },
+        )
+    if not allowed:
+        return 0, True, JSONResponse(
+            status_code=429,
+            content={"error": {"type": "rate_limit_error", "message": "Rate limit exceeded"}},
+            headers={"Retry-After": "60"},
+        )
+    return remaining, False, None
+
+
+@dataclass(slots=True)
+class ResponseContext:
+    request: Request
+    correlation_id: str
+    remaining: int
+    acquired: bool
+    started: float
+    bucket: str
+    finalize: Callable[[int], Awaitable[None]]
+    rate_limited: bool
+
+
+async def _process_streaming_response(
+    ctx: ResponseContext,
+    response: StreamingResponse,
+) -> Response:
+    """Process streaming response with byte limit enforcement."""
+    stream_status = response.status_code
+    source = response.body_iterator
+
+    async def limited_body() -> AsyncIterator[bytes]:
+        nonlocal stream_status
+        try:
+            async for chunk in bounded_stream(_bytes(source), settings(ctx.request).max_response_bytes):
+                yield chunk
+        except ResponseLimitExceededError:
+            stream_status = 502
+            raise
+        finally:
+            await ctx.finalize(stream_status)
+
+    response.body_iterator = limited_body()
+    _security_headers(response, ctx.correlation_id, ctx.remaining)
+    return response
+
+
+async def _process_regular_response(
+    ctx: ResponseContext,
+    response: Response,
+) -> Response:
+    """Process regular (non-streaming) response with byte limit enforcement."""
+    response = await _bounded_response(response, settings(ctx.request).max_response_bytes)
+    _security_headers(response, ctx.correlation_id, ctx.remaining)
+    await ctx.finalize(response.status_code)
+    return response
+
+
 @app.middleware("http")
-async def request_boundary(request: Request, call_next):
+async def request_boundary(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
     started = time.monotonic()
     request.app.state.observability.start_request()
     correlation_id = request_id(request.headers.get("x-request-id"))
@@ -120,13 +219,12 @@ async def request_boundary(request: Request, call_next):
         request.headers.get("x-api-key"),
         peer,
     )
-    acquired = await request.app.state.concurrency_limiter.try_acquire()
+
+    acquired, rejection = await _check_concurrency_limit(request)
+    if rejection is not None:
+        return rejection
+
     finalized = False
-    backend_failed = False
-    allowed = True
-    remaining = 0
-    rate_limited = False
-    status_code = 500
 
     async def finalize(final_status: int) -> None:
         nonlocal finalized
@@ -141,89 +239,54 @@ async def request_boundary(request: Request, call_next):
             duration_seconds=duration,
         )
         emit_request_audit(
-            request_id=correlation_id,
-            method=request.method,
-            path=request.url.path,
-            status_code=final_status,
-            duration_ms=duration * 1000,
-            client_id=bucket,
-            rate_limited=rate_limited,
+            AuditEvent(
+                request_id=correlation_id,
+                method=request.method,
+                path=request.url.path,
+                status_code=final_status,
+                duration_ms=duration * 1000,
+                client_id=bucket,
+                rate_limited=rate_limited,
+            )
         )
         if acquired:
             await request.app.state.concurrency_limiter.release()
 
     try:
-        if not acquired:
-            response = JSONResponse(
-                status_code=503,
-                content={
-                    "error": {
-                        "type": "service_unavailable",
-                        "message": "Request concurrency limit exceeded",
-                    }
-                },
-                headers={"Retry-After": "1"},
-            )
-        else:
-            try:
-                allowed, remaining = await request.app.state.rate_limiter.allow(bucket)
-            except RateLimitBackendError:
-                allowed, remaining = False, 0
-                backend_failed = True
-            rate_limited = not allowed and not backend_failed
-            if backend_failed:
-                response = JSONResponse(
-                    status_code=503,
-                    content={
-                        "error": {
-                            "type": "service_unavailable",
-                            "message": "Rate-limit service unavailable",
-                        }
-                    },
-                )
-            elif not allowed:
-                response = JSONResponse(
-                    status_code=429,
-                    content={"error": {"type": "rate_limit_error", "message": "Rate limit exceeded"}},
-                    headers={"Retry-After": "60"},
-                )
-            else:
-                response = await call_next(request)
-        status_code = response.status_code
-        _security_headers(response, correlation_id, remaining)
-        if response.headers.get("content-type", "").startswith("text/event-stream"):
-            source = response.body_iterator
-            stream_status = status_code
+        remaining, rate_limited, rejection = await _check_rate_limit(request, bucket)
+        if rejection is not None:
+            return rejection
 
-            async def limited_body():
-                nonlocal stream_status
-                try:
-                    async for chunk in bounded_stream(_bytes(source), settings(request).max_response_bytes):
-                        yield chunk
-                except ResponseLimitExceeded:
-                    stream_status = 502
-                    raise
-                finally:
-                    await finalize(stream_status)
-
-            response.body_iterator = limited_body()
-            return response
-        response = await _bounded_response(response, settings(request).max_response_bytes)
-        status_code = response.status_code
-        _security_headers(response, correlation_id, remaining)
-        await finalize(status_code)
-        return response
+        response = await call_next(request)
+        ctx = ResponseContext(
+            request=request,
+            correlation_id=correlation_id,
+            remaining=remaining,
+            acquired=acquired,
+            started=started,
+            bucket=bucket,
+            finalize=finalize,
+            rate_limited=rate_limited,
+        )
+        if isinstance(response, StreamingResponse):
+            return await _process_streaming_response(ctx, response)
+        return await _process_regular_response(ctx, response)
     except BaseException:
-        await finalize(status_code)
+        await finalize(500)
         raise
 
 
-async def _bytes(source):
+async def _bytes(source: AsyncIterable[str | bytes | memoryview[int]]) -> AsyncIterator[bytes]:
     async for chunk in source:
         yield chunk.encode() if isinstance(chunk, str) else bytes(chunk)
 
 
-def _validate_stream_request(provider_router, route, payload: dict[str, Any], protocol: str) -> None:
+def _validate_stream_request(
+    provider_router: ProviderRouter,
+    route: ModelRoute,
+    payload: dict[str, Any],
+    protocol: str,
+) -> None:
     """Validate request conversion for every configured streaming candidate before headers are sent."""
     for target in (route.primary, *route.fallbacks):
         client = provider_router.clients.get(target.provider)
@@ -242,21 +305,23 @@ def _validate_stream_request(provider_router, route, payload: dict[str, Any], pr
             raise HTTPException(status_code=400, detail="Invalid request format") from exc
 
 
-def _provider_response(converter, *args) -> dict[str, Any]:
+def _provider_response(converter: Callable[..., dict[str, Any]], *args: Any) -> dict[str, Any]:
     try:
         return converter(*args)
     except (TypeError, ValueError, KeyError, IndexError, OverflowError) as exc:
         raise ProviderError(
             "Provider returned an invalid response",
-            kind=ErrorKind.PROTOCOL,
-            fallback_allowed=True,
-            circuit_failure=True,
+            config=ProviderErrorConfig(
+                kind=ErrorKind.PROTOCOL,
+                fallback_allowed=True,
+                circuit_failure=True,
+            ),
         ) from exc
 
 
 async def _bounded_response(response: Response, maximum: int) -> Response:
     body = getattr(response, "body", None)
-    if body is None:
+    if body is None and isinstance(response, StreamingResponse):
         chunks: list[bytes] = []
         total = 0
         async for chunk in _bytes(response.body_iterator):
@@ -271,7 +336,7 @@ async def _bounded_response(response: Response, maximum: int) -> Response:
             headers=headers,
             background=response.background,
         )
-    if len(body) > maximum:
+    if isinstance(body, (bytes, bytearray)) and len(body) > maximum:
         return _response_limit_error()
     return response
 
@@ -297,11 +362,11 @@ def _security_headers(response: Response, correlation_id: str, remaining: int) -
 
 
 def settings(request: Request) -> Settings:
-    return request.app.state.settings
+    return request.app.state.settings  # type: ignore[no-any-return]
 
 
 def router(request: Request) -> ProviderRouter:
-    return request.app.state.router
+    return request.app.state.router  # type: ignore[no-any-return]
 
 
 RouterDependency = Annotated[ProviderRouter, Depends(router)]
@@ -339,16 +404,32 @@ async def body(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Invalid JSON") from exc
     if not isinstance(value, dict):
         raise HTTPException(status_code=400, detail="JSON body must be an object")
+    _validate_model_field(value)
+    _validate_stream_flag(value)
+    _validate_output_tokens(value, settings(request).max_output_tokens)
+    _validate_array_fields(value)
+    _validate_input_field(value)
+    _validate_sampling_parameters(value)
+    return value
+
+
+def _validate_model_field(value: dict[str, Any]) -> None:
     model = value.get("model")
     if model is not None and (
         not isinstance(model, str)
-        or not 1 <= len(model) <= 256
-        or any(character in model for character in "\r\n\x00")
+        or not 1 <= len(model) <= MAX_MODEL_NAME_LENGTH
+        or any(character in model for character in FORBIDDEN_CONTROL_CHARS)
     ):
         raise HTTPException(status_code=400, detail="Invalid model")
+
+
+def _validate_stream_flag(value: dict[str, Any]) -> None:
     stream = value.get("stream")
     if stream is not None and type(stream) is not bool:
         raise HTTPException(status_code=400, detail="Invalid stream flag")
+
+
+def _validate_output_tokens(value: dict[str, Any], max_output_tokens: int) -> None:
     token_values = [
         value[name]
         for name in ("max_tokens", "max_output_tokens", "max_completion_tokens")
@@ -357,16 +438,24 @@ async def body(request: Request) -> dict[str, Any]:
     if any(
         type(tokens) is not int
         or tokens < 1
-        or tokens > settings(request).max_output_tokens
+        or tokens > max_output_tokens
         for tokens in token_values
     ) or len(set(token_values)) > 1:
         raise HTTPException(status_code=400, detail="Invalid output token limit")
+
+
+def _validate_array_fields(value: dict[str, Any]) -> None:
     for field_name in ("messages", "tools"):
         if field_name in value and not isinstance(value[field_name], list):
             raise HTTPException(status_code=400, detail=f"{field_name} must be an array")
+
+
+def _validate_input_field(value: dict[str, Any]) -> None:
     if "input" in value and not isinstance(value["input"], (str, list)):
         raise HTTPException(status_code=400, detail="input must be a string or array")
-    # Validate sampling parameter ranges
+
+
+def _validate_sampling_parameters(value: dict[str, Any]) -> None:
     for param, (min_val, max_val) in SAMPLING_VALID_RANGES.items():
         if param in value:
             val = value[param]
@@ -374,11 +463,10 @@ async def body(request: Request) -> dict[str, Any]:
                 raise HTTPException(status_code=400, detail=f"Invalid {param}")
             if not (min_val <= float(val) <= max_val):
                 raise HTTPException(status_code=400, detail=f"{param} must be between {min_val} and {max_val}")
-    return value
 
 
 @app.exception_handler(ProviderError)
-async def provider_error(_: Request, exc: ProviderError):
+async def provider_error(_: Request, exc: ProviderError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -391,12 +479,12 @@ async def provider_error(_: Request, exc: ProviderError):
 
 
 @app.get("/health/live")
-async def live():
+async def live() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
 
 
 @app.get("/health/ready")
-async def ready(request: Request):
+async def ready(request: Request) -> dict[str, int | str]:
     return {
         "status": "ready",
         "providers": len(settings(request).providers),
@@ -405,7 +493,7 @@ async def ready(request: Request):
 
 
 @app.get("/metrics")
-async def metrics(request: Request):
+async def metrics(request: Request) -> Response:
     if not settings(request).metrics_enabled:
         raise HTTPException(status_code=404, detail="Not found")
     return Response(
@@ -415,12 +503,12 @@ async def metrics(request: Request):
 
 
 @app.get("/v1/models", dependencies=[Depends(authenticate)])
-async def models(provider_router: RouterDependency):
+async def models(provider_router: RouterDependency) -> dict[str, list[dict[str, str]] | str]:
     return {"object": "list", "data": provider_router.model_list()}
 
 
 @app.post("/v1/models/refresh", dependencies=[Depends(authenticate)])
-async def refresh_models(provider_router: RouterDependency):
+async def refresh_models(provider_router: RouterDependency) -> dict[str, dict[str, int] | dict[str, str]]:
     refreshed: dict[str, int] = {}
     errors: dict[str, str] = {}
     for name, client in provider_router.clients.items():
@@ -432,7 +520,7 @@ async def refresh_models(provider_router: RouterDependency):
 
 
 @app.post("/v1/chat/completions", dependencies=[Depends(authenticate)])
-async def chat_completions(request: Request, provider_router: RouterDependency):
+async def chat_completions(request: Request, provider_router: RouterDependency) -> dict[str, Any] | StreamingResponse:
     payload = await body(request)
     route = provider_router.route(payload.get("model"))
     if payload.get("stream"):
@@ -442,7 +530,7 @@ async def chat_completions(request: Request, provider_router: RouterDependency):
             media_type="text/event-stream",
         )
 
-    async def call(client: ProviderClient, model: str):
+    async def call(client: ProviderClient, model: str) -> dict[str, Any]:
         outbound = {**payload, "model": model}
         if client.config.api == "anthropic":
             try:
@@ -457,7 +545,7 @@ async def chat_completions(request: Request, provider_router: RouterDependency):
 
 
 @app.post("/v1/messages", dependencies=[Depends(authenticate)])
-async def messages(request: Request, provider_router: RouterDependency):
+async def messages(request: Request, provider_router: RouterDependency) -> dict[str, Any] | StreamingResponse:
     payload = await body(request)
     route = provider_router.route(payload.get("model"))
     if payload.get("stream"):
@@ -467,7 +555,7 @@ async def messages(request: Request, provider_router: RouterDependency):
             media_type="text/event-stream",
         )
 
-    async def call(client: ProviderClient, model: str):
+    async def call(client: ProviderClient, model: str) -> dict[str, Any]:
         outbound = {**payload, "model": model}
         if client.config.api == "anthropic":
             return _public_model_response(await client.messages(outbound), route.alias)
@@ -482,7 +570,7 @@ async def messages(request: Request, provider_router: RouterDependency):
 
 
 @app.post("/v1/responses", dependencies=[Depends(authenticate)])
-async def responses(request: Request, provider_router: RouterDependency):
+async def responses(request: Request, provider_router: RouterDependency) -> dict[str, Any] | StreamingResponse:
     payload = await body(request)
     route = provider_router.route(payload.get("model"))
     if payload.get("stream"):
@@ -492,7 +580,7 @@ async def responses(request: Request, provider_router: RouterDependency):
             media_type="text/event-stream",
         )
 
-    async def call(client: ProviderClient, model: str):
+    async def call(client: ProviderClient, model: str) -> dict[str, Any]:
         outbound = {**payload, "model": model}
         if client.config.api == "responses":
             return _public_model_response(await client.responses(outbound), route.alias)
@@ -514,8 +602,13 @@ async def responses(request: Request, provider_router: RouterDependency):
     return await provider_router.execute(route, call)
 
 
-async def _stream_openai(provider_router, route, payload, endpoint):
-    async def operation(client, model):
+async def _stream_openai(
+    provider_router: ProviderRouter,
+    route: ModelRoute,
+    payload: dict[str, Any],
+    endpoint: str,
+) -> AsyncIterator[bytes]:
+    async def operation(client: ProviderClient, model: str) -> AsyncIterator[bytes]:
         if client.config.api == "anthropic":
             outbound = openai_request_to_anthropic({**payload, "stream": True}, model)
             source = client.stream("messages", outbound)
@@ -531,8 +624,12 @@ async def _stream_openai(provider_router, route, payload, endpoint):
         yield chunk
 
 
-async def _stream_anthropic(provider_router, route, payload):
-    async def operation(client, model):
+async def _stream_anthropic(
+    provider_router: ProviderRouter,
+    route: ModelRoute,
+    payload: dict[str, Any],
+) -> AsyncIterator[bytes]:
+    async def operation(client: ProviderClient, model: str) -> AsyncIterator[bytes]:
         outbound = {**payload, "model": model, "stream": True}
         if client.config.api == "anthropic":
             source = rewrite_sse_model(
@@ -550,8 +647,12 @@ async def _stream_anthropic(provider_router, route, payload):
         yield chunk
 
 
-async def _stream_responses(provider_router, route, payload):
-    async def operation(client, model):
+async def _stream_responses(
+    provider_router: ProviderRouter,
+    route: ModelRoute,
+    payload: dict[str, Any],
+) -> AsyncIterator[bytes]:
+    async def operation(client: ProviderClient, model: str) -> AsyncIterator[bytes]:
         outbound = {**payload, "model": model, "stream": True}
         if client.config.api == "responses":
             source = rewrite_sse_model(
@@ -578,26 +679,26 @@ async def _stream_responses(provider_router, route, payload):
 def _anthropic_to_openai_response(payload: dict[str, Any], model: str) -> dict[str, Any]:
     content = payload.get("content")
     if not isinstance(content, list):
-        raise ValueError("Anthropic response content is invalid")
+        raise TypeError("Anthropic response content must be a list")
     text_parts: list[str] = []
     calls: list[dict[str, Any]] = []
     for block in content:
         if not isinstance(block, dict):
-            raise ValueError("Anthropic response content block is invalid")
+            raise TypeError("Anthropic response content block must be an object")
         kind = block.get("type")
         if kind == "text":
             text = block.get("text", "")
             if not isinstance(text, str):
-                raise ValueError("Anthropic response text is invalid")
+                raise TypeError("Anthropic response text must be a string")
             text_parts.append(text)
         elif kind == "tool_use":
             call_id = block.get("id")
             name = block.get("name")
             tool_input = block.get("input", {})
             if not isinstance(call_id, str) or not call_id or not isinstance(name, str) or not name:
-                raise ValueError("Anthropic response tool call is invalid")
+                raise TypeError("Anthropic response tool call is invalid")
             if not isinstance(tool_input, dict):
-                raise ValueError("Anthropic response tool input is invalid")
+                raise TypeError("Anthropic response tool input must be an object")
             calls.append({
                 "id": call_id,
                 "type": "function",
@@ -612,7 +713,7 @@ def _anthropic_to_openai_response(payload: dict[str, Any], model: str) -> dict[s
         message["tool_calls"] = calls
     usage = payload.get("usage", {})
     if not isinstance(usage, dict):
-        raise ValueError("Anthropic response usage is invalid")
+        raise TypeError("Anthropic response usage must be an object")
     input_tokens = _safe_count(usage.get("input_tokens", 0))
     output_tokens = _safe_count(usage.get("output_tokens", 0))
     stop_reason = payload.get("stop_reason")

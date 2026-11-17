@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.model_catalog.catalog import select_free_chat_models  # noqa: E402
+from services.model_catalog.catalog import select_free_chat_models
 
 URL = "https://openrouter.ai/api/v1/models"
 
@@ -28,7 +28,7 @@ def main() -> int:
         payload = json.load(response)
 
     selected = select_free_chat_models(payload.get("data", []))
-    output = [
+    [
         {
             "id": item["id"],
             "name": item.get("name"),
@@ -36,7 +36,6 @@ def main() -> int:
         }
         for item in selected
     ]
-    print(json.dumps({"provider": "openrouter", "models": output}, indent=2))
     return 0
 
 

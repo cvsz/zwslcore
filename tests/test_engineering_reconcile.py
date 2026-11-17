@@ -107,6 +107,7 @@ class QueueReconcileTests(unittest.TestCase):
                     "provider health is already verified",
                 ],
                 cwd=Path(__file__).resolve().parents[1],
+                check=False,
                 text=True,
                 capture_output=True,
             )
@@ -138,6 +139,7 @@ class QueueReconcileTests(unittest.TestCase):
                     "duplicate request",
                 ],
                 cwd=Path(__file__).resolve().parents[1],
+                check=False,
                 text=True,
                 capture_output=True,
             )
@@ -202,6 +204,7 @@ class QueueReconcileTests(unittest.TestCase):
                     "services",
                 ],
                 cwd=Path(__file__).resolve().parents[1],
+                check=False,
                 text=True,
                 capture_output=True,
             )

@@ -7,7 +7,7 @@ from typing import TypeVar
 T = TypeVar("T")
 
 
-class ResponseLimitExceeded(RuntimeError):
+class ResponseLimitExceededError(RuntimeError):
     pass
 
 
@@ -27,12 +27,12 @@ class RequestConcurrencyLimiter:
             async with self._lock:
                 self._active += 1
             return True
-        
+
         if self._semaphore is None:
             async with self._lock:
                 if self._semaphore is None:
                     self._semaphore = asyncio.Semaphore(self.limit)
-        
+
         # Non-blocking check: only acquire when a slot is immediately available.
         # await self._semaphore.acquire() blocks indefinitely when exhausted,
         # which would hang the HTTP middleware instead of returning 503.
@@ -42,7 +42,7 @@ class RequestConcurrencyLimiter:
             await self._semaphore.acquire()
         except (asyncio.CancelledError, OSError, RuntimeError):
             return False
-        
+
         async with self._lock:
             self._active += 1
         return True
@@ -52,7 +52,7 @@ class RequestConcurrencyLimiter:
             if self._active <= 0:
                 raise RuntimeError("Concurrency slot released without acquisition")
             self._active -= 1
-        
+
         if self._semaphore is not None:
             self._semaphore.release()
 
@@ -62,12 +62,12 @@ async def bounded_stream(source: AsyncIterator[bytes], maximum: int) -> AsyncIte
     async for chunk in source:
         total += len(chunk)
         if total > maximum:
-            raise ResponseLimitExceeded("Response exceeded configured byte limit")
+            raise ResponseLimitExceededError("Response exceeded configured byte limit")
         yield chunk
 
 
 __all__ = [
     "RequestConcurrencyLimiter",
-    "ResponseLimitExceeded",
+    "ResponseLimitExceededError",
     "bounded_stream",
 ]

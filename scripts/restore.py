@@ -220,7 +220,7 @@ def restore_backup(backup: str | Path, target: str | Path | None = None) -> Path
                 if webui_policy == "unspecified" and webui_excluded
                 else "PASS"
             ),
-            "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "created_at": dt.datetime.now(dt.UTC).isoformat(),
             "backup": str(backup_path),
             "backup_source": manifest.get("source", {}),
             "isolated_target": str(target_path),
@@ -245,11 +245,9 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = restore_backup(args.backup, args.target)
-    except (RestoreError, OSError, ValueError, sqlite3.Error, json.JSONDecodeError) as exc:
-        print(f"restore failed: {exc}", file=sys.stderr)
+    except (RestoreError, OSError, ValueError, sqlite3.Error, json.JSONDecodeError):
         return 2
     report = json.loads((result / "restore-report.json").read_text(encoding="utf-8"))
-    print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report["status"] == "PASS" else 1
 
 

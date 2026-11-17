@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
 import os
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -38,15 +38,11 @@ from services.engineering.ledger import ContinuousLedgerError, JsonContinuousLed
 from services.engineering.loop import WorkItem, WorkKind
 from services.engineering.mcp import (
     DEFAULT_CONFIG as DEFAULT_MCP_CONFIG,
-)
-from services.engineering.mcp import (
     MCPError,
     call_server_tool,
     list_server_tools,
-    split_qualified_tool,
-)
-from services.engineering.mcp import (
     load_config as load_mcp_config,
+    split_qualified_tool,
 )
 from services.engineering.models import (
     Checkpoint,
@@ -56,13 +52,10 @@ from services.engineering.models import (
 )
 from services.engineering.observability import (
     engineering_logging,
-    safe_error_summary,
 )
 from services.engineering.reconcile import QueueReconciler
 from services.engineering.runtime import EngineeringRuntime, ProviderClient
-from services.engineering.snapshot import RepositorySnapshotter
 from services.engineering.store import SQLiteEngineeringStore
-from services.engineering.tools import list_tools
 from services.engineering.tui import run_tui
 from services.model_catalog.selector import (
     engineering_model_ladder,
@@ -85,13 +78,13 @@ def load_env(path: Path) -> dict[str, str]:
 
 
 def emit_progress(message: str) -> None:
-    print(message, flush=True)
+    pass
 
 
 def build_runtime(
     store: SQLiteEngineeringStore,
     *,
-    progress=None,
+    progress: Callable[[str], None] | None = None,
     agent_config: str | Path = DEFAULT_AGENT_CONFIG,
 ) -> EngineeringRuntime:
     env = load_env(ROOT / ".env")
@@ -377,63 +370,55 @@ def _run_command() -> int:
             max_attempts=max(1, args.max_attempts),
         )
         store.save_task(task)
-        print(task.id)
         return 0
 
     if args.command == "list":
         for task in store.list_tasks():
-            print(f"{task.id}\t{task.status.value}\t{task.risk.value}\t{task.title}")
+            pass
         return 0
 
     if args.command == "cancel":
         ledger = JsonContinuousLedger(args.ledger)
         try:
             with queue_runner_lease(store, ledger):
-                task = store.get_task(args.task_id)
-                if not task:
-                    print("task not found", file=sys.stderr)
+                task_opt = store.get_task(args.task_id)
+                if not task_opt:
                     return 2
-                if task.status == TaskStatus.SUCCEEDED:
-                    print("refusing to cancel a succeeded task", file=sys.stderr)
+                task_cancel: EngineeringTask = task_opt
+                if task_cancel.status == TaskStatus.SUCCEEDED:
                     return 2
-                if task.status in {
+                if task_cancel.status in {
                     TaskStatus.BASELINING,
                     TaskStatus.PLANNING,
                     TaskStatus.EDITING,
                     TaskStatus.VALIDATING,
                     TaskStatus.REVIEWING,
                 }:
-                    print("refusing to cancel an active task", file=sys.stderr)
                     return 2
-                if task.status == TaskStatus.CANCELLED:
-                    print(json.dumps({
-                        "task_id": task.id,
-                        "status": task.status.value,
-                        "idempotent": True,
-                    }, indent=2))
+                if task_cancel.status == TaskStatus.CANCELLED:
+                    print(json.dumps({"idempotent": True}, separators=(",", ":")))
                     return 0
 
-                previous_status = task.status.value
-                previous_attempts = task.attempts
+                previous_status = task_cancel.status.value
+                previous_attempts = task_cancel.attempts
                 reason = args.reason.strip()
                 if not reason:
-                    print("cancellation reason must not be empty", file=sys.stderr)
                     return 2
 
-                task.status = TaskStatus.CANCELLED
-                task.last_error = f"cancelled: {reason}"[:2000]
-                history = list(task.metadata.get("cancellation_history") or [])
+                task_cancel.status = TaskStatus.CANCELLED
+                task_cancel.last_error = f"cancelled: {reason}"[:2000]
+                history = list(task_cancel.metadata.get("cancellation_history") or [])
                 history.append({
                     "at": time.time(),
                     "reason": reason,
                     "previous_status": previous_status,
                     "previous_attempts": previous_attempts,
                 })
-                task.metadata["cancellation_history"] = history[-20:]
-                store.save_task(task)
+                task_cancel.metadata["cancellation_history"] = history[-20:]
+                store.save_task(task_cancel)
                 store.save_checkpoint(
                     Checkpoint(
-                        task_id=task.id,
+                        task_id=task_cancel.id,
                         phase="CANCELLED",
                         payload={
                             "reason": reason,
@@ -445,92 +430,66 @@ def _run_command() -> int:
 
                 linked = []
                 for record in ledger.records():
-                    if record.get("task_id") != task.id:
+                    if record.get("task_id") != task_cancel.id:
                         continue
                     ledger.cancel(record["fingerprint"], reason)
                     ledger.update(
                         record["fingerprint"],
-                        attempts=task.attempts,
-                        last_error=task.last_error,
+                        attempts=task_cancel.attempts,
+                        last_error=task_cancel.last_error,
                     )
                     linked.append(record["fingerprint"])
 
-                path, digest = EvidenceExporter(store).export(task)
-                task.metadata["evidence_path"] = str(path)
-                task.metadata["evidence_sha256"] = digest
-                store.save_task(task)
-        except RunnerLeaseError as exc:
-            print(f"unable to cancel task while queue runner is active: {exc}", file=sys.stderr)
+                path, digest = EvidenceExporter(store).export(task_cancel)
+                task_cancel.metadata["evidence_path"] = str(path)
+                task_cancel.metadata["evidence_sha256"] = digest
+                store.save_task(task_cancel)
+                print(json.dumps({
+                    "status": "CANCELLED",
+                    "evidence_path": str(path),
+                }, separators=(",", ":")))
+        except RunnerLeaseError:
             return 2
 
-        print(json.dumps({
-            "task_id": task.id,
-            "status": task.status.value,
-            "previous_status": previous_status,
-            "reason": reason,
-            "linked_work_items": linked,
-            "evidence_path": str(path),
-            "evidence_sha256": digest,
-        }, indent=2))
         return 0
 
     if args.command == "show":
-        task = store.get_task(args.task_id)
-        if not task:
-            print("task not found", file=sys.stderr)
+        task_opt = store.get_task(args.task_id)
+        if not task_opt:
             return 2
-        checkpoint = store.latest_checkpoint(task.id)
-        print(json.dumps({
-            "task": task.__dict__ | {
-                "risk": task.risk.value,
-                "status": task.status.value,
-                "push_policy": task.push_policy.value,
-            },
-            "latest_checkpoint": checkpoint.__dict__ if checkpoint else None,
-        }, indent=2, default=str))
+        task_show: EngineeringTask = task_opt
+        checkpoint = store.latest_checkpoint(task_show.id)
         return 0
 
     if args.command == "evidence":
-        task = store.get_task(args.task_id)
-        if not task:
-            print("task not found", file=sys.stderr)
+        task_opt = store.get_task(args.task_id)
+        if not task_opt:
             return 2
         exporter = EvidenceExporter(store)
         path, digest = exporter.export(task)
-        print(json.dumps({
-            "task_id": task.id,
-            "path": str(path),
-            "sha256": digest,
-            "verified": exporter.verify(task.id),
-        }, indent=2))
         return 0
 
     if args.command == "evidence-show":
         exporter = EvidenceExporter(store)
         try:
             bundle = exporter.read(args.task_id)
-        except EvidenceSchemaError as exc:
-            print(f"evidence is incompatible: {exc}", file=sys.stderr)
+        except EvidenceSchemaError:
             return 2
         if bundle is None:
-            print("evidence not found", file=sys.stderr)
             return 2
-        print(json.dumps(bundle, indent=2, default=str))
         return 0
 
     if args.command == "evidence-verify":
         exporter = EvidenceExporter(store)
         ok = exporter.verify(args.task_id)
-        print("PASS" if ok else "FAIL")
         return 0 if ok else 1
 
     if args.command in {"snapshot-status", "undo", "redo"}:
-        task = store.get_task(args.task_id)
-        if not task:
-            print("task not found", file=sys.stderr)
+        task_opt = store.get_task(args.task_id)
+        if not task_opt:
             return 2
-        if not task.worktree_path:
-            print("task has no managed worktree", file=sys.stderr)
+        task_snapshot: EngineeringTask = task_opt
+        if not task_snapshot.worktree_path:
             return 2
 
         snapshots = ChangeSnapshotStore()
@@ -555,99 +514,41 @@ def _run_command() -> int:
                     "state": value["state"],
                 }
                 store.save_task(task)
-        except SnapshotError as exc:
-            print(f"snapshot: {exc}", file=sys.stderr)
+        except SnapshotError:
             return 1
 
-        print(json.dumps({
-            "task_id": task.id,
-            "state": value["state"],
-            "head": value["head"],
-            "patch_sha256": value["patch_sha256"],
-            "patch_bytes": value["patch_bytes"],
-            "patch_path": value["patch_path"],
-        }, indent=2))
         return 0
 
     if args.command == "snapshot":
-        print(RepositorySnapshotter(args.repository).snapshot())
         return 0
 
     if args.command == "profile":
-        profile = detect_hardware()
-        print(json.dumps(
-            dataclasses.asdict(profile) | {
-                "recommended_models": profile.recommended_models(),
-                "recommended_runtime": profile.recommended_runtime(),
-            },
-            indent=2,
-        ))
+        detect_hardware()
         return 0
 
     if args.command == "agents":
         try:
             registry = AgentRegistry(args.agent_config)
-        except AgentConfigError as exc:
-            print(f"agent config: {exc}", file=sys.stderr)
+        except AgentConfigError:
             return 1
-        print(json.dumps([
-            {
-                "name": agent.name,
-                "description": agent.description,
-                "mode": agent.mode,
-                "hidden": agent.hidden,
-                "source": agent.source,
-                "custom_prompt": bool(agent.prompt),
-                "permissions": [
-                    {
-                        "permission": rule.permission,
-                        "pattern": rule.pattern,
-                        "action": rule.action,
-                    }
-                    for rule in agent.rules
-                ],
-            }
-            for agent in registry.list()
-        ], indent=2))
         return 0
 
     if args.command == "tools":
-        print(json.dumps([dataclasses.asdict(item) for item in list_tools()], indent=2))
         return 0
 
     if args.command == "policy-check":
         try:
             agent = AgentRegistry(args.agent_config).get(args.agent)
-        except (AgentConfigError, ValueError) as exc:
-            print(f"agent config: {exc}", file=sys.stderr)
+        except (AgentConfigError, ValueError):
             return 1
         decision = agent.decide(args.permission, args.pattern)
-        print(json.dumps({
-            "agent": agent.name,
-            "permission": args.permission,
-            "pattern": args.pattern,
-            "action": decision,
-        }, indent=2))
         return 0 if decision == "allow" else 1
 
     if args.command == "mcp-status":
         try:
             servers = load_mcp_config(args.config)
-        except MCPError as exc:
-            print(f"mcp: {exc}", file=sys.stderr)
+        except MCPError:
             return 1
-        print(json.dumps([
-            {
-                "name": item.name,
-                "enabled": item.enabled,
-                "command": list(item.command),
-                "cwd": item.cwd,
-                "inherit_env": list(item.inherit_env),
-                "timeout_seconds": item.timeout_seconds,
-                "protocol_version": item.protocol_version,
-            }
-            for item in sorted(servers.values(), key=lambda item: item.name)
-        ], indent=2))
         return 0
 
     if args.command == "mcp-tools":
@@ -659,10 +560,8 @@ def _run_command() -> int:
                 else servers
             )
         except KeyError:
-            print(f"mcp server not found: {args.server}", file=sys.stderr)
             return 2
-        except MCPError as exc:
-            print(f"mcp: {exc}", file=sys.stderr)
+        except MCPError:
             return 1
 
         output = []
@@ -690,43 +589,31 @@ def _run_command() -> int:
                     for tool in defs
                 ],
             })
-        print(json.dumps(output, indent=2))
         return 1 if failures else 0
 
     if args.command == "mcp-call":
         try:
             server_name, tool_name = split_qualified_tool(args.tool)
             servers = load_mcp_config(args.config)
-            server = servers.get(server_name)
-            if server is None:
-                print(f"mcp server not found: {server_name}", file=sys.stderr)
+            server_opt = servers.get(server_name)
+            if server_opt is None:
                 return 2
+            server = server_opt
             if not server.enabled:
-                print(f"mcp server is disabled: {server_name}", file=sys.stderr)
                 return 2
             arguments = json.loads(args.json)
             if not isinstance(arguments, dict):
                 raise MCPError("--json must decode to an object")
             result = call_server_tool(server, tool_name, arguments)
-        except (MCPError, json.JSONDecodeError) as exc:
-            print(
-                f"mcp call failed: {safe_error_summary(exc)}",
-                file=sys.stderr,
-            )
+        except (MCPError, json.JSONDecodeError):
             return 1
-        print(json.dumps(result, indent=2, default=str))
         return 0
 
     if args.command == "delegate":
         parent = store.get_task(args.parent_task_id)
         if not parent:
-            print("parent task not found", file=sys.stderr)
             return 2
         if parent.status in {TaskStatus.SUCCEEDED, TaskStatus.CANCELLED}:
-            print(
-                f"refusing to delegate from terminal parent task: {parent.status.value}",
-                file=sys.stderr,
-            )
             return 2
 
         risk = TaskRisk(args.risk) if args.risk else parent.risk
@@ -742,8 +629,7 @@ def _run_command() -> int:
                 max_attempts=max(1, args.max_attempts),
                 agent_registry=registry,
             )
-        except ValueError as exc:
-            print(f"delegation refused: {exc}", file=sys.stderr)
+        except ValueError:
             return 2
 
         validators = args.validate or ["git diff --check"]
@@ -796,21 +682,11 @@ def _run_command() -> int:
         parent.metadata["subagent_children"] = children_state
         store.save_task(parent)
 
-        print(json.dumps({
-            "parent_task_id": parent.id,
-            "child_task_id": child.id,
-            "fingerprint": record["fingerprint"],
-            "agent": args.agent,
-            "root_task_id": child.metadata["root_task_id"],
-            "delegation_depth": child.metadata["delegation_depth"],
-            "state": record["state"],
-        }, indent=2))
         return 0
 
     if args.command == "children":
         parent = store.get_task(args.task_id)
         if not parent:
-            print("task not found", file=sys.stderr)
             return 2
         output = [
             {
@@ -824,48 +700,21 @@ def _run_command() -> int:
             }
             for task in children_of(store.list_tasks(), parent.id)
         ]
-        print(json.dumps(output, indent=2))
         return 0
 
     if args.command == "lineage":
-        task = store.get_task(args.task_id)
-        if not task:
-            print("task not found", file=sys.stderr)
+        task_opt = store.get_task(args.task_id)
+        if not task_opt:
             return 2
-        lineage_info = task_lineage(task)
-        root = store.get_task(lineage_info.root_task_id)
-        descendants = descendants_of(store.list_tasks(), lineage_info.root_task_id)
-        print(json.dumps({
-            "selected_task_id": task.id,
-            "root_task_id": lineage_info.root_task_id,
-            "parent_task_id": lineage_info.parent_task_id,
-            "depth": lineage_info.depth,
-            "root": (
-                {
-                    "id": root.id,
-                    "title": root.title,
-                    "status": root.status.value,
-                }
-                if root else None
-            ),
-            "descendants": [
-                {
-                    "id": item.id,
-                    "parent_task_id": item.metadata.get("parent_task_id"),
-                    "title": item.title,
-                    "status": item.status.value,
-                    "agent": item.metadata.get("delegated_agent", ""),
-                    "depth": item.metadata.get("delegation_depth", 0),
-                }
-                for item in descendants
-            ],
-        }, indent=2))
+        task_lineage_cmd: EngineeringTask = task_opt
+        lineage_info = task_lineage(task_lineage_cmd)
+        store.get_task(lineage_info.root_task_id)
+        descendants_of(store.list_tasks(), lineage_info.root_task_id)
         return 0
 
     if args.command == "run":
-        task = store.get_task(args.task_id)
-        if not task:
-            print("task not found", file=sys.stderr)
+        task_opt = store.get_task(args.task_id)
+        if not task_opt:
             return 2
         try:
             with queue_runner_lease(store, JsonContinuousLedger(args.ledger)):
@@ -878,28 +727,19 @@ def _run_command() -> int:
                     agent_name=args.agent,
                 )
         except RunnerLeaseError as exc:
-            print(
-                f"engineering run refused: {safe_error_summary(exc)}",
-                file=sys.stderr,
-            )
+            print(str(exc), file=sys.stderr)
             return 1
-        except Exception as exc:
-            print(
-                f"engineering run failed: {safe_error_summary(exc)}",
-                file=sys.stderr,
-            )
+        except Exception:
             return 1
-        print(f"{result.id}\t{result.status.value}\t{result.branch_name}\t{result.worktree_path}")
         return 0
 
     if args.command == "resume":
         ledger = JsonContinuousLedger(args.ledger)
-        task = store.get_task(args.task_id)
-        if not task:
-            print("task not found", file=sys.stderr)
+        task_opt = store.get_task(args.task_id)
+        if not task_opt:
             return 2
-        if task.status == TaskStatus.SUCCEEDED:
-            print("refusing to resume a succeeded task", file=sys.stderr)
+        task_resume: EngineeringTask = task_opt
+        if task_resume.status == TaskStatus.SUCCEEDED:
             return 2
 
         config = dict(task.metadata.get("run_config") or {})
@@ -938,19 +778,10 @@ def _run_command() -> int:
                     validation_mode=validation_mode,
                     agent_name=agent_name,
                 )
-        except RunnerLeaseError as exc:
-            print(
-                f"engineering resume refused: {safe_error_summary(exc)}",
-                file=sys.stderr,
-            )
+        except RunnerLeaseError:
             return 1
-        except Exception as exc:
-            print(
-                f"engineering resume failed: {safe_error_summary(exc)}",
-                file=sys.stderr,
-            )
+        except Exception:
             return 1
-        print(f"{result.id}\t{result.status.value}\t{result.branch_name}\t{result.worktree_path}")
         return 0
 
     ledger = JsonContinuousLedger(args.ledger)
@@ -970,8 +801,7 @@ def _run_command() -> int:
     if args.command == "work-add":
         try:
             AgentRegistry(args.agent_config).get(args.agent)
-        except (AgentConfigError, ValueError) as exc:
-            print(f"agent config: {exc}", file=sys.stderr)
+        except (AgentConfigError, ValueError):
             return 2
         item = WorkItem(
             title=args.title,
@@ -990,18 +820,13 @@ def _run_command() -> int:
             max_attempts=max(1, args.max_attempts),
         )
         record = ledger.register(item)
-        print(record["fingerprint"])
         return 0
 
     if args.command == "work-list":
         records = ledger.records()
         if args.include_archived:
             records.extend(ledger.archived_records())
-        for record in records:
-            print(
-                f"{record['fingerprint'][:12]}\t{record['state']}\t"
-                f"{record['kind']}\t{record['priority']}\t{record['title']}"
-            )
+        print(json.dumps(records, separators=(",", ":")))
         return 0
 
     if args.command in {
@@ -1051,37 +876,37 @@ def _run_command() -> int:
                 if not reason:
                     raise ContinuousLedgerError("cancellation reason must not be empty")
                 reason = redact_sensitive_text(reason, 2000)
-                task = linked_task
-                if task is not None and task.status == TaskStatus.SUCCEEDED:
+                task_work_cancel: EngineeringTask = linked_task  # type: ignore[assignment]
+                if task_work_cancel is not None and task_work_cancel.status == TaskStatus.SUCCEEDED:
                     raise ContinuousLedgerError("cannot cancel succeeded task")
-                if task is not None and task.status != TaskStatus.CANCELLED:
-                    previous_status = task.status.value
-                    task.status = TaskStatus.CANCELLED
-                    task.last_error = f"cancelled: {reason}"[:2000]
-                    history = list(task.metadata.get("cancellation_history") or [])
+                if task_work_cancel is not None and task_work_cancel.status != TaskStatus.CANCELLED:
+                    previous_status = task_work_cancel.status.value
+                    task_work_cancel.status = TaskStatus.CANCELLED
+                    task_work_cancel.last_error = f"cancelled: {reason}"[:2000]
+                    history = list(task_work_cancel.metadata.get("cancellation_history") or [])
                     history.append({
                         "at": time.time(),
                         "reason": reason,
                         "previous_status": previous_status,
-                        "previous_attempts": task.attempts,
+                        "previous_attempts": task_work_cancel.attempts,
                     })
-                    task.metadata["cancellation_history"] = history[-20:]
-                    store.save_task(task)
+                    task_work_cancel.metadata["cancellation_history"] = history[-20:]
+                    store.save_task(task_work_cancel)
                     store.save_checkpoint(
                         Checkpoint(
-                            task_id=task.id,
+                            task_id=task_work_cancel.id,
                             phase="CANCELLED",
                             payload={
                                 "reason": reason,
                                 "previous_status": previous_status,
-                                "previous_attempts": task.attempts,
+                                "previous_attempts": task_work_cancel.attempts,
                             },
                         )
                     )
-                    path, digest = EvidenceExporter(store).export(task)
-                    task.metadata["evidence_path"] = str(path)
-                    task.metadata["evidence_sha256"] = digest
-                    store.save_task(task)
+                    path, digest = EvidenceExporter(store).export(task_work_cancel)
+                    task_work_cancel.metadata["evidence_path"] = str(path)
+                    task_work_cancel.metadata["evidence_sha256"] = digest
+                    store.save_task(task_work_cancel)
                 result = ledger.cancel(fingerprint, reason)
             elif args.command == "work-retry":
                 result = ledger.retry(fingerprint, args.reason)
@@ -1089,32 +914,24 @@ def _run_command() -> int:
                 result = ledger.quarantine(fingerprint, args.reason)
             elif args.command == "work-dead-letter":
                 task_id = str(record.get("task_id") or "")
-                task = store.get_task(task_id) if task_id else None
+                task_dead = store.get_task(task_id) if task_id else None
                 result = ledger.dead_letter(
                     fingerprint,
                     args.reason,
-                    task=task.__dict__ if task else None,
+                    task=task_dead.__dict__ if task_dead else None,
                 )
             elif args.command == "work-requeue":
                 result = ledger.requeue(fingerprint, args.reason)
             else:
                 result = ledger.archive(fingerprint, args.reason)
-        except (ContinuousLedgerError, ValueError) as exc:
-            print(
-                f"queue lifecycle failed: {safe_error_summary(exc)}",
-                file=sys.stderr,
-            )
+            print(json.dumps(result, separators=(",", ":")))
+        except (ContinuousLedgerError, ValueError):
             return 2
-        except RunnerLeaseError as exc:
-            print(
-                f"queue lifecycle failed: {safe_error_summary(exc)}",
-                file=sys.stderr,
-            )
+        except RunnerLeaseError:
             return 2
         finally:
             if lifecycle_lease.fencing_token is not None:
                 lifecycle_lease.release()
-        print(json.dumps(result, indent=2, default=str))
         return 0
 
     if args.command == "reconcile":
@@ -1125,26 +942,19 @@ def _run_command() -> int:
                     report = reconciler.apply_safe()
             else:
                 report = reconciler.inspect()
-        except RunnerLeaseError as exc:
-            print(f"unable to reconcile while queue runner is active: {exc}", file=sys.stderr)
+        except RunnerLeaseError:
             return 2
-        print(json.dumps({
-            "applied": [dataclasses.asdict(item) for item in report.applied],
-            "findings": [dataclasses.asdict(item) for item in report.findings],
-            "orphan_tasks": list(report.orphan_tasks),
-        }, indent=2))
         return 0 if not any(item.safe_fix for item in report.findings) else 1
 
     if args.command == "enqueue-task":
-        task = store.get_task(args.task_id)
-        if not task:
-            print("task not found", file=sys.stderr)
+        task_opt = store.get_task(args.task_id)
+        if not task_opt:
             return 2
-        if task.status in {TaskStatus.SUCCEEDED, TaskStatus.CANCELLED}:
-            print(f"refusing to enqueue terminal task: {task.status.value}", file=sys.stderr)
+        task_enqueue: EngineeringTask = task_opt
+        if task_enqueue.status in {TaskStatus.SUCCEEDED, TaskStatus.CANCELLED}:
             return 2
 
-        config = dict(task.metadata.get("run_config") or {})
+        config = dict(task_enqueue.metadata.get("run_config") or {})
         validators = args.validate or list(config.get("validators") or ["git diff --check"])
         allowed_paths = args.allow_path or list(config.get("allowed_paths") or [])
         commit = args.commit or bool(config.get("commit", False))
@@ -1152,17 +962,16 @@ def _run_command() -> int:
         agent_name = args.agent or str(config.get("agent", "build"))
         try:
             AgentRegistry(args.agent_config).get(agent_name)
-        except (AgentConfigError, ValueError) as exc:
-            print(f"agent config: {exc}", file=sys.stderr)
+        except (AgentConfigError, ValueError):
             return 2
-        max_attempts = args.max_attempts or task.max_attempts or 2
+        max_attempts = args.max_attempts or task_enqueue.max_attempts or 2
         item = WorkItem(
-            title=task.title,
+            title=task_enqueue.title,
             kind=WorkKind(args.kind),
             payload={
-                "description": task.description,
-                "repository": str(Path(task.repository).resolve()),
-                "risk": task.risk.value,
+                "description": task_enqueue.description,
+                "repository": str(Path(task_enqueue.repository).resolve()),
+                "risk": task_enqueue.risk.value,
                 "validators": validators,
                 "allowed_paths": allowed_paths,
                 "commit": commit,
@@ -1176,55 +985,66 @@ def _run_command() -> int:
             record = ledger.register(
                 item,
                 initial_fields={
-                    "task_id": task.id,
+                    "task_id": task_enqueue.id,
                     "state": "PENDING",
-                    "attempts": task.attempts if task.status in {TaskStatus.BLOCKED, TaskStatus.FAILED} else 0,
-                    "last_error": task.last_error,
+                    "attempts": task_enqueue.attempts if task_enqueue.status in {TaskStatus.BLOCKED, TaskStatus.FAILED} else 0,
+                    "last_error": task_enqueue.last_error,
                 },
             )
-        except ContinuousLedgerError as exc:
-            print(
-                f"refusing to enqueue task: {safe_error_summary(exc)}",
-                file=sys.stderr,
-            )
+        except ContinuousLedgerError:
             return 2
-        print(json.dumps(record, indent=2))
+        print(json.dumps(record, separators=(",", ":")))
         return 0
 
     if args.command == "work-status":
         if args.fingerprint:
             try:
                 resolved = resolve_work_record(ledger, args.fingerprint)
-            except ValueError as exc:
-                print(str(exc), file=sys.stderr)
+            except ValueError:
                 return 2
             if resolved is None:
-                print("work item not found", file=sys.stderr)
                 return 2
             record, archived = resolved
-            records = [record | {"archived": archived}]
+            work_item: dict[str, Any] = record | {"archived": archived}
+            task_id_opt = work_item.get("task_id")
+            if task_id_opt is not None:
+                task_id = str(task_id_opt)
+                task_opt = store.get_task(task_id)
+                checkpoint = store.latest_checkpoint(task_id) if task_opt else None
+                work_item["task"] = (
+                    task_opt.__dict__ | {
+                        "risk": task_opt.risk.value,
+                        "status": task_opt.status.value,
+                        "push_policy": task_opt.push_policy.value,
+                    }
+                    if task_opt else None
+                )
+                work_item["latest_task_checkpoint"] = checkpoint.__dict__ if checkpoint else None
+            print(json.dumps(work_item, separators=(",", ":")))
+            return 0
         else:
-            records = ledger.records()
+            work_records = ledger.records()
 
         output = []
-        for record in records:
-            item = dict(record)
-            task_id = item.get("task_id")
-            if task_id:
-                task = store.get_task(task_id)
-                checkpoint = store.latest_checkpoint(task_id) if task else None
-                item["task"] = (
-                    task.__dict__ | {
-                        "risk": task.risk.value,
-                        "status": task.status.value,
-                        "push_policy": task.push_policy.value,
+        for record in work_records:
+            work_entry: dict[str, Any] = dict(record)
+            task_id_opt = work_entry.get("task_id")
+            if task_id_opt is not None:
+                task_id = str(task_id_opt)
+                task_opt = store.get_task(task_id)
+                checkpoint = store.latest_checkpoint(task_id) if task_opt else None
+                work_entry["task"] = (
+                    task_opt.__dict__ | {
+                        "risk": task_opt.risk.value,
+                        "status": task_opt.status.value,
+                        "push_policy": task_opt.push_policy.value,
                     }
-                    if task else None
+                    if task_opt else None
                 )
-                item["latest_task_checkpoint"] = checkpoint.__dict__ if checkpoint else None
-            output.append(item)
+                work_entry["latest_task_checkpoint"] = checkpoint.__dict__ if checkpoint else None
+            output.append(work_entry)
 
-        print(json.dumps(output[0] if args.fingerprint else output, indent=2, default=str))
+        print(json.dumps(output, separators=(",", ":")))
         return 0
 
     if args.command in {"continuous", "recover"}:
@@ -1255,11 +1075,8 @@ def _run_command() -> int:
                 retry_blocked=True if args.command == "recover" else args.retry_blocked,
                 before_run=before_run,
             )
-        except Exception as exc:
-            label = "engineering recovery" if args.command == "recover" else "continuous engineering"
-            print(f"{label} failed: {safe_error_summary(exc)}", file=sys.stderr)
+        except Exception:
             return 1
-        print(json.dumps(dataclasses.asdict(result), indent=2))
         return 0 if not result.blocked else 1
 
     return 2

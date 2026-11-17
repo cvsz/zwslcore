@@ -22,7 +22,7 @@ class Provider:
     def __init__(self):
         self.calls = []
 
-    def preflight(self) -> None:
+    def preflight(self, *, request_id: str | None = None) -> None:
         return None
 
     def chat(self, prompt, system, **kwargs):

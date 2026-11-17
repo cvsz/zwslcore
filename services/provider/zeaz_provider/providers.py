@@ -17,6 +17,9 @@ from .structured import (
     structured_schema,
 )
 
+# HTTP status code constants
+_HTTP_ERROR_THRESHOLD = 400
+
 
 class ProviderClient:
     def __init__(
@@ -110,7 +113,7 @@ class ProviderClient:
                 json=payload,
                 timeout=self.config.timeout_seconds,
             ) as response:
-                if response.status_code >= 400:
+                if response.status_code >= _HTTP_ERROR_THRESHOLD:
                     body = (await _read_at_most(response, 8192)).decode(errors="replace")
                     raise classify_http_error(
                         response.status_code,
@@ -191,7 +194,7 @@ class ProviderClient:
                 ) from exc
             try:
                 async with response_context as response:
-                    if response.status_code >= 400:
+                    if response.status_code >= _HTTP_ERROR_THRESHOLD:
                         error_body = (await _read_at_most(response, 8192)).decode(errors="replace")
                         raise classify_http_error(
                             response.status_code,

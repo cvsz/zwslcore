@@ -3,11 +3,11 @@
 import http.server
 import json
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import threading
 import unittest
+from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "ai.sh"
 
@@ -62,7 +62,7 @@ class CliTests(unittest.TestCase):
             AI_API_URL=f"http://127.0.0.1:{self.server.server_port}/v1/chat/completions",
             AI_API_KEY="test-token", AI_MODEL="zeaz-auto")
     def run_cli(self,*args):
-        return subprocess.run(["bash",str(self.script),*args],env=self.env,
+        return subprocess.run(["bash",str(self.script),*args],check=False, env=self.env,
             capture_output=True,text=True,timeout=20)
     def test_offline_selftest(self):
         result=self.run_cli("selftest")
@@ -106,7 +106,7 @@ class CliTests(unittest.TestCase):
         env = dict(self.env)
         for key in ("AI_API_URL", "AI_MODEL", "AI_API_KEY", "GEMINI_API_KEY"):
             env.pop(key, None)
-        result = subprocess.run(["bash", str(self.script), "doctor"], env=env,
+        result = subprocess.run(["bash", str(self.script), "doctor"], check=False, env=env,
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("gemini-3.8-flash", result.stdout)
@@ -124,7 +124,7 @@ class CliTests(unittest.TestCase):
         env = dict(self.env)
         for key in ("AI_API_URL", "AI_API_KEY", "GEMINI_API_KEY"):
             env.pop(key, None)
-        result = subprocess.run(["bash", str(self.script), "doctor"], env=env,
+        result = subprocess.run(["bash", str(self.script), "doctor"], check=False, env=env,
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Credential configured: False", result.stdout)
@@ -138,7 +138,7 @@ class CliTests(unittest.TestCase):
         env = dict(self.env)
         for key in ("AI_API_KEY", "PROVIDER_CLIENT_KEY"):
             env.pop(key, None)
-        result = subprocess.run(["bash", str(self.script), "doctor"], env=env,
+        result = subprocess.run(["bash", str(self.script), "doctor"], check=False, env=env,
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Credential configured: True", result.stdout)
@@ -158,7 +158,7 @@ class CliTests(unittest.TestCase):
             env.pop(key, None)
         # Explicitly empty (not absent) API key must suppress the fallback.
         env["AI_API_KEY"] = ""
-        result = subprocess.run(["bash", str(self.script), "doctor"], env=env,
+        result = subprocess.run(["bash", str(self.script), "doctor"], check=False, env=env,
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Credential configured: False", result.stdout)
@@ -170,7 +170,7 @@ class CliTests(unittest.TestCase):
         (self.checkout / ".env").chmod(0o600)
         env = dict(self.env)
         env.pop("AI_MODEL", None)
-        result = subprocess.run(["bash", str(self.script), "doctor"], env=env,
+        result = subprocess.run(["bash", str(self.script), "doctor"], check=False, env=env,
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(marker.exists())
