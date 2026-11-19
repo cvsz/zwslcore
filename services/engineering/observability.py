@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TextIO
 
+
 @dataclass(frozen=True)
 class EngineeringEvent:
     request_id: str
