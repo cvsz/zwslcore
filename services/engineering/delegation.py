@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Iterable
 
 from .agents import AgentRegistry
 from .models import EngineeringTask, TaskRisk

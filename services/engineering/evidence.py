@@ -66,7 +66,7 @@ class EvidenceExporter:
         target = target_dir / "evidence.json"
         checksum = target_dir / "evidence.sha256"
         self._atomic_write(target, encoded)
-        self._atomic_write(checksum, f"{digest}  evidence.json\n".encode("utf-8"))
+        self._atomic_write(checksum, f"{digest}  evidence.json\n".encode())
         return target, digest
 
     def read(self, task_id: str) -> dict[str, Any] | None:
@@ -172,9 +172,7 @@ class EvidenceExporter:
             ]
         elif checkpoint.phase == "FAILED":
             summary["error"] = _redact_text(str(payload.get("error", "")))
-        elif checkpoint.phase == "BASELINE":
-            summary["branch"] = str(payload.get("branch", ""))
-        elif checkpoint.phase == "COMMIT":
+        elif checkpoint.phase == "BASELINE" or checkpoint.phase == "COMMIT":
             summary["branch"] = str(payload.get("branch", ""))
 
         return summary

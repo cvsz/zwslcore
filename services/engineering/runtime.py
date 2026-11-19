@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 import shlex
-import socket
 import subprocess
 import time
 import urllib.error
@@ -96,7 +95,7 @@ class ProviderClient:
             except urllib.error.URLError as exc:
                 last_transport = exc
                 reason = exc.reason
-            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, TimeoutError, socket.timeout, OSError) as exc:
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, TimeoutError, OSError) as exc:
                 last_transport = exc
                 reason = exc
 
