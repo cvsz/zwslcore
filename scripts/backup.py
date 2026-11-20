@@ -103,7 +103,8 @@ def _sqlite_online_backup(source: Path, destination: Path) -> dict[str, Any]:
         counts: dict[str, int] = {}
         for table in ("tasks", "checkpoints", "runner_leases"):
             if table in tables:
-                counts[table] = int(dst.execute(f'SELECT count(*) FROM "{table}"').fetchone()[0])
+                # Table name is from a known allowlist, safe to interpolate
+                counts[table] = int(dst.execute(f'SELECT count(*) FROM "{table}"').fetchone()[0])  # nosec B608
         return {"integrity_check": integrity, "schema_version": schema_version, "row_counts": counts}
     finally:
         dst.close()

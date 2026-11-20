@@ -458,9 +458,9 @@ zwslcore can optionally sync provider-agnostic model metadata and provider-speci
 ```bash
 make models-dev-sync
 make models-dev-stats
-python3 scripts/models-dev.py providers
-python3 scripts/models-dev.py lookup openai/gpt-5.4
-python3 scripts/models-dev.py recommend --structured-output --min-context 4096
+python3 scripts/models_dev.py providers
+python3 scripts/models_dev.py lookup openai/gpt-5.4
+python3 scripts/models_dev.py recommend --structured-output --min-context 4096
 ```
 
 The combined `catalog.json?type=all` endpoint is cached atomically under `~/.zwslcore/cache/models.dev.catalog.json`. Fresh cache is preferred; network refresh falls back to a stale cache when the service is unavailable. The cache retains canonical model metadata separately from provider offerings, including published capabilities, token limits and provider pricing. No provider API keys are sent to Models.dev.
@@ -484,7 +484,7 @@ Local Ollama models are the default and require no provider API key.
 To inspect currently declared zero-price OpenRouter text models:
 
 ```bash
-python3 scripts/sync-free-models.py
+python3 scripts/sync_free_models.py
 ```
 
 Optionally export `OPENROUTER_API_KEY` before discovery or configure it only in the untracked `.env`. External free tiers and quotas can change and are not treated as permanently free.
@@ -551,7 +551,7 @@ scripts/
   install.sh
   doctor.sh
   create-local-models.sh
-  sync-free-models.py
+  sync_free_models.py
   engineer.py
 ```
 

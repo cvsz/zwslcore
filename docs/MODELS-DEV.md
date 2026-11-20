@@ -17,10 +17,10 @@ Models.dev publishes provider costs in USD per million tokens. zwslcore preserve
 
 ## Commands
 
-    python3 scripts/models-dev.py sync
-    python3 scripts/models-dev.py stats
-    python3 scripts/models-dev.py providers
-    python3 scripts/models-dev.py lookup <MODEL_ID>
+    python3 scripts/models_dev.py sync
+    python3 scripts/models_dev.py stats
+    python3 scripts/models_dev.py providers
+    python3 scripts/models_dev.py lookup <MODEL_ID>
 
 Equivalent Make targets:
 
@@ -54,7 +54,7 @@ This separation lets zwslcore use current model context, capability, pricing and
 
 Rank candidates:
 
-    python3 scripts/models-dev.py recommend --structured-output --min-context 4096
+    python3 scripts/models_dev.py recommend --structured-output --min-context 4096
 
 Optional filters:
 

@@ -11,6 +11,7 @@ from scripts.engineer import main as engineer_main
 from services.engineering.continuous import ContinuousEngineeringRunner
 from services.engineering.delegation import (
     MAX_DELEGATION_DEPTH,
+    ChildTaskConfig,
     children_of,
     delegated_allowed_paths,
     descendants_of,
@@ -103,12 +104,12 @@ class DelegationTests(unittest.TestCase):
 
     def test_child_records_parent_root_depth_and_agent(self):
         parent = EngineeringTask(title="parent", repository="/tmp/repo")
-        child = make_child_task(
-            parent,
+        config = ChildTaskConfig(
             title="child",
             description="inspect provider",
             agent_name="explore",
         )
+        child = make_child_task(parent, config)
         self.assertEqual(child.metadata["parent_task_id"], parent.id)
         self.assertEqual(child.metadata["root_task_id"], parent.id)
         self.assertEqual(child.metadata["delegation_depth"], 1)
@@ -118,41 +119,39 @@ class DelegationTests(unittest.TestCase):
     def test_primary_agent_cannot_be_delegated(self):
         parent = EngineeringTask(title="parent")
         with self.assertRaisesRegex(ValueError, "not a subagent"):
-            make_child_task(
-                parent,
+            config = ChildTaskConfig(
                 title="bad",
                 description="",
                 agent_name="build",
             )
+            make_child_task(parent, config)
 
     def test_delegation_depth_is_bounded(self):
         task = EngineeringTask(title="root")
         for depth in range(1, MAX_DELEGATION_DEPTH + 1):
-            task = make_child_task(
-                task,
+            config = ChildTaskConfig(
                 title=f"child-{depth}",
                 description="",
                 agent_name="general",
             )
+            task = make_child_task(task, config)
             self.assertEqual(task.metadata["delegation_depth"], depth)
-        with self.assertRaisesRegex(ValueError, "exceeds maximum"):
-            make_child_task(
-                task,
-                title="too-deep",
-                description="",
-                agent_name="general",
-            )
-
-    def test_children_and_descendants_are_deterministic(self):
-        root = EngineeringTask(title="root")
-        child_a = make_child_task(root, title="a", description="", agent_name="review")
-        child_b = make_child_task(root, title="b", description="", agent_name="explore")
-        grandchild = make_child_task(
-            child_a,
-            title="grandchild",
+        config = ChildTaskConfig(
+            title="too-deep",
             description="",
             agent_name="general",
         )
+        with self.assertRaisesRegex(ValueError, "exceeds maximum"):
+            make_child_task(task, config)
+
+    def test_children_and_descendants_are_deterministic(self):
+        root = EngineeringTask(title="root")
+        config_a = ChildTaskConfig(title="a", description="", agent_name="review")
+        config_b = ChildTaskConfig(title="b", description="", agent_name="explore")
+        child_a = make_child_task(root, config_a)
+        child_b = make_child_task(root, config_b)
+        config_gc = ChildTaskConfig(title="grandchild", description="", agent_name="general")
+        grandchild = make_child_task(child_a, config_gc)
         child_a.created_at = 2.0
         child_b.created_at = 1.0
         grandchild.created_at = 3.0
@@ -173,12 +172,12 @@ class DelegationTests(unittest.TestCase):
             store = SQLiteEngineeringStore(root / "state.db")
             ledger = JsonContinuousLedger(root / "ledger.json")
             parent = EngineeringTask(title="parent")
-            child = make_child_task(
-                parent,
+            config = ChildTaskConfig(
                 title="child",
                 description="",
                 agent_name="general",
             )
+            child = make_child_task(parent, config)
             child.status = TaskStatus.SUCCEEDED
             child.attempts = 1
             child.metadata["agent"] = "general"

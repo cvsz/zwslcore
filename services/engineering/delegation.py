@@ -8,6 +8,17 @@ from pathlib import PurePosixPath
 from .agents import AgentRegistry
 from .models import EngineeringTask, TaskRisk
 
+
+@dataclass(frozen=True)
+class ChildTaskConfig:
+    title: str
+    description: str
+    agent_name: str
+    risk: TaskRisk | None = None
+    max_attempts: int = 2
+    agent_registry: AgentRegistry | None = None
+
+
 MAX_DELEGATION_DEPTH = 4
 
 
@@ -44,15 +55,12 @@ def delegated_allowed_paths(
 def _normalize_allowed_paths(paths: Iterable[str] | None) -> set[str]:
     if paths is None:
         return set()
-    if isinstance(paths, str):
-        values = [paths]
-    else:
-        values = list(paths)
+    values = [paths] if isinstance(paths, str) else list(paths)
 
     normalized: set[str] = set()
     for value in values:
         if not isinstance(value, str):
-            raise ValueError("allowed paths must be strings")
+            raise TypeError("allowed paths must be strings")
         raw = value.strip()
         path = PurePosixPath(raw)
         if (
@@ -90,19 +98,13 @@ def task_lineage(task: EngineeringTask) -> Lineage:
 
 def make_child_task(
     parent: EngineeringTask,
-    *,
-    title: str,
-    description: str,
-    agent_name: str,
-    risk: TaskRisk | None = None,
-    max_attempts: int = 2,
-    agent_registry: AgentRegistry | None = None,
+    config: ChildTaskConfig,
 ) -> EngineeringTask:
-    registry = agent_registry or AgentRegistry(path=None)
-    agent = registry.get(agent_name)
+    registry = config.agent_registry or AgentRegistry(path=None)
+    agent = registry.get(config.agent_name)
     if agent.mode != "subagent":
         raise ValueError(
-            f"agent {agent_name!r} is not a subagent; choose one of: explore, general, review"
+            f"agent {config.agent_name!r} is not a subagent; choose one of: explore, general, review"
         )
 
     lineage = task_lineage(parent)
@@ -113,11 +115,11 @@ def make_child_task(
         )
 
     child = EngineeringTask(
-        title=title,
-        description=description,
+        title=config.title,
+        description=config.description,
         repository=parent.repository,
-        risk=risk or parent.risk,
-        max_attempts=max(1, int(max_attempts)),
+        risk=config.risk or parent.risk,
+        max_attempts=max(1, int(config.max_attempts)),
     )
     child.metadata.update(
         {

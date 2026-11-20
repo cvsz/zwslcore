@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 
-class WorkKind(str, enum.Enum):
+class WorkKind(enum.StrEnum):
     UPGRADE = "UPGRADE"
     UPDATE = "UPDATE"
     IMPLEMENT_FEATURE = "IMPLEMENT_FEATURE"

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from services.engineering.agents import AgentConfigError, AgentRegistry
-from services.engineering.delegation import make_child_task
+from services.engineering.delegation import ChildTaskConfig, make_child_task
 from services.engineering.evidence import EvidenceExporter
 from services.engineering.models import EngineeringTask, TaskStatus
 from services.engineering.runtime import EngineeringRuntime
@@ -141,13 +141,13 @@ class AgentRegistryTests(unittest.TestCase):
             })
             registry = AgentRegistry(path)
             parent = EngineeringTask(title="parent")
-            child = make_child_task(
-                parent,
+            config = ChildTaskConfig(
                 title="inspect",
                 description="review provider",
                 agent_name="inspector",
                 agent_registry=registry,
             )
+            child = make_child_task(parent, config)
             self.assertEqual(child.metadata["delegated_agent"], "inspector")
 
 

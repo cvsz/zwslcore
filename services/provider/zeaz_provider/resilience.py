@@ -140,7 +140,14 @@ class ResilienceExecutor:
             else:
                 await self.breaker.success()
                 return result
-        assert last_error is not None
+        if last_error is None:
+            raise ProviderError(
+                "Retry loop exhausted without error",
+                500,
+                kind=ErrorKind.UPSTREAM,
+                fallback_allowed=False,
+                circuit_failure=False,
+            )
         raise last_error
 
     @staticmethod
