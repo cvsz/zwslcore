@@ -21,6 +21,7 @@ from services.engineering.agents import (
 from services.engineering.change_snapshot import ChangeSnapshotStore, SnapshotError
 from services.engineering.continuous import ContinuousEngineeringRunner
 from services.engineering.delegation import (
+    ChildTaskConfig,
     children_of,
     delegated_allowed_paths,
     descendants_of,
@@ -620,8 +621,7 @@ def _run_command() -> int:
         try:
             registry = AgentRegistry(args.agent_config)
             allowed_paths = delegated_allowed_paths(parent, args.allow_path)
-            child = make_child_task(
-                parent,
+            config = ChildTaskConfig(
                 title=args.title,
                 description=args.description,
                 agent_name=args.agent,
@@ -629,6 +629,7 @@ def _run_command() -> int:
                 max_attempts=max(1, args.max_attempts),
                 agent_registry=registry,
             )
+            child = make_child_task(parent, config)
         except ValueError:
             return 2
 

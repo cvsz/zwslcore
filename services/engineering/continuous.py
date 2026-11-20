@@ -14,6 +14,13 @@ from .observability import safe_error_class
 from .runtime import EngineeringRuntime, ProviderTransportError
 from .store import SQLiteEngineeringStore
 
+# Constants
+MAX_CHILDREN_TRACKED = 64
+
+
+def _noop_progress(_: str) -> None:
+    pass
+
 
 @dataclass
 class ExecutionResult:
@@ -37,7 +44,7 @@ class ContinuousEngineeringRunner:
         self.store = store
         self.ledger = ledger
         self.runtime = runtime
-        self.progress = progress or (lambda message: None)
+        self.progress = progress or _noop_progress
 
     def add(self, item: WorkItem) -> dict[str, Any]:
         return self.ledger.register(item)
@@ -57,8 +64,8 @@ class ContinuousEngineeringRunner:
             "last_error": task.last_error[:500],
             "evidence_path": str(task.metadata.get("evidence_path") or ""),
         }
-        if len(children) > 64:
-            keep = sorted(children)[-64:]
+        if len(children) > MAX_CHILDREN_TRACKED:
+            keep = sorted(children)[-MAX_CHILDREN_TRACKED:]
             children = {key: children[key] for key in keep}
         parent.metadata["subagent_children"] = children
         self.store.save_task(parent)
@@ -91,7 +98,9 @@ class ContinuousEngineeringRunner:
         lease.assert_owned()
         seed = self.ledger.pending(retry_blocked=retry_blocked)
         reset_once: set[str] = set()
-        self.progress(f"[continuous] pending={len(seed)} max_iterations={max_iterations} retry_blocked={retry_blocked}")
+        self.progress(
+            f"[continuous] pending={len(seed)} max_iterations={max_iterations} retry_blocked={retry_blocked}"
+        )
 
         def implement(item: WorkItem) -> ExecutionResult:
             lease.assert_owned()

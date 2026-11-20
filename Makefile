@@ -104,16 +104,16 @@ models-manifest:
 	python3 scripts/model_manifest.py
 
 free-models:
-	python3 scripts/sync-free-models.py
+	python3 scripts/sync_free_models.py
 
 models-dev-sync:
-	python3 scripts/models-dev.py sync
+	python3 scripts/models_dev.py sync
 
 models-dev-stats:
-	python3 scripts/models-dev.py stats
+	python3 scripts/models_dev.py stats
 
 models-dev-recommend:
-	python3 scripts/models-dev.py recommend --structured-output --min-context 4096
+	python3 scripts/models_dev.py recommend --structured-output --min-context 4096
 
 engineer-tasks:
 	python3 scripts/engineer.py list
@@ -168,7 +168,7 @@ release:
 	echo "  4. Verify attestation: gh attestation verify artifacts/provider-image.tar.gz --repo OWNER/REPO"
 
 ci: validate-template
-	python3 -m py_compile scripts/sync-free-models.py scripts/models-dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
+	python3 -m py_compile scripts/sync_free_models.py scripts/models_dev.py services/model_catalog/catalog.py services/model_catalog/models_dev.py services/model_catalog/selector.py
 	python3 -m compileall -q services/provider/zeaz_provider services/engineering scripts/engineer.py
 	python3 -m unittest discover -s tests -v
 	bash -n scripts/install.sh

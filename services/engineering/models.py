@@ -7,7 +7,7 @@ import uuid
 from typing import Any
 
 
-class TaskStatus(str, enum.Enum):
+class TaskStatus(enum.StrEnum):
     CREATED = "CREATED"
     BASELINING = "BASELINING"
     PLANNING = "PLANNING"
@@ -20,14 +20,14 @@ class TaskStatus(str, enum.Enum):
     CANCELLED = "CANCELLED"
 
 
-class TaskRisk(str, enum.Enum):
+class TaskRisk(enum.StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
 
 
-class PushPolicy(str, enum.Enum):
+class PushPolicy(enum.StrEnum):
     AUTO_LOCAL_ONLY = "AUTO_LOCAL_ONLY"
     APPROVAL_BEFORE_PUSH = "APPROVAL_BEFORE_PUSH"
     AUTO_PUSH_ALLOWED = "AUTO_PUSH_ALLOWED"

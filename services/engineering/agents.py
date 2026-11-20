@@ -37,7 +37,8 @@ _BUILTINS: dict[str, AgentProfile] = {
         "Default implementation agent with bounded edit/validate/commit capabilities.",
         "primary",
         False,
-        _BASE + (
+        (
+            *_BASE,
             PermissionRule("edit", "*", "allow"),
             PermissionRule("validate", "*", "allow"),
             PermissionRule("commit", "*", "allow"),
@@ -70,7 +71,8 @@ _BUILTINS: dict[str, AgentProfile] = {
         "General-purpose delegated agent with edit and validation capability but no commit.",
         "subagent",
         False,
-        _BASE + (
+        (
+            *_BASE,
             PermissionRule("edit", "*", "allow"),
             PermissionRule("validate", "*", "allow"),
             PermissionRule("delegate", "*", "allow"),

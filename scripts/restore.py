@@ -6,14 +6,32 @@ import argparse
 import datetime as dt
 import hashlib
 import json
-import os
 import shutil
 import sqlite3
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
+
+
+@dataclass(slots=True)
+class RestoreReportData:
+    backup_path: Path
+    target_path: Path
+    manifest: dict[str, Any]
+    copied: dict[str, Any]
+    sqlite_result: dict[str, Any]
+    ledger_result: dict[str, Any]
+    evidence_result: dict[str, Any]
+    cache_result: dict[str, Any]
+    elapsed: float
+    created_epoch: float
+    webui_policy: str
+    webui_excluded: bool
+    started: float
+
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -81,7 +99,7 @@ def _verify_and_copy_files(backup: Path, target: Path, manifest: dict[str, Any])
         destination = target.joinpath(*relative.parts)
         destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
-        os.chmod(destination, 0o600)
+        destination.chmod(0o600)
         results[raw] = {"verified": True, "sha256": actual_hash, "bytes": actual_size}
     return results
 
@@ -94,11 +112,11 @@ def _verify_sqlite(path: Path) -> dict[str, Any]:
     try:
         integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
         if integrity != "ok":
-            raise RestoreError(f"restored engineering database failed integrity check: {integrity}")
+            _raise_integrity_error(integrity)
         tables = {str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         required = {"tasks", "checkpoints", "runner_leases"}
         if not required.issubset(tables):
-            raise RestoreError("restored engineering database is missing required tables")
+            _raise_missing_tables_error()
         return {
             "integrity_check": integrity,
             "schema_version": int(connection.execute("PRAGMA user_version").fetchone()[0]),
@@ -109,16 +127,36 @@ def _verify_sqlite(path: Path) -> dict[str, Any]:
         connection.close()
 
 
+def _raise_integrity_error(integrity: str) -> None:
+    raise RestoreError(f"restored engineering database failed integrity check: {integrity}")
+
+
+def _raise_missing_tables_error() -> None:
+    raise RestoreError("restored engineering database is missing required tables")
+
+
 def _verify_ledger(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise RestoreError("restored continuous ledger is missing")
     value = json.loads(path.read_text(encoding="utf-8"))
-    if value.get("schema") != 1 or not isinstance(value.get("records"), dict):
-        raise RestoreError("restored continuous ledger has an invalid schema")
+    _validate_ledger_schema(value)
     archives = value.get("archives", {})
     if not isinstance(archives, dict):
-        raise RestoreError("restored continuous ledger archives are invalid")
+        _raise_invalid_ledger_archives_error()
     return {"schema_version": value["schema"], "active_records": len(value["records"]), "archived_records": len(archives)}
+
+
+def _validate_ledger_schema(value: dict[str, Any]) -> None:
+    if value.get("schema") != 1 or not isinstance(value.get("records"), dict):
+        _raise_invalid_ledger_schema_error()
+
+
+def _raise_invalid_ledger_schema_error() -> None:
+    raise RestoreError("restored continuous ledger has an invalid schema")
+
+
+def _raise_invalid_ledger_archives_error() -> None:
+    raise RestoreError("restored continuous ledger archives are invalid")
 
 
 def _verify_evidence(root: Path) -> dict[str, Any]:
@@ -129,11 +167,19 @@ def _verify_evidence(root: Path) -> dict[str, Any]:
     for evidence in evidence_root.rglob("evidence.json"):
         sidecar = evidence.with_name("evidence.sha256")
         if not sidecar.is_file():
-            raise RestoreError(f"restored evidence checksum is missing: {evidence.relative_to(evidence_root)}")
+            _raise_missing_evidence_checksum_error(evidence, evidence_root)
         if _sha256(evidence) != sidecar.read_text(encoding="utf-8").split()[0]:
-            raise RestoreError(f"restored evidence checksum failed: {evidence.relative_to(evidence_root)}")
+            _raise_failed_evidence_checksum_error(evidence, evidence_root)
         checked += 1
     return {"bundles": checked, "checksums_passed": checked}
+
+
+def _raise_missing_evidence_checksum_error(evidence: Path, evidence_root: Path) -> None:
+    raise RestoreError(f"restored evidence checksum is missing: {evidence.relative_to(evidence_root)}")
+
+
+def _raise_failed_evidence_checksum_error(evidence: Path, evidence_root: Path) -> None:
+    raise RestoreError(f"restored evidence checksum failed: {evidence.relative_to(evidence_root)}")
 
 
 def _verify_cache(root: Path) -> dict[str, Any]:
@@ -160,82 +206,135 @@ def restore_backup(backup: str | Path, target: str | Path | None = None) -> Path
         target_path.mkdir(mode=0o700, parents=True, exist_ok=True)
     if target_path == backup_path or backup_path in target_path.parents:
         raise RestoreError("restore target must be outside the backup directory")
-    os.chmod(target_path, 0o700)
-    try:
-        copied = _verify_and_copy_files(backup_path, target_path, manifest)
-        sqlite_result = _verify_sqlite(target_path / "state" / "engineering.db")
-        ledger_result = _verify_ledger(target_path / "state" / "continuous.json")
-        evidence_result = _verify_evidence(target_path)
-        cache_result = _verify_cache(target_path)
-        elapsed = round(time.monotonic() - started, 3)
-        created_epoch = float(manifest.get("created_at_epoch", time.time()))
-        rpo_hours = max(0.0, (time.time() - created_epoch) / 3600)
-        checks = {
-            "file_checksums": {"passed": True, "files": len(copied)},
-            "engineering_sqlite": sqlite_result,
-            "continuous_ledger": ledger_result,
-            "evidence": evidence_result,
-            "cache": cache_result,
-            "rpo": {"target_hours": RPO_TARGET_HOURS, "backup_age_hours": round(rpo_hours, 4), "met": rpo_hours <= RPO_TARGET_HOURS},
-            "rto": {"target_minutes": RTO_TARGET_MINUTES, "restore_duration_seconds": elapsed, "met": elapsed <= RTO_TARGET_MINUTES * 60},
-        }
-        policy = manifest.get("policy", {})
-        webui_excluded = any(
-            "Open WebUI persistent volume" in item
-            for item in manifest.get("excluded", [])
+    target_path.chmod(0o700)
+    copied = _verify_and_copy_files(backup_path, target_path, manifest)
+    sqlite_result = _verify_sqlite(target_path / "state" / "engineering.db")
+    ledger_result = _verify_ledger(target_path / "state" / "continuous.json")
+    evidence_result = _verify_evidence(target_path)
+    cache_result = _verify_cache(target_path)
+    elapsed = round(time.monotonic() - started, 3)
+    created_epoch = float(manifest.get("created_at_epoch", time.time()))
+    policy = manifest.get("policy", {})
+    webui_excluded = any(
+        "Open WebUI persistent volume" in item
+        for item in manifest.get("excluded", [])
+    )
+    webui_policy = policy.get("open_webui_user_data")
+    if webui_policy is None:
+        webui_policy = "unspecified" if webui_excluded else (
+            "encrypted_backup" if manifest.get("docker_user_data") else "unspecified"
         )
-        webui_policy = policy.get("open_webui_user_data")
-        if webui_policy is None:
-            webui_policy = "unspecified" if webui_excluded else (
-                "encrypted_backup" if manifest.get("docker_user_data") else "unspecified"
-            )
-        if not isinstance(webui_policy, str) or webui_policy not in {
-            "unspecified",
-            "recreate",
-            "encrypted_backup",
-        }:
-            raise RestoreError("backup Open WebUI user-data policy is unsupported")
-        if webui_policy == "recreate" and not webui_excluded:
-            raise RestoreError("recreate policy is inconsistent with the backup exclusions")
-        if webui_policy == "recreate" and manifest.get("docker_user_data") is not None:
-            raise RestoreError("recreate policy cannot also include Open WebUI volume data")
-        if webui_policy == "encrypted_backup":
-            user_data = manifest.get("docker_user_data")
-            if not isinstance(user_data, dict) or not user_data.get("encrypted"):
-                raise RestoreError("encrypted Open WebUI policy is missing its encrypted volume record")
-            user_data_path = user_data.get("path")
-            if not isinstance(user_data_path, str) or user_data_path not in copied:
-                raise RestoreError("encrypted Open WebUI archive is missing from the restored copy")
-        checks["open_webui_user_data"] = {
-            "policy": webui_policy,
-            "excluded_by_policy": webui_policy == "recreate",
-            "complete_for_declared_policy": webui_policy != "unspecified",
-        }
-        report = {
-            "schema": 1,
-            "status": (
-                "FAIL"
-                if not checks["file_checksums"]["passed"] or not checks["rpo"]["met"] or not checks["rto"]["met"]
-                else "PARTIAL"
-                if webui_policy == "unspecified" and webui_excluded
-                else "PASS"
-            ),
-            "created_at": dt.datetime.now(dt.UTC).isoformat(),
-            "backup": str(backup_path),
-            "backup_source": manifest.get("source", {}),
-            "isolated_target": str(target_path),
-            "checks": checks,
-            "encrypted_user_data_artifacts": [
-                raw for raw in copied if raw.endswith(".gpg")
-            ],
-        }
-        report_path = target_path / "restore-report.json"
-        report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        os.chmod(report_path, 0o600)
-        return target_path
-    except Exception:
-        # Keep failed isolated restores available for diagnosis; never touch live paths.
-        raise
+    _validate_webui_policy(webui_policy)
+    if webui_policy == "recreate" and not webui_excluded:
+        _raise_recreate_policy_error()
+    if webui_policy == "recreate" and manifest.get("docker_user_data") is not None:
+        _raise_recreate_with_volume_error()
+    if webui_policy == "encrypted_backup":
+        _validate_encrypted_webui_policy(manifest, copied)
+    report_data = RestoreReportData(
+        backup_path=backup_path,
+        target_path=target_path,
+        manifest=manifest,
+        copied=copied,
+        sqlite_result=sqlite_result,
+        ledger_result=ledger_result,
+        evidence_result=evidence_result,
+        cache_result=cache_result,
+        elapsed=elapsed,
+        created_epoch=created_epoch,
+        webui_policy=webui_policy,
+        webui_excluded=webui_excluded,
+        started=started,
+    )
+    return _build_restore_report(report_data)
+
+
+def _validate_webui_policy(webui_policy: str | None) -> None:
+    if not isinstance(webui_policy, str) or webui_policy not in {
+        "unspecified",
+        "recreate",
+        "encrypted_backup",
+    }:
+        _raise_unsupported_webui_policy_error()
+
+
+def _raise_unsupported_webui_policy_error() -> None:
+    raise RestoreError("backup Open WebUI user-data policy is unsupported")
+
+
+def _raise_recreate_policy_error() -> None:
+    raise RestoreError("recreate policy is inconsistent with the backup exclusions")
+
+
+def _raise_recreate_with_volume_error() -> None:
+    raise RestoreError("recreate policy cannot also include Open WebUI volume data")
+
+
+def _validate_encrypted_webui_policy(manifest: dict[str, Any], copied: dict[str, Any]) -> None:
+    user_data = manifest.get("docker_user_data")
+    if not isinstance(user_data, dict) or not user_data.get("encrypted"):
+        _raise_missing_encrypted_volume_error()
+    user_data_path = user_data.get("path")
+    if not isinstance(user_data_path, str) or user_data_path not in copied:
+        _raise_missing_encrypted_archive_error()
+
+
+def _raise_missing_encrypted_volume_error() -> None:
+    raise RestoreError("encrypted Open WebUI policy is missing its encrypted volume record")
+
+
+def _raise_missing_encrypted_archive_error() -> None:
+    raise RestoreError("encrypted Open WebUI archive is missing from the restored copy")
+
+
+def _build_restore_report(data: RestoreReportData) -> Path:
+    rpo_hours = max(0.0, (time.time() - data.created_epoch) / 3600)
+    checks = {
+        "file_checksums": {"passed": True, "files": len(data.copied)},
+        "engineering_sqlite": data.sqlite_result,
+        "continuous_ledger": data.ledger_result,
+        "evidence": data.evidence_result,
+        "cache": data.cache_result,
+        "rpo": {
+            "target_hours": RPO_TARGET_HOURS,
+            "backup_age_hours": round(rpo_hours, 4),
+            "met": rpo_hours <= RPO_TARGET_HOURS,
+        },
+        "rto": {
+            "target_minutes": RTO_TARGET_MINUTES,
+            "restore_duration_seconds": data.elapsed,
+            "met": data.elapsed <= RTO_TARGET_MINUTES * 60,
+        },
+    }
+    checks["open_webui_user_data"] = {
+        "policy": data.webui_policy,
+        "excluded_by_policy": data.webui_policy == "recreate",
+        "complete_for_declared_policy": data.webui_policy != "unspecified",
+    }
+    report = {
+        "schema": 1,
+        "status": _compute_restore_status(checks, data.webui_policy, data.webui_excluded),
+        "created_at": dt.datetime.now(dt.UTC).isoformat(),
+        "backup": str(data.backup_path),
+        "backup_source": data.manifest.get("source", {}),
+        "isolated_target": str(data.target_path),
+        "checks": checks,
+        "encrypted_user_data_artifacts": [
+            raw for raw in data.copied if raw.endswith(".gpg")
+        ],
+    }
+    report_path = data.target_path / "restore-report.json"
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    report_path.chmod(0o600)
+    return data.target_path
+
+
+def _compute_restore_status(checks: dict[str, Any], webui_policy: str, webui_excluded: bool) -> str:
+    if not checks["file_checksums"]["passed"] or not checks["rpo"]["met"] or not checks["rto"]["met"]:
+        return "FAIL"
+    if webui_policy == "unspecified" and webui_excluded:
+        return "PARTIAL"
+    return "PASS"
 
 
 def main() -> int:

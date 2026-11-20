@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -35,7 +36,6 @@ def main(argv: list[str] | None = None) -> int:
         result = compare_manifests(current, load_manifest(args.compare)) if args.compare else current
     except ModelInventoryError:
         return 1
-    import json
     print(json.dumps(result, separators=(",", ":")))
     if args.fail_on_drift and result["drift_detected"]:
         return 1
