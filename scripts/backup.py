@@ -360,7 +360,7 @@ def _backup_database(db_path: Path, content: Path) -> dict[str, Any]:
 
 def _backup_ledger(ledger: JsonContinuousLedger, content: Path) -> dict[str, Any]:
     ledger_bytes = ledger.snapshot_bytes()
-    ledger_value = json.loads(ledger_bytes)
+    ledger_value: dict[str, Any] = json.loads(ledger_bytes)
     if ledger_value.get("schema") != JsonContinuousLedger.SCHEMA:
         raise BackupError("continuous ledger schema version is unsupported")
     _write_private(content / "state" / "continuous.json", ledger_bytes)
@@ -591,7 +591,15 @@ def main() -> int:
         webui_container=args.webui_container,
     )
     try:
-        create_backup(config)
+        create_backup(
+            source_root=config.source_root,
+            repository_root=config.repository_root,
+            output=config.output,
+            include_webui_volume=config.include_webui_volume,
+            recreate_webui_data=config.recreate_webui_data,
+            gpg_recipient=config.gpg_recipient,
+            webui_container=config.webui_container,
+        )
     except (BackupError, OSError, ValueError, sqlite3.Error, subprocess.SubprocessError):
         return 2
     return 0

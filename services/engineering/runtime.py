@@ -42,18 +42,18 @@ class ProviderClient:
         base_url: str = "http://127.0.0.1:8080/v1",
         api_key: str = "",
         model: str = "zeaz-fast",
-        timeout: int = 300,
+        timeout: float = 300.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
-        self.timeout = timeout
+        self.timeout = float(timeout)
 
     def _request_json(
         self,
         request: urllib.request.Request,
         *,
-        timeout: int | None = None,
+        timeout: float | None = None,
         attempts: int = 1,
         request_id: str | None = None,
     ) -> dict[str, Any]:
@@ -94,10 +94,10 @@ class ProviderClient:
                 ) from exc
             except urllib.error.URLError as exc:
                 last_transport = exc
-                reason = exc.reason
+                reason = str(exc.reason)
             except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, TimeoutError, OSError) as exc:
                 last_transport = exc
-                reason = exc
+                reason = str(exc)
 
             if attempt < attempts:
                 time.sleep(min(0.5 * attempt, 1.5))
@@ -163,8 +163,8 @@ class ProviderClient:
             attempts=3,
             request_id=request_id,
         )
-        ids = {
-            item.get("id")
+        ids: set[str] = {
+            item["id"]
             for item in models.get("data", [])
             if isinstance(item, dict) and isinstance(item.get("id"), str)
         }
@@ -255,7 +255,7 @@ class EngineeringRuntime:
         self.worktrees = worktrees or WorktreeManager()
         self.reviewer = StaticReviewer()
         self.gate = SecurityGate()
-        self.progress = progress or (lambda message: None)
+        self.progress = progress or (lambda _message: None)
         self.evidence = evidence or EvidenceExporter(store)
         self.change_snapshots = ChangeSnapshotStore(worktrees=self.worktrees)
         self.agent_registry = agent_registry or AgentRegistry(path=None)
@@ -451,6 +451,7 @@ class EngineeringRuntime:
                     reusable_plan = candidate_plan
 
             if reusable_plan:
+                assert plan_checkpoint is not None
                 plan = reusable_plan
                 self.progress(
                     f"[engineering] RESUME_PLAN checkpoint={plan_checkpoint.id} head={baseline_head[:12]}"
@@ -877,7 +878,7 @@ class EngineeringRuntime:
         value: Any
         try:
             value = json.loads(text)
-        except json.JSONDecodeError as initial_error:
+        except json.JSONDecodeError:
             decoder = json.JSONDecoder()
             value = None
             for index, character in enumerate(text):
@@ -891,7 +892,7 @@ class EngineeringRuntime:
                     value = candidate
                     break
             if value is None:
-                raise initial_error
+                raise
 
         if not isinstance(value, dict):
             raise ValueError("model response must be a JSON object")

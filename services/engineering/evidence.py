@@ -172,7 +172,7 @@ class EvidenceExporter:
             ]
         elif checkpoint.phase == "FAILED":
             summary["error"] = _redact_text(str(payload.get("error", "")))
-        elif checkpoint.phase == "BASELINE" or checkpoint.phase == "COMMIT":
+        elif checkpoint.phase in {"BASELINE", "COMMIT"}:
             summary["branch"] = str(payload.get("branch", ""))
 
         return summary
@@ -230,6 +230,6 @@ class EvidenceExporter:
                 handle.write(content)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(tmp, path)
+            tmp.replace(path)
         finally:
             tmp.unlink(missing_ok=True)

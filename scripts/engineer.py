@@ -374,7 +374,7 @@ def _run_command() -> int:
         return 0
 
     if args.command == "list":
-        for task in store.list_tasks():
+        for _task in store.list_tasks():
             pass
         return 0
 
@@ -466,8 +466,9 @@ def _run_command() -> int:
         task_opt = store.get_task(args.task_id)
         if not task_opt:
             return 2
+        task_evidence: EngineeringTask = task_opt
         exporter = EvidenceExporter(store)
-        path, digest = exporter.export(task)
+        path, digest = exporter.export(task_evidence)
         return 0
 
     if args.command == "evidence-show":
@@ -496,7 +497,7 @@ def _run_command() -> int:
         snapshots = ChangeSnapshotStore()
         try:
             if args.command == "snapshot-status":
-                value = snapshots.status(task.id)
+                value = snapshots.status(task_snapshot.id)
             elif args.command == "undo":
                 value = snapshots.undo(task.id, task.worktree_path)
                 task.metadata["change_snapshot"] = {
@@ -743,17 +744,17 @@ def _run_command() -> int:
         if task_resume.status == TaskStatus.SUCCEEDED:
             return 2
 
-        config = dict(task.metadata.get("run_config") or {})
-        validators = args.validate or list(config.get("validators") or ["git diff --check"])
-        allowed = args.allow_path or list(config.get("allowed_paths") or [])
+        run_config: dict[str, Any] = dict(task.metadata.get("run_config") or {})
+        validators = args.validate or list(run_config.get("validators") or ["git diff --check"])
+        allowed = args.allow_path or list(run_config.get("allowed_paths") or [])
         if args.commit:
             commit = True
         elif args.no_commit:
             commit = False
         else:
-            commit = bool(config.get("commit", False))
-        validation_mode = args.validation_mode or str(config.get("validation_mode", "strict"))
-        agent_name = args.agent or str(config.get("agent", "build"))
+            commit = bool(run_config.get("commit", False))
+        validation_mode = args.validation_mode or str(run_config.get("validation_mode", "strict"))
+        agent_name = args.agent or str(run_config.get("agent", "build"))
 
         history = list(task.metadata.get("resume_history") or [])
         history.append({
@@ -955,12 +956,12 @@ def _run_command() -> int:
         if task_enqueue.status in {TaskStatus.SUCCEEDED, TaskStatus.CANCELLED}:
             return 2
 
-        config = dict(task_enqueue.metadata.get("run_config") or {})
-        validators = args.validate or list(config.get("validators") or ["git diff --check"])
-        allowed_paths = args.allow_path or list(config.get("allowed_paths") or [])
-        commit = args.commit or bool(config.get("commit", False))
-        validation_mode = args.validation_mode or str(config.get("validation_mode", "strict"))
-        agent_name = args.agent or str(config.get("agent", "build"))
+        enqueue_config: dict[str, Any] = dict(task_enqueue.metadata.get("run_config") or {})
+        validators = args.validate or list(enqueue_config.get("validators") or ["git diff --check"])
+        allowed_paths = args.allow_path or list(enqueue_config.get("allowed_paths") or [])
+        commit = args.commit or bool(enqueue_config.get("commit", False))
+        validation_mode = args.validation_mode or str(enqueue_config.get("validation_mode", "strict"))
+        agent_name = args.agent or str(enqueue_config.get("agent", "build"))
         try:
             AgentRegistry(args.agent_config).get(agent_name)
         except (AgentConfigError, ValueError):

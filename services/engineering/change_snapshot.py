@@ -206,6 +206,6 @@ class ChangeSnapshotStore:
                 handle.write(content)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(tmp, path)
+            tmp.replace(path)
         finally:
             tmp.unlink(missing_ok=True)

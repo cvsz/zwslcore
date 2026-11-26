@@ -272,10 +272,15 @@ def _raise_recreate_with_volume_error() -> None:
 
 def _validate_encrypted_webui_policy(manifest: dict[str, Any], copied: dict[str, Any]) -> None:
     user_data = manifest.get("docker_user_data")
-    if not isinstance(user_data, dict) or not user_data.get("encrypted"):
+    if not isinstance(user_data, dict):
         _raise_missing_encrypted_volume_error()
-    user_data_path = user_data.get("path")
-    if not isinstance(user_data_path, str) or user_data_path not in copied:
+    assert isinstance(user_data, dict)
+    if not user_data.get("encrypted"):
+        _raise_missing_encrypted_volume_error()
+    user_data_path = str(user_data.get("path") or "")
+    if not isinstance(user_data_path, str):
+        _raise_missing_encrypted_archive_error()
+    if user_data_path not in copied:
         _raise_missing_encrypted_archive_error()
 
 

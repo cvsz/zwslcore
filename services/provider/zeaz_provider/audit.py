@@ -67,16 +67,34 @@ def audit_error_class(status_code: int) -> str | None:
     return "http_client_error"
 
 
-def emit_request_audit(event: AuditEvent) -> None:
+def emit_request_audit(
+    event: AuditEvent | None = None,
+    *,
+    request_id: str = "",
+    method: str = "",
+    path: str = "",
+    status_code: int = 0,
+    duration_ms: float = 0.0,
+    client_id: str = "",
+    rate_limited: bool = False,
+) -> None:
     """Emit a JSON event made exclusively from explicitly allowed metadata."""
-    duration = event.duration_ms if math.isfinite(event.duration_ms) and event.duration_ms >= 0 else 0.0
-    outcome = "success" if event.status_code < _HTTP_SUCCESS_THRESHOLD else "error"
+    if event is not None:
+        request_id = event.request_id
+        method = event.method
+        path = event.path
+        status_code = event.status_code
+        duration_ms = event.duration_ms
+        client_id = event.client_id
+        rate_limited = event.rate_limited
+    duration = duration_ms if math.isfinite(duration_ms) and duration_ms >= 0 else 0.0
+    outcome = "success" if status_code < _HTTP_SUCCESS_THRESHOLD else "error"
     audit_event = {
         "schema_version": 1,
         "timestamp": datetime.now(UTC).isoformat(),
         "event": "http_request",
         "component": "provider",
-        "request_id": hashlib.sha256(event.request_id.encode()).hexdigest(),
+        "request_id": hashlib.sha256(request_id.encode()).hexdigest(),
         "task_id": None,
         "work_fingerprint": None,
         "phase": "request",
@@ -84,14 +102,14 @@ def emit_request_audit(event: AuditEvent) -> None:
         "model": None,
         "attempt": None,
         "outcome": outcome,
-        "error_class": audit_error_class(event.status_code),
-        "method": audit_method(event.method),
-        "path": audit_path(event.path),
-        "status_code": event.status_code,
+        "error_class": audit_error_class(status_code),
+        "method": audit_method(method),
+        "path": audit_path(path),
+        "status_code": status_code,
         "latency_ms": round(duration, 3),
         "duration_ms": round(duration, 3),
-        "client_id": event.client_id if _CLIENT_BUCKET.fullmatch(event.client_id) else "unknown",
-        "rate_limited": event.rate_limited,
+        "client_id": client_id if _CLIENT_BUCKET.fullmatch(client_id) else "unknown",
+        "rate_limited": rate_limited,
     }
     _LOGGER.info(json.dumps(audit_event, separators=(",", ":"), sort_keys=True))
 

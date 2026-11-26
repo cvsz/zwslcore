@@ -77,7 +77,7 @@ class JsonContinuousLedger:
                 handle.write("\n")
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(tmp, self.path)
+            tmp.replace(self.path)
         finally:
             tmp.unlink(missing_ok=True)
 
@@ -341,7 +341,8 @@ class JsonContinuousLedger:
                 raise ContinuousLedgerError(f"cannot dead-letter work in state {state}")
             now = time.time()
             task = task or {}
-            metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
+            _raw_meta = task.get("metadata")
+            metadata: dict[str, Any] = _raw_meta if isinstance(_raw_meta, dict) else {}
             model_history = []
             for item in list(record.get("model_history") or []):
                 if isinstance(item, dict):
@@ -481,7 +482,8 @@ class JsonContinuousLedger:
     @staticmethod
     def _active_record(data: dict[str, Any], fingerprint: str) -> dict[str, Any]:
         try:
-            return data["records"][fingerprint]
+            record: dict[str, Any] = data["records"][fingerprint]
+            return record
         except KeyError as exc:
             raise ContinuousLedgerError(f"unknown active work item: {fingerprint}") from exc
 

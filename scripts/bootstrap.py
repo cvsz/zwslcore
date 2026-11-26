@@ -145,13 +145,11 @@ def main() -> int:
     try:
         initialize(
             args.root,
-            BootstrapArgs(
-                name=args.name,
-                owner=args.owner,
-                codeowner=args.codeowner,
-                description=args.description,
-            ),
-            args.apply,
+            name=args.name,
+            owner=args.owner,
+            codeowner=args.codeowner,
+            description=args.description,
+            apply=args.apply,
         )
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         parser.exit(2, f"bootstrap: {exc}\n")

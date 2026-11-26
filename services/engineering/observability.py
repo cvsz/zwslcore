@@ -156,7 +156,7 @@ def emit_engineering_event(
     safe_outcome = outcome if outcome in _OUTCOMES else "other"
     safe_error = error_class if error_class in _ERROR_CLASSES else None
     duration = latency_ms if math.isfinite(latency_ms) and latency_ms >= 0 else 0.0
-    event = {
+    audit_event: dict[str, object] = {
         "schema_version": 1,
         "timestamp": datetime.now(UTC).isoformat(),
         "event": "engineering_phase",
@@ -172,4 +172,4 @@ def emit_engineering_event(
         "outcome": safe_outcome,
         "error_class": safe_error,
     }
-    _LOGGER.info(json.dumps(event, separators=(",", ":"), sort_keys=True))
+    _LOGGER.info(json.dumps(audit_event, separators=(",", ":"), sort_keys=True))

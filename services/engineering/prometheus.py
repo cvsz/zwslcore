@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import http.server
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -12,6 +13,8 @@ import sys
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
+
+_LOGGER = logging.getLogger(__name__)
 
 TASK_STATUSES = (
     "CREATED",
@@ -272,7 +275,7 @@ def serve(
             return
 
     with server_factory(("127.0.0.1", port), Handler) as server:
-        print(f"Engineering metrics listening on http://127.0.0.1:{port}/metrics", flush=True)
+        _LOGGER.info("Engineering metrics listening on http://127.0.0.1:%s/metrics", port)
         try:
             server.serve_forever()
         except KeyboardInterrupt:

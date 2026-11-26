@@ -36,8 +36,29 @@ class ProviderError(RuntimeError):
         message: str,
         *,
         config: ProviderErrorConfig | None = None,
+        status_code: int | None = None,
+        retryable: bool | None = None,
+        kind: ErrorKind | None = None,
+        fallback_allowed: bool | None = None,
+        circuit_failure: bool | None = None,
+        retry_after: float | None = None,
+        details: dict[str, Any] | None = None,
     ):
         cfg = config or ProviderErrorConfig()
+        if status_code is not None:
+            cfg.status_code = status_code
+        if retryable is not None:
+            cfg.retryable = retryable
+        if kind is not None:
+            cfg.kind = kind
+        if fallback_allowed is not None:
+            cfg.fallback_allowed = fallback_allowed
+        if circuit_failure is not None:
+            cfg.circuit_failure = circuit_failure
+        if retry_after is not None:
+            cfg.retry_after = retry_after
+        if details is not None:
+            cfg.details = details
         super().__init__(message)
         self.status_code = cfg.status_code
         self.retryable = cfg.retryable

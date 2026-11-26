@@ -157,30 +157,46 @@ class Observability:
 
     def record_provider_request(
         self,
-        record: ProviderRequestRecord,
+        record: ProviderRequestRecord | None = None,
+        *,
+        provider: str = "",
+        model: str = "",
+        outcome: str = "",
+        duration_seconds: float = 0.0,
+        error_class: str | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
     ) -> None:
-        self.provider_requests.labels(provider=record.provider, model=record.model, outcome=record.outcome).inc()
-        self.provider_latency.labels(provider=record.provider, model=record.model).observe(
-            max(0.0, record.duration_seconds)
+        if record is not None:
+            provider = record.provider
+            model = record.model
+            outcome = record.outcome
+            duration_seconds = record.duration_seconds
+            error_class = record.error_class
+            input_tokens = record.input_tokens
+            output_tokens = record.output_tokens
+        self.provider_requests.labels(provider=provider, model=model, outcome=outcome).inc()
+        self.provider_latency.labels(provider=provider, model=model).observe(
+            max(0.0, duration_seconds)
         )
-        if record.error_class is not None:
+        if error_class is not None:
             self.provider_errors.labels(
-                provider=record.provider,
-                model=record.model,
-                error_class=record.error_class,
+                provider=provider,
+                model=model,
+                error_class=error_class,
             ).inc()
-        if record.input_tokens is not None:
+        if input_tokens is not None:
             self.inference_tokens.labels(
-                provider=record.provider,
-                model=record.model,
+                provider=provider,
+                model=model,
                 direction="input",
-            ).inc(record.input_tokens)
-        if record.output_tokens is not None:
+            ).inc(input_tokens)
+        if output_tokens is not None:
             self.inference_tokens.labels(
-                provider=record.provider,
-                model=record.model,
+                provider=provider,
+                model=model,
                 direction="output",
-            ).inc(record.output_tokens)
+            ).inc(output_tokens)
 
     def record_provider_retry(self, *, provider: str, error_class: str) -> None:
         self.provider_retries.labels(provider=provider, error_class=error_class).inc()
