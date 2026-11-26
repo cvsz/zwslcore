@@ -57,7 +57,7 @@ class ProviderRouter:
         try:
             configured = self.settings.models[name]
         except KeyError as exc:
-            raise ProviderError(f"Unknown model: {name}", 404) from exc
+            raise ProviderError(f"Unknown model: {name}", status_code=404) from exc
         candidates = (configured.primary, *configured.fallbacks)
         policy = parse_cost_policy(self.settings.cost_policy)
         available = [
@@ -80,7 +80,7 @@ class ProviderRouter:
         if not available:
             raise ProviderError(
                 f"No configured targets for {name} are permitted and active under cost policy {policy.value}",
-                410,
+                status_code=410,
                 fallback_allowed=False,
                 circuit_failure=False,
             )
@@ -136,7 +136,7 @@ class ProviderRouter:
                     result=result,
                 )
                 return result
-        raise ProviderError("All providers failed: " + "; ".join(errors), 502)
+        raise ProviderError("All providers failed: " + "; ".join(errors), status_code=502)
 
     async def stream(
         self,
@@ -181,7 +181,7 @@ class ProviderRouter:
             else:
                 self._record_attempt(target.provider, target.model, started)
                 return
-        raise ProviderError("All streaming providers failed: " + "; ".join(errors), 502)
+        raise ProviderError("All streaming providers failed: " + "; ".join(errors), status_code=502)
 
     def _record_attempt(
         self,

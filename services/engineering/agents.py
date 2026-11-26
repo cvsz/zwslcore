@@ -160,6 +160,9 @@ class AgentRegistry:
                     raise AgentConfigError(
                         f"agent {name!r} permission #{index} fields must be strings"
                     )
+                assert isinstance(permission, str)
+                assert isinstance(pattern, str)
+                assert isinstance(action, str)
                 try:
                     rules.append(PermissionRule(permission, pattern, action))
                 except ValueError as exc:

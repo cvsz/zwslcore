@@ -9,7 +9,7 @@ import httpx
 
 from .config import ProviderConfig
 from .errors import ErrorKind, ProviderError, classify_http_error
-from .resilience import ResilienceExecutor, ResiliencePolicy
+from .resilience import ResilienceExecutor, ResilienceExecutorConfig, ResiliencePolicy
 from .structured import (
     StructuredOutputError,
     ollama_chat_to_openai,
@@ -33,14 +33,19 @@ class ProviderClient:
         self.config = config
         self.client = client
         self.max_response_bytes = max_response_bytes
-        self.resilience = ResilienceExecutor(ResiliencePolicy(
-            max_attempts=config.max_attempts,
-            base_delay_seconds=config.retry_base_seconds,
-            max_delay_seconds=config.retry_max_seconds,
-            failure_threshold=config.circuit_failure_threshold,
-            reset_timeout_seconds=config.circuit_reset_seconds,
-            total_timeout_seconds=config.total_timeout_seconds,
-        ), on_retry=on_retry)
+        self.resilience = ResilienceExecutor(
+            config=ResilienceExecutorConfig(
+                policy=ResiliencePolicy(
+                    max_attempts=config.max_attempts,
+                    base_delay_seconds=config.retry_base_seconds,
+                    max_delay_seconds=config.retry_max_seconds,
+                    failure_threshold=config.circuit_failure_threshold,
+                    reset_timeout_seconds=config.circuit_reset_seconds,
+                    total_timeout_seconds=config.total_timeout_seconds,
+                ),
+                on_retry=on_retry,
+            )
+        )
 
     def headers(self) -> dict[str, str]:
         headers = dict(self.config.headers)
@@ -72,7 +77,7 @@ class ProviderClient:
             except StructuredOutputError as exc:
                 raise ProviderError(
                     str(exc),
-                    400,
+                    status_code=400,
                     kind=ErrorKind.BAD_REQUEST,
                     fallback_allowed=False,
                     circuit_failure=False,
@@ -128,7 +133,7 @@ class ProviderClient:
         except httpx.TimeoutException as exc:
             raise ProviderError(
                 "Provider stream timed out",
-                504,
+                status_code=504,
                 kind=ErrorKind.TIMEOUT,
                 fallback_allowed=True,
                 circuit_failure=True,
@@ -136,7 +141,7 @@ class ProviderClient:
         except httpx.NetworkError as exc:
             raise ProviderError(
                 "Provider stream network failure",
-                502,
+                status_code=502,
                 kind=ErrorKind.NETWORK,
                 fallback_allowed=True,
                 circuit_failure=True,
@@ -144,7 +149,7 @@ class ProviderClient:
         except httpx.HTTPError as exc:
             raise ProviderError(
                 "Provider stream protocol failure",
-                502,
+                status_code=502,
                 kind=ErrorKind.PROTOCOL,
                 fallback_allowed=True,
                 circuit_failure=True,
@@ -168,7 +173,7 @@ class ProviderClient:
             except httpx.TimeoutException as exc:
                 raise ProviderError(
                     "Provider request timed out",
-                    504,
+                    status_code=504,
                     retryable=True,
                     kind=ErrorKind.TIMEOUT,
                     fallback_allowed=True,
@@ -177,7 +182,7 @@ class ProviderClient:
             except httpx.NetworkError as exc:
                 raise ProviderError(
                     "Provider network failure",
-                    502,
+                    status_code=502,
                     retryable=True,
                     kind=ErrorKind.NETWORK,
                     fallback_allowed=True,
@@ -186,7 +191,7 @@ class ProviderClient:
             except httpx.HTTPError as exc:
                 raise ProviderError(
                     "Provider request protocol failure",
-                    502,
+                    status_code=502,
                     retryable=True,
                     kind=ErrorKind.PROTOCOL,
                     fallback_allowed=True,
@@ -214,7 +219,7 @@ class ProviderClient:
             except httpx.TimeoutException as exc:
                 raise ProviderError(
                     "Provider request timed out",
-                    504,
+                    status_code=504,
                     retryable=True,
                     kind=ErrorKind.TIMEOUT,
                     fallback_allowed=True,
@@ -223,7 +228,7 @@ class ProviderClient:
             except httpx.NetworkError as exc:
                 raise ProviderError(
                     "Provider network failure",
-                    502,
+                    status_code=502,
                     retryable=True,
                     kind=ErrorKind.NETWORK,
                     fallback_allowed=True,
@@ -232,7 +237,7 @@ class ProviderClient:
             except httpx.HTTPError as exc:
                 raise ProviderError(
                     "Provider request protocol failure",
-                    502,
+                    status_code=502,
                     retryable=True,
                     kind=ErrorKind.PROTOCOL,
                     fallback_allowed=True,
@@ -273,7 +278,7 @@ def _retry_after(response: httpx.Response) -> float | None:
 def _oversized_response() -> ProviderError:
     return ProviderError(
         "Provider response exceeded configured byte limit",
-        502,
+        status_code=502,
         kind=ErrorKind.PROTOCOL,
         fallback_allowed=True,
         circuit_failure=True,
