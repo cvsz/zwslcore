@@ -44,7 +44,7 @@ class CircuitBreaker:
             if self._state == "half_open" and self._probe_in_flight:
                 raise ProviderError(
                     "Provider circuit probe is already in progress",
-                    503,
+                    status_code=503,
                     kind=ErrorKind.CIRCUIT_OPEN,
                     fallback_allowed=True,
                     circuit_failure=False,
@@ -54,7 +54,7 @@ class CircuitBreaker:
             if self.clock() - self._opened_at < self.reset_timeout_seconds:
                 raise ProviderError(
                     "Provider circuit is open",
-                    503,
+                    status_code=503,
                     kind=ErrorKind.CIRCUIT_OPEN,
                     fallback_allowed=True,
                     circuit_failure=False,
@@ -114,7 +114,7 @@ class ResilienceExecutor:
             except TimeoutError as exc:
                 timeout_error = ProviderError(
                     "Provider request deadline exceeded",
-                    504,
+                    status_code=504,
                     retryable=False,
                     kind=ErrorKind.TIMEOUT,
                     fallback_allowed=True,
@@ -143,7 +143,7 @@ class ResilienceExecutor:
         if last_error is None:
             raise ProviderError(
                 "Retry loop exhausted without error",
-                500,
+                status_code=500,
                 kind=ErrorKind.UPSTREAM,
                 fallback_allowed=False,
                 circuit_failure=False,
@@ -154,7 +154,7 @@ class ResilienceExecutor:
     def _deadline_error(last_error: ProviderError | None) -> ProviderError:
         return ProviderError(
             "Provider request deadline exceeded",
-            504,
+            status_code=504,
             kind=ErrorKind.TIMEOUT,
             fallback_allowed=True,
             circuit_failure=True,

@@ -175,7 +175,7 @@ class StdioMCPSession:
             raise
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(self, exc_type: object | None, exc: BaseException | None, tb: object | None) -> None:
         self.close()
 
     def close(self) -> None:
