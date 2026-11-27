@@ -13,14 +13,14 @@ class PoolTests(TestCase):
             self.assertEqual(len(pool.endpoints()), 1)
 
     def test_reject_remote_plain_http(self):
-        with mock.patch.dict(os.environ, {"ZWSL_OLLAMA_ENDPOINTS": "http://example.com:11434"}):
-            with self.assertRaises(ValueError):
-                pool.endpoints()
+        with mock.patch.dict(os.environ, {"ZWSL_OLLAMA_ENDPOINTS": "http://example.com:11434"}), \
+             self.assertRaises(ValueError):
+            pool.endpoints()
 
     def test_reject_credentials_in_url(self):
-        with mock.patch.dict(os.environ, {"ZWSL_OLLAMA_ENDPOINTS": "https://user:pass@example.com"}):
-            with self.assertRaises(ValueError):
-                pool.endpoints()
+        with mock.patch.dict(os.environ, {"ZWSL_OLLAMA_ENDPOINTS": "https://user:pass@example.com"}), \
+             self.assertRaises(ValueError):
+            pool.endpoints()
 
     def test_health_no_workers(self):
         with mock.patch.object(pool, "healthy", return_value=[]):

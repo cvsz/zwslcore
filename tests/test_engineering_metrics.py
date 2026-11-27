@@ -9,6 +9,7 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
+from http import server as http_server
 from pathlib import Path
 
 from services.engineering.models import Checkpoint, EngineeringTask, TaskStatus
@@ -113,11 +114,9 @@ class EngineeringMetricsTests(unittest.TestCase):
         self.assertEqual(before, after)
 
     def test_http_endpoint_serves_metrics_and_only_on_metrics_path(self) -> None:
-        import http.server
+        holder: dict[str, http_server.ThreadingHTTPServer] = {}
 
-        holder: dict[str, http.server.ThreadingHTTPServer] = {}
-
-        class EphemeralServer(http.server.ThreadingHTTPServer):
+        class EphemeralServer(http_server.ThreadingHTTPServer):
             def __init__(self, address, handler):
                 super().__init__(address, handler)
                 holder["server"] = self

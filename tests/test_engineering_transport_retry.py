@@ -100,11 +100,11 @@ class ProviderTransportRetryTests(unittest.TestCase):
         request = urllib.request.Request("http://127.0.0.1:8080/health/ready")
         calls = {"count": 0}
 
-        MAX_RETRIES = 3
+        max_retries = 3
 
         def fake_urlopen(req, timeout=None):
             calls["count"] += 1
-            if calls["count"] < MAX_RETRIES:
+            if calls["count"] < max_retries:
                 raise ConnectionResetError(104, "Connection reset by peer")
             return FakeResponse({"status": "ready"})
 
