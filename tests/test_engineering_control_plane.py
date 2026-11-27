@@ -420,9 +420,9 @@ class ProviderPreflightTests(unittest.TestCase):
                 worktrees=manager,
             )
 
-            with self.assertLogs("zeaz.engineering", level="INFO") as captured:
-                with self.assertRaisesRegex(RuntimeError, "provider HTTP 502"):
-                    runtime.run(task)
+            with self.assertLogs("zeaz.engineering", level="INFO") as captured, \
+                 self.assertRaisesRegex(RuntimeError, "provider HTTP 502"):
+                runtime.run(task)
 
             loaded = store.get_task(task.id)
             self.assertEqual(loaded.attempts, 0)
@@ -486,7 +486,7 @@ class ContinuousRetryResetTests(unittest.TestCase):
                 },
                 max_attempts=2,
             )
-            record = ledger.register(item)
+            ledger.register(item)
             task_id = f"work_{item.fingerprint[:20]}"
             task = EngineeringTask(
                 id=task_id,

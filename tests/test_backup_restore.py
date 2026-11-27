@@ -89,26 +89,26 @@ class BackupRestoreTests(unittest.TestCase):
             source, store, _, _ = self._source(root)
             active = EngineeringTask(title="active", status=TaskStatus.EDITING)
             store.save_task(active)
-            with patch("scripts.backup._runtime_metadata", return_value={"python": "test", "containers": {}}):
-                with self.assertRaisesRegex(BackupError, "while engineering tasks are active"):
-                    create_backup(
-                        source_root=source,
-                        repository_root=REPOSITORY,
-                        output=root / "must-not-exist",
-                    )
+            with patch("scripts.backup._runtime_metadata", return_value={"python": "test", "containers": {}}), \
+                 self.assertRaisesRegex(BackupError, "while engineering tasks are active"):
+                create_backup(
+                    source_root=source,
+                    repository_root=REPOSITORY,
+                    output=root / "must-not-exist",
+                )
             self.assertFalse((root / "must-not-exist").exists())
 
     def test_webui_user_data_capture_requires_explicit_encryption_recipient(self):
         with tempfile.TemporaryDirectory() as td:
             source, _, _, _ = self._source(Path(td))
-            with patch("scripts.backup._runtime_metadata", return_value={"python": "test", "containers": {}}):
-                with self.assertRaisesRegex(BackupError, "requires --gpg-recipient"):
-                    create_backup(
-                        source_root=source,
-                        repository_root=REPOSITORY,
-                        output=Path(td) / "must-not-exist",
-                        include_webui_volume=True,
-                    )
+            with patch("scripts.backup._runtime_metadata", return_value={"python": "test", "containers": {}}), \
+                 self.assertRaisesRegex(BackupError, "requires --gpg-recipient"):
+                create_backup(
+                    source_root=source,
+                    repository_root=REPOSITORY,
+                    output=Path(td) / "must-not-exist",
+                    include_webui_volume=True,
+                )
 
     def test_recreate_policy_is_explicit_and_completes_declared_restore_scope(self):
         with tempfile.TemporaryDirectory() as td:
@@ -139,15 +139,15 @@ class BackupRestoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             source, _, _, _ = self._source(root)
-            with patch("scripts.backup._runtime_metadata", return_value={"python": "test", "containers": {}}):
-                with self.assertRaisesRegex(BackupError, "choose either"):
-                    create_backup(
-                        source_root=source,
-                        repository_root=REPOSITORY,
-                        output=root / "must-not-exist",
-                        include_webui_volume=True,
-                        recreate_webui_data=True,
-                    )
+            with patch("scripts.backup._runtime_metadata", return_value={"python": "test", "containers": {}}), \
+                 self.assertRaisesRegex(BackupError, "choose either"):
+                create_backup(
+                    source_root=source,
+                    repository_root=REPOSITORY,
+                    output=root / "must-not-exist",
+                    include_webui_volume=True,
+                    recreate_webui_data=True,
+                )
             self.assertFalse((root / "must-not-exist").exists())
 
 
