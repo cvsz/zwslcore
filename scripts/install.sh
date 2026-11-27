@@ -7,6 +7,9 @@ ENV_FILE="$ROOT/.env"
 log() { printf '\n[zwslcore] %s\n' "$*"; }
 die() { printf '[zwslcore] ERROR: %s\n' "$*" >&2; exit 1; }
 
+# shellcheck source=scripts/lib/env.sh
+source "$ROOT/scripts/lib/env.sh"
+
 [[ "$(uname -s)" == "Linux" ]] || die "Linux is required."
 grep -qi microsoft /proc/version || log "Warning: WSL2 was not detected; continuing on Linux."
 command -v docker >/dev/null 2>&1 || die "Docker Engine is required."
@@ -128,10 +131,9 @@ if grep -Eq 'REPLACE_ME_(WEBUI_SECRET|LITELLM_MASTER_KEY|PROVIDER_CLIENT_KEY|DAT
   die "Secret placeholders remain in .env."
 fi
 
-log "Checking host PostgreSQL reachability for LiteLLM"
-if ! python3 - "$ENV_FILE" <<'PY'
+log "Validating DATABASE_URL points to Docker postgres service"
+python3 - "$ENV_FILE" <<'PY'
 from pathlib import Path
-import socket
 import sys
 from urllib.parse import urlsplit
 
@@ -143,19 +145,11 @@ for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
         values[key.strip()] = value.strip()
 url = urlsplit(values.get("DATABASE_URL", ""))
 host = url.hostname or ""
-if host == "host.docker.internal":
-    host = "127.0.0.1"
-port = url.port or 5432
-try:
-    socket.create_connection((host, port), timeout=3).close()
-except OSError as exc:
-    print(f"PostgreSQL unreachable at {host}:{port}: {exc}")
+if host != "postgres":
+    print(f"DATABASE_URL must point to 'postgres' service, got: {host}")
     raise SystemExit(1)
-print(f"PostgreSQL reachable at {host}:{port}")
+print(f"DATABASE_URL points to {host}:{url.port or 5432}")
 PY
-then
-  die "Host PostgreSQL is unreachable. Install it and create the litellm role/database first; see README Host PostgreSQL setup."
-fi
 
 log "Validating Compose configuration"
 docker compose -f "$ROOT/compose.yaml" --env-file "$ENV_FILE" config --quiet
@@ -350,8 +344,6 @@ if ! bash "$ROOT/scripts/smoke.sh"; then
   die "AI stack is healthy but inference validation failed."
 fi
 
-# shellcheck source=scripts/lib/env.sh
-source "$ROOT/scripts/lib/env.sh"
 OPENWEBUI_PORT="$(dotenv_get "$ENV_FILE" OPENWEBUI_PORT 3000)"
 PROVIDER_PORT="$(dotenv_get "$ENV_FILE" PROVIDER_PORT 8080)"
 LITELLM_PORT="$(dotenv_get "$ENV_FILE" LITELLM_PORT 4000)"
