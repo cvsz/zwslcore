@@ -7,6 +7,27 @@ x-default-logging: &default-logging
     max-file: "3"
 
 services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: zwslcore-postgres
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: d289ec4e91134ecf1602dc6f73315add9c61de2b8deb328570f27cf05e1ab5c4
+      POSTGRES_DB: litellm
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [ai]
+
   ollama:
     image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.2@sha256:b86366bb528bbf7f1424435d165028497a5b69bf6ddb4fa5a87102e2b79f44fb}
     container_name: zwslcore-ollama
@@ -48,7 +69,7 @@ services:
         reservations:
           memory: 512M
     depends_on:
-      ollama:
+      postgres:
         condition: service_healthy
     command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
     env_file:
@@ -162,3 +183,4 @@ networks:
 volumes:
   ollama-data:
   open-webui-data:
+  postgres-data:

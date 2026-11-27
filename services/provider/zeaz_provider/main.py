@@ -519,7 +519,7 @@ async def refresh_models(provider_router: RouterDependency) -> dict[str, dict[st
     return {"refreshed": refreshed, "errors": errors}
 
 
-@app.post("/v1/chat/completions", dependencies=[Depends(authenticate)])
+@app.post("/v1/chat/completions", dependencies=[Depends(authenticate)], response_model=None)
 async def chat_completions(request: Request, provider_router: RouterDependency) -> dict[str, Any] | StreamingResponse:
     payload = await body(request)
     route = provider_router.route(payload.get("model"))
@@ -544,7 +544,7 @@ async def chat_completions(request: Request, provider_router: RouterDependency) 
     return await provider_router.execute(route, call)
 
 
-@app.post("/v1/messages", dependencies=[Depends(authenticate)])
+@app.post("/v1/messages", dependencies=[Depends(authenticate)], response_model=None)
 async def messages(request: Request, provider_router: RouterDependency) -> dict[str, Any] | StreamingResponse:
     payload = await body(request)
     route = provider_router.route(payload.get("model"))
@@ -569,7 +569,7 @@ async def messages(request: Request, provider_router: RouterDependency) -> dict[
     return await provider_router.execute(route, call)
 
 
-@app.post("/v1/responses", dependencies=[Depends(authenticate)])
+@app.post("/v1/responses", dependencies=[Depends(authenticate)], response_model=None)
 async def responses(request: Request, provider_router: RouterDependency) -> dict[str, Any] | StreamingResponse:
     payload = await body(request)
     route = provider_router.route(payload.get("model"))
